@@ -17,6 +17,54 @@ const BOOKS = [
 ];
 
 /* =============================
+   SUPABASE CONFIG
+============================= */
+const SUPABASE_URL = 'YOUR_SUPABASE_URL';       // e.g. https://xxxx.supabase.co
+const SUPABASE_KEY = 'YOUR_SUPABASE_ANON_KEY';  // public anon key
+
+async function loadBooks() {
+  if (SUPABASE_URL === 'YOUR_SUPABASE_URL') return BOOKS; // placeholder — use static data
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/books?select=*&order=id.asc`,
+      { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
+    );
+    if (!res.ok) throw new Error(res.statusText);
+    const rows = await res.json();
+    return rows.map(r => ({
+      id:          r.id,
+      title:       r.title,
+      author:      r.author,
+      genre:       r.genre,
+      year:        r.year,
+      pages:       r.pages,
+      rating:      parseFloat(r.rating),
+      color:       r.color,
+      cover_url:   r.cover_url || null,
+      description: r.description,
+    }));
+  } catch (err) {
+    console.warn('Supabase fetch failed, using static data:', err);
+    return BOOKS;
+  }
+}
+
+async function preloadCovers(books) {
+  const imgs = {};
+  await Promise.all(books.map(book => {
+    if (!book.cover_url) return Promise.resolve();
+    return new Promise(resolve => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload  = () => { imgs[book.id] = img; resolve(); };
+      img.onerror = resolve; // missing cover → fall back to gradient
+      img.src = book.cover_url;
+    });
+  }));
+  return imgs;
+}
+
+/* =============================
    PAGE DIMENSIONS
 ============================= */
 const PW = 700;
@@ -100,7 +148,7 @@ function wrapText(ctx, text, x, y, maxW, lh) {
 }
 
 // Polaroid-style book card (with slight tilt)
-function drawPolaroid(ctx, book, cx, cy, tilt) {
+function drawPolaroid(ctx, book, cx, cy, tilt, coverImg) {
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(tilt * Math.PI / 180);
@@ -114,11 +162,15 @@ function drawPolaroid(ctx, book, cx, cy, tilt) {
   ctx.fillRect(-fw / 2 - pad, -fh / 2 - pad, fw + pad * 2, fh + pad * 2);
   ctx.shadowColor = 'transparent';
 
-  // photo gradient
-  const g = ctx.createLinearGradient(-fw / 2, -fh / 2, fw / 2, -fh / 2 + photoH);
-  g.addColorStop(0, book.color[0]); g.addColorStop(1, book.color[1]);
-  ctx.fillStyle = g;
-  ctx.fillRect(-fw / 2, -fh / 2, fw, photoH);
+  // photo area — real cover image or gradient fallback
+  if (coverImg) {
+    ctx.drawImage(coverImg, -fw / 2, -fh / 2, fw, photoH);
+  } else {
+    const g = ctx.createLinearGradient(-fw / 2, -fh / 2, fw / 2, -fh / 2 + photoH);
+    g.addColorStop(0, book.color[0]); g.addColorStop(1, book.color[1]);
+    ctx.fillStyle = g;
+    ctx.fillRect(-fw / 2, -fh / 2, fw, photoH);
+  }
 
   // book title inside photo
   ctx.fillStyle = 'rgba(255,255,255,0.9)';
@@ -159,7 +211,7 @@ function drawGenreSticker(ctx, label, color, x, y) {
 /* =============================
    PAGE GENERATOR
 ============================= */
-function generatePages() {
+function generatePages(books, coverImgs) {
   const pages = [];
 
   // ── FRONT COVER ──────────────────────────────────────────
@@ -207,7 +259,7 @@ function generatePages() {
   }));
 
   // ── ONE SPREAD PER BOOK ────────────────────────────────────
-  BOOKS.forEach((book, i) => {
+  books.forEach((book, i) => {
     const ld = bookDate(i, 0);
     const rd = bookDate(i, 1);
     const tilt = [-4, 2, -2, 3, -3, 2][i % 6];
@@ -248,7 +300,7 @@ function generatePages() {
       ctx.fillText('Published ' + book.year + '  ·  ' + book.pages + ' pages', 84, afterTitle + 32);
 
       // polaroid card — lower-right quadrant
-      drawPolaroid(ctx, book, PW * 0.68, PH * 0.68, tilt);
+      drawPolaroid(ctx, book, PW * 0.68, PH * 0.68, tilt, coverImgs && coverImgs[book.id]);
 
       // page number
       ctx.font = '11px Arial'; ctx.fillStyle = '#aaa';
@@ -321,8 +373,10 @@ function generatePages() {
 /* =============================
    INIT DEARFLIP
 ============================= */
-document.addEventListener('DOMContentLoaded', () => {
-  const pages = generatePages();
+document.addEventListener('DOMContentLoaded', async () => {
+  const books     = await loadBooks();
+  const coverImgs = await preloadCovers(books);
+  const pages     = generatePages(books, coverImgs);
 
   // Lower the minimum zoom so zoom-out has an extra step
   if (window.DEARFLIP) {
