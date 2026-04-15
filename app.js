@@ -312,9 +312,17 @@ function openModal(book) {
       <div class="modal-meta-item"><strong>Pages:</strong> ${book.pages}</div>
       <div class="modal-meta-item"><strong>Rating:</strong> ${book.rating} / 5</div>
     </div>
+    <div class="modal-flipbook-action">
+      <button class="btn btn-primary btn-flipbook" id="btn-flipbook">&#128366; Open 3D Flipbook</button>
+    </div>
   `;
   overlay.classList.add("open");
   document.body.style.overflow = "hidden";
+
+  document.getElementById("btn-flipbook").addEventListener("click", () => {
+    closeModal();
+    openFlipbook(book);
+  });
 }
 
 function closeModal() {
@@ -409,7 +417,17 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.target === document.getElementById("modal-overlay")) closeModal();
   });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") closeModal();
+    if (e.key === "Escape") {
+      const fbOverlay = document.getElementById("flipbook-overlay");
+      if (fbOverlay && fbOverlay.classList.contains("open")) closeFlipbook();
+      else closeModal();
+    }
+  });
+
+  // Flipbook overlay close
+  document.getElementById("flipbook-close").addEventListener("click", closeFlipbook);
+  document.getElementById("flipbook-overlay").addEventListener("click", (e) => {
+    if (e.target === document.getElementById("flipbook-overlay")) closeFlipbook();
   });
 
   // Search
@@ -423,3 +441,274 @@ document.addEventListener("DOMContentLoaded", () => {
   // Re-observe after render
   requestAnimationFrame(observeFadeIns);
 });
+
+/* =============================
+   3D FLIPBOOK — PAGE GENERATOR
+============================= */
+function _wrapText(ctx, text, x, y, maxWidth, lineHeight) {
+  const words = text.split(" ");
+  let line = "";
+  for (let n = 0; n < words.length; n++) {
+    const test = line + words[n] + " ";
+    if (ctx.measureText(test).width > maxWidth && n > 0) {
+      ctx.fillText(line.trim(), x, y);
+      line = words[n] + " ";
+      y += lineHeight;
+    } else {
+      line = test;
+    }
+  }
+  ctx.fillText(line.trim(), x, y);
+  return y + lineHeight;
+}
+
+function _pill(ctx, x, y, w, h, r, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function generateBookPages(book) {
+  const W = 600, H = 800;
+  const [c1, c2] = book.color;
+
+  function makeGrad(ctx, x1, y1, x2, y2) {
+    const g = ctx.createLinearGradient(x1, y1, x2, y2);
+    g.addColorStop(0, c1);
+    g.addColorStop(1, c2);
+    return g;
+  }
+
+  function page(drawFn) {
+    const canvas = document.createElement("canvas");
+    canvas.width = W;
+    canvas.height = H;
+    drawFn(canvas.getContext("2d"));
+    return canvas.toDataURL("image/jpeg", 0.92);
+  }
+
+  // ── Cover ──────────────────────────────────────────────────
+  const cover = page((ctx) => {
+    ctx.fillStyle = makeGrad(ctx, 0, 0, W, H);
+    ctx.fillRect(0, 0, W, H);
+
+    // double border
+    ctx.strokeStyle = "rgba(255,255,255,0.25)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(22, 22, W - 44, H - 44);
+    ctx.strokeRect(30, 30, W - 60, H - 60);
+
+    // thin top accent
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    ctx.fillRect(0, 0, W, 6);
+
+    // title
+    const fontSize = book.title.length > 22 ? 38 : 46;
+    ctx.fillStyle = "rgba(255,255,255,0.95)";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.font = `bold ${fontSize}px Georgia, serif`;
+    const afterTitle = _wrapText(ctx, book.title, W / 2, H / 2 - 95, W - 110, fontSize + 12);
+
+    // separator
+    ctx.strokeStyle = "rgba(255,255,255,0.45)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(W / 2 - 55, afterTitle + 4);
+    ctx.lineTo(W / 2 + 55, afterTitle + 4);
+    ctx.stroke();
+
+    // author
+    ctx.font = "italic 26px Georgia, serif";
+    ctx.fillStyle = "rgba(255,255,255,0.72)";
+    ctx.fillText(book.author, W / 2, afterTitle + 20);
+
+    // year (bottom)
+    ctx.font = "17px Georgia, serif";
+    ctx.fillStyle = "rgba(255,255,255,0.42)";
+    ctx.fillText(String(book.year), W / 2, H - 68);
+  });
+
+  // ── Info page ──────────────────────────────────────────────
+  const infoPage = page((ctx) => {
+    ctx.fillStyle = "#faf6f0";
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = makeGrad(ctx, 0, 0, W, 0);
+    ctx.fillRect(0, 0, W, 10);
+
+    // genre pill
+    const genreText = book.genre.toUpperCase();
+    ctx.font = "bold 14px Georgia, serif";
+    const pillW = ctx.measureText(genreText).width + 40;
+    _pill(ctx, 50, 44, pillW, 34, 8, c1);
+    ctx.fillStyle = "#fff";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText(genreText, 50 + 20, 61);
+
+    // title
+    const fs2 = book.title.length > 22 ? 34 : 40;
+    ctx.fillStyle = "#2c1810";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.font = `bold ${fs2}px Georgia, serif`;
+    const afterT = _wrapText(ctx, book.title, W / 2, 102, W - 80, fs2 + 8);
+
+    // author
+    ctx.font = "italic 22px Georgia, serif";
+    ctx.fillStyle = "#7a5c4a";
+    ctx.fillText("by " + book.author, W / 2, afterT + 6);
+
+    // stars
+    const starsY = afterT + 60;
+    let starsStr = "";
+    for (let i = 1; i <= 5; i++) {
+      starsStr += book.rating >= i ? "★" : book.rating >= i - 0.5 ? "✦" : "☆";
+    }
+    ctx.font = "34px Arial, sans-serif";
+    ctx.fillStyle = "#d4a853";
+    ctx.fillText(starsStr, W / 2, starsY);
+    ctx.font = "16px Georgia, serif";
+    ctx.fillStyle = "#7a5c4a";
+    ctx.fillText(book.rating + " / 5", W / 2, starsY + 44);
+
+    // divider
+    ctx.strokeStyle = "#e8dcd0";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(60, starsY + 82);
+    ctx.lineTo(W - 60, starsY + 82);
+    ctx.stroke();
+
+    // meta rows
+    const meta = [["Year Published", book.year], ["Pages", book.pages], ["Genre", book.genre]];
+    let metaY = starsY + 108;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    meta.forEach(([label, val]) => {
+      ctx.font = "bold 17px Georgia, serif";
+      ctx.fillStyle = "#2c1810";
+      ctx.fillText(label + ":", 68, metaY);
+      ctx.font = "17px Georgia, serif";
+      ctx.fillStyle = "#6b3d2a";
+      ctx.fillText(String(val), 260, metaY);
+      metaY += 38;
+    });
+
+    ctx.fillStyle = makeGrad(ctx, 0, 0, W, 0);
+    ctx.fillRect(0, H - 10, W, 10);
+  });
+
+  // ── Description page ──────────────────────────────────────
+  const descPage = page((ctx) => {
+    ctx.fillStyle = "#faf6f0";
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = makeGrad(ctx, 0, 0, W, 0);
+    ctx.fillRect(0, 0, W, 10);
+
+    ctx.fillStyle = "#2c1810";
+    ctx.font = "bold 26px Georgia, serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillText("About This Book", W / 2, 40);
+
+    ctx.strokeStyle = "#d4a853";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(W / 2 - 70, 82);
+    ctx.lineTo(W / 2 + 70, 82);
+    ctx.stroke();
+
+    ctx.font = "19px Georgia, serif";
+    ctx.fillStyle = "#3a2010";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    _wrapText(ctx, book.description, 55, 110, W - 110, 30);
+
+    ctx.fillStyle = "rgba(107,61,42,0.45)";
+    ctx.font = "italic 15px Georgia, serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    ctx.fillText("— BookShelf Portfolio —", W / 2, H - 48);
+
+    ctx.fillStyle = makeGrad(ctx, 0, 0, W, 0);
+    ctx.fillRect(0, H - 10, W, 10);
+  });
+
+  // ── Back cover ─────────────────────────────────────────────
+  const backCover = page((ctx) => {
+    ctx.fillStyle = makeGrad(ctx, W, H, 0, 0);
+    ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = "rgba(255,255,255,0.2)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(24, 24, W - 48, H - 48);
+
+    ctx.fillStyle = "rgba(255,255,255,0.88)";
+    ctx.font = "bold 30px Georgia, serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("\u270F BookShelf", W / 2, H / 2 - 25);
+
+    ctx.font = "18px Georgia, serif";
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.fillText("A curated reading portfolio", W / 2, H / 2 + 24);
+  });
+
+  return [cover, infoPage, descPage, backCover];
+}
+
+/* =============================
+   3D FLIPBOOK — OPEN / CLOSE
+============================= */
+let _flipbookApp = null;
+
+function openFlipbook(book) {
+  const overlay = document.getElementById("flipbook-overlay");
+  const container = document.getElementById("flipbook-container");
+  const titleEl = document.getElementById("flipbook-title");
+
+  titleEl.textContent = book.title + " \u2014 3D Preview";
+  container.innerHTML = "";
+  if (_flipbookApp) { _flipbookApp = null; }
+
+  overlay.classList.add("open");
+  document.body.style.overflow = "hidden";
+
+  const pages = generateBookPages(book);
+
+  requestAnimationFrame(() => {
+    const $ = window.jQuery || window.DEARFLIP.jQuery;
+    _flipbookApp = new window.DEARFLIP.Application({
+      source: pages,
+      element: $(container),
+      height: Math.min(window.innerHeight - 130, 560),
+      duration: 800,
+      backgroundColor: "transparent",
+      enableSound: true,
+      showDownloadControl: false,
+      showShareControl: false,
+      showSearchControl: false,
+      is3D: true,
+      has3DShadow: true,
+      flipbookHardPages: "all",
+    });
+  });
+}
+
+function closeFlipbook() {
+  const overlay = document.getElementById("flipbook-overlay");
+  overlay.classList.remove("open");
+  document.body.style.overflow = "";
+  document.getElementById("flipbook-container").innerHTML = "";
+  _flipbookApp = null;
+}

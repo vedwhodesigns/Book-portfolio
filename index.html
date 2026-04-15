@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Book Portfolio</title>
+  <link rel="stylesheet" href="dflip/css/dflip.min.css" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -180,6 +181,18 @@
     </div>
   </footer>
 
+  <!-- FLIPBOOK OVERLAY -->
+  <div id="flipbook-overlay" role="dialog" aria-modal="true" aria-label="3D Book Preview">
+    <div class="flipbook-header">
+      <span id="flipbook-title"></span>
+      <button id="flipbook-close" aria-label="Close flipbook">&times;</button>
+    </div>
+    <div id="flipbook-container"></div>
+  </div>
+
+  <script>window.dFlipLocation = './dflip/';</script>
+  <script src="dflip/js/libs/jquery.min.js"></script>
+  <script src="dflip/js/dflip.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
