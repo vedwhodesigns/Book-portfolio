@@ -324,7 +324,12 @@ function generatePages() {
 document.addEventListener('DOMContentLoaded', () => {
   const pages = generatePages();
 
-  new window.DEARFLIP.Application({
+  // Lower the minimum zoom so zoom-out has an extra step
+  if (window.DEARFLIP) {
+    window.DEARFLIP.defaults.minZoom = 0.2;
+  }
+
+  const flipApp = new window.DEARFLIP.Application({
     source:               pages,
     element:              window.jQuery('#portfolio-viewer'),
     height:               window.innerHeight,
@@ -337,8 +342,111 @@ document.addEventListener('DOMContentLoaded', () => {
     showDownloadControl:  false,
     showShareControl:     false,
     showSearchControl:    false,
-    controlsPosition:     'bottom',
+    controlsPosition:     'bottom',   // rendered but hidden via CSS
     autoEnableThumbnail:  false,
     openPage:             1,
   });
+
+  // Wire custom nav after dearflip has mounted its DOM
+  setTimeout(() => initSpatialNav(flipApp), 600);
 });
+
+/* =============================
+   SPATIAL TOOLTIP NAV
+============================= */
+function initSpatialNav(flipApp) {
+  const tooltip   = document.getElementById('ctrl-tooltip');
+  const labelsUl  = document.getElementById('ctrl-labels');
+  const labelItems = Array.from(labelsUl.querySelectorAll('li'));
+  const buttons   = Array.from(document.querySelectorAll('.ctrl-btn'));
+  const BTN = 36; // button size in px
+
+  // ── Spatial tooltip logic ──────────────────────────────────
+  function showTooltip(idx) {
+    const item   = labelItems[idx];
+    const itemW  = item.offsetWidth;
+    const itemOL = item.offsetLeft;
+    const x      = -((itemW - BTN) / 2);
+    const leftPct = (idx / buttons.length) * 100;
+
+    tooltip.style.left      = leftPct + '%';
+    tooltip.style.transform = `translateX(${x}px)`;
+    tooltip.style.width     = itemW + 'px';
+    tooltip.style.opacity   = '1';
+    labelsUl.style.transform = `translateX(${-itemOL}px)`;
+
+    labelItems.forEach((li, i) => {
+      const span = li.querySelector('span');
+      if (i === idx) {
+        span.classList.remove('blurred');
+      } else {
+        span.classList.add('blurred');
+      }
+    });
+  }
+
+  function hideTooltip() {
+    tooltip.style.opacity = '0';
+  }
+
+  buttons.forEach((btn, i) => {
+    btn.addEventListener('mouseenter', () => showTooltip(i));
+    btn.addEventListener('mouseleave', hideTooltip);
+  });
+
+  // ── Helper: click a hidden native dearflip button ──────────
+  function clickNative(selector) {
+    const el = document.querySelector(selector);
+    if (el) { el.click(); return true; }
+    return false;
+  }
+
+  // ── Cover — go to page 1 ───────────────────────────────────
+  document.getElementById('ctrl-cover').addEventListener('click', () => {
+    try { flipApp.gotoPage(1); } catch (_) {
+      try { flipApp.app.gotoPage(1); } catch (_2) {
+        clickNative('.df-btn-first-page, [data-df-btn="firstPage"]');
+      }
+    }
+  });
+
+  // ── Pages — toggle thumbnail panel ────────────────────────
+  document.getElementById('ctrl-pages').addEventListener('click', () => {
+    if (!clickNative('.df-btn-thumbnail')) {
+      try { flipApp.app.toggleThumbnail(); } catch (_) {}
+    }
+  });
+
+  // ── Zoom In ────────────────────────────────────────────────
+  document.getElementById('ctrl-zoomin').addEventListener('click', () => {
+    if (!clickNative('.df-btn-zoom-in, [class*="zoom-in"]')) {
+      try { flipApp.app.zoomIn(); } catch (_) {}
+    }
+  });
+
+  // ── Zoom Out — two steps for extra range ──────────────────
+  document.getElementById('ctrl-zoomout').addEventListener('click', () => {
+    const btn = document.querySelector('.df-btn-zoom-out, [class*="zoom-out"]');
+    if (btn) {
+      btn.click();
+      setTimeout(() => btn.click(), 160); // second step
+    } else {
+      try { flipApp.app.zoomOut(); flipApp.app.zoomOut(); } catch (_) {}
+    }
+  });
+
+  // ── Full Screen ────────────────────────────────────────────
+  document.getElementById('ctrl-fullscreen').addEventListener('click', () => {
+    if (!clickNative('.df-btn-fullscreen, [class*="fullscreen"]')) {
+      try { flipApp.toggleFullScreen(); } catch (_) {
+        try { flipApp.app.toggleFullScreen(); } catch (_2) {
+          if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(() => {});
+          } else {
+            document.exitFullscreen().catch(() => {});
+          }
+        }
+      }
+    }
+  });
+}
