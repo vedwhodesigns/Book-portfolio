@@ -452,133 +452,57 @@ function spineEdge(i) {
   return i % 2 === 1 ? 'right' : 'left';
 }
 
-function drawRuled(ctx) {
-  ctx.fillStyle = '#f6f2e8';
+/* Clean ruled page — white paper, black horizontal lines, left margin */
+function drawRuled(ctx, pageNum) {
+  ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, PW, PH);
-  ctx.strokeStyle = 'rgba(120,165,215,0.32)';
-  ctx.lineWidth = 1;
-  for (let y = 108; y < PH - 18; y += 26) {
+
+  // Horizontal lines
+  ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+  ctx.lineWidth = 0.75;
+  for (let y = 72; y < PH - 24; y += 28) {
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(PW, y); ctx.stroke();
   }
-  ctx.strokeStyle = 'rgba(210,80,80,0.45)';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(70, 0); ctx.lineTo(70, PH); ctx.stroke();
-}
 
-function drawDateBox(ctx, d, right) {
-  const bw = 130, bh = 86;
-  const x = right ? PW - bw - 18 : 18;
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(x, 10, bw, bh);
-  ctx.strokeStyle = '#ccc8c0';
+  // Left margin line
+  ctx.strokeStyle = 'rgba(0,0,0,0.15)';
   ctx.lineWidth = 1;
-  ctx.strokeRect(x, 10, bw, bh);
-  const cx = x + bw / 2;
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#444';
-  ctx.font = 'bold 12px Arial,sans-serif';
-  ctx.textBaseline = 'top';
-  ctx.fillText(d.day, cx, 16);
-  ctx.font = 'bold 34px Arial,sans-serif';
-  ctx.fillStyle = '#111';
-  ctx.fillText(d.num, cx, 30);
-  ctx.font = 'bold 12px Arial,sans-serif';
-  ctx.fillStyle = '#444';
-  ctx.fillText(d.month, cx, 72);
-}
+  ctx.beginPath(); ctx.moveTo(64, 0); ctx.lineTo(64, PH); ctx.stroke();
 
-function wrapText(ctx, text, x, y, maxW, lh) {
-  const words = text.split(' ');
-  let line = '';
-  for (const w of words) {
-    const t = line + w + ' ';
-    if (ctx.measureText(t).width > maxW && line) {
-      ctx.fillText(line.trim(), x, y);
-      line = w + ' '; y += lh;
-    } else line = t;
+  // Page number — bottom right, small
+  if (pageNum) {
+    ctx.font = '10px Arial,sans-serif';
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(pageNum, PW - 24, PH - 14);
   }
-  ctx.fillText(line.trim(), x, y);
-  return y + lh;
-}
-
-function drawPolaroid(ctx, book, cx, cy, tilt, coverImg) {
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.rotate(tilt * Math.PI / 180);
-
-  const fw = 148, fh = 190, pad = 10, photoH = 148;
-
-  ctx.shadowColor = 'rgba(0,0,0,0.22)';
-  ctx.shadowBlur = 14; ctx.shadowOffsetX = 5; ctx.shadowOffsetY = 5;
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(-fw / 2 - pad, -fh / 2 - pad, fw + pad * 2, fh + pad * 2);
-  ctx.shadowColor = 'transparent';
-
-  if (coverImg) {
-    ctx.drawImage(coverImg, -fw / 2, -fh / 2, fw, photoH);
-  } else {
-    const g = ctx.createLinearGradient(-fw / 2, -fh / 2, fw / 2, -fh / 2 + photoH);
-    g.addColorStop(0, book.color[0]); g.addColorStop(1, book.color[1]);
-    ctx.fillStyle = g;
-    ctx.fillRect(-fw / 2, -fh / 2, fw, photoH);
-  }
-
-  ctx.fillStyle = 'rgba(255,255,255,0.9)';
-  ctx.font = `bold ${book.title.length > 16 ? 11 : 13}px Georgia,serif`;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  wrapText(ctx, book.title, 0, -fh / 2 + photoH / 2 - 10, fw - 16, 18);
-
-  ctx.font = '10px Arial,sans-serif';
-  ctx.fillStyle = 'rgba(255,255,255,0.55)';
-  ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
-  ctx.fillText(book.year, fw / 2 - 4, -fh / 2 + photoH - 4);
-
-  ctx.fillStyle = '#666';
-  ctx.font = 'italic 10px Georgia,serif';
-  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-  ctx.fillText(book.author, 0, -fh / 2 + photoH + 8);
-
-  ctx.restore();
-}
-
-function drawGenreSticker(ctx, label, color, x, y) {
-  ctx.font = 'bold 11px Arial,sans-serif';
-  const tw = ctx.measureText(label).width;
-  const pw = tw + 18, ph = 22;
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.roundRect ? ctx.roundRect(x, y, pw, ph, 4) : ctx.rect(x, y, pw, ph);
-  ctx.fill();
-  ctx.fillStyle = '#fff';
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText(label, x + 9, y + ph / 2);
-  return pw;
 }
 
 /* =============================
    PAGE GENERATOR
+   Cover: dark placeholder. Interior pages: clean white ruled paper only.
+   Swap interior pages with PDF renders when PDF is ready.
 ============================= */
 function generatePages(books, coverImgs) {
   const pages = [];
   let pageIndex = 0;
+  const totalSpreads = books.length; // 12
 
-  // Front cover
+  // Front cover — dark placeholder
   pages.push(makePage(ctx => {
     const g = ctx.createLinearGradient(0, 0, PW, PH);
     g.addColorStop(0, '#1e0f08'); g.addColorStop(1, '#3a1e10');
     ctx.fillStyle = g; ctx.fillRect(0, 0, PW, PH);
 
-    ctx.strokeStyle = 'rgba(255,255,255,0.025)'; ctx.lineWidth = 1;
-    for (let y = 0; y < PH; y += 5) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(PW,y); ctx.stroke(); }
-
     ctx.strokeStyle = 'rgba(212,168,83,0.55)'; ctx.lineWidth = 2;
     ctx.strokeRect(22, 22, PW - 44, PH - 44);
-    ctx.strokeStyle = 'rgba(212,168,83,0.25)'; ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(212,168,83,0.18)'; ctx.lineWidth = 1;
     ctx.strokeRect(30, 30, PW - 60, PH - 60);
 
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     ctx.font = '13px Georgia,serif';
-    ctx.fillStyle = 'rgba(212,168,83,0.55)';
+    ctx.fillStyle = 'rgba(212,168,83,0.5)';
     ctx.fillText('A PERSONAL', PW / 2, PH / 2 - 130);
 
     ctx.font = 'bold 68px Georgia,serif';
@@ -587,122 +511,41 @@ function generatePages(books, coverImgs) {
     ctx.fillText('PORTFOLIO', PW / 2, PH / 2 - 22);
 
     ctx.strokeStyle = '#d4a853'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.moveTo(PW/2 - 90, PH/2 + 62); ctx.lineTo(PW/2 + 90, PH/2 + 62); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(PW/2 - 80, PH/2 + 62); ctx.lineTo(PW/2 + 80, PH/2 + 62); ctx.stroke();
 
     ctx.font = 'italic 20px Georgia,serif';
-    ctx.fillStyle = 'rgba(212,168,83,0.65)';
+    ctx.fillStyle = 'rgba(212,168,83,0.6)';
     ctx.fillText('2026', PW / 2, PH / 2 + 76);
-
-    ctx.font = '14px Georgia,serif';
-    ctx.fillStyle = 'rgba(240,201,122,0.38)';
-    ctx.fillText('A Collection of 12 Books', PW / 2, PH - 76);
 
     drawSpiral(ctx, spineEdge(pageIndex), true);
   }));
   pageIndex++;
 
-  // Book spreads
-  books.forEach((book, i) => {
-    const ld = bookDate(i, 0);
-    const rd = bookDate(i, 1);
-    const tilt = [-4, 2, -2, 3, -3, 2][i % 6];
+  // Interior pages — clean ruled paper, one pair per book spread
+  for (let i = 0; i < totalSpreads; i++) {
+    const leftNum  = i * 2 + 2;
+    const rightNum = i * 2 + 3;
 
-    // Left page
     pages.push(makePage(ctx => {
-      drawRuled(ctx);
-      drawDateBox(ctx, ld, false);
-
-      ctx.save();
-      ctx.translate(35, PH / 2);
-      ctx.rotate(-Math.PI / 2);
-      ctx.fillStyle = book.color[0];
-      ctx.font = 'bold 11px Arial,sans-serif';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('No.' + String(i + 1).padStart(2, '0'), 0, 0);
-      ctx.restore();
-
-      drawGenreSticker(ctx, book.genre, book.color[0], 84, 118);
-
-      const fs = book.title.length > 20 ? 24 : 30;
-      ctx.fillStyle = '#1a1a1a';
-      ctx.font = `bold ${fs}px Georgia,serif`;
-      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-      const afterTitle = wrapText(ctx, book.title, 84, 158, PW - 120, fs + 10);
-
-      ctx.font = 'italic 16px Georgia,serif';
-      ctx.fillStyle = '#555';
-      ctx.fillText('by ' + book.author, 84, afterTitle + 4);
-
-      ctx.font = '13px Arial,sans-serif';
-      ctx.fillStyle = '#888';
-      ctx.fillText('Published ' + book.year + '  ·  ' + book.pages + ' pages', 84, afterTitle + 32);
-
-      drawPolaroid(ctx, book, PW * 0.68, PH * 0.68, tilt, coverImgs && coverImgs[book.id]);
-
-      ctx.font = '11px Arial'; ctx.fillStyle = '#aaa';
-      ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-      const n = i * 2 + 2;
-      ctx.fillText(n + '-' + (n+1) + '  ·  ' + (n + 2), 84, PH - 12);
-
+      drawRuled(ctx, leftNum);
       drawSpiral(ctx, spineEdge(pageIndex), false);
     }));
     pageIndex++;
 
-    // Right page
     pages.push(makePage(ctx => {
-      drawRuled(ctx);
-      drawDateBox(ctx, rd, true);
-
-      let stars = '';
-      for (let s = 1; s <= 5; s++)
-        stars += book.rating >= s ? '★' : book.rating >= s - 0.5 ? '✦' : '☆';
-      ctx.font = '26px Arial,sans-serif';
-      ctx.fillStyle = '#c8992a';
-      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-      ctx.fillText(stars, 84, 118);
-      ctx.font = '12px Arial,sans-serif';
-      ctx.fillStyle = '#888';
-      ctx.fillText('  ' + book.rating + ' / 5', 84 + ctx.measureText(stars).width, 126);
-
-      ctx.font = 'bold 13px Arial,sans-serif';
-      ctx.fillStyle = '#444';
-      ctx.fillText('MY THOUGHTS', 84, 162);
-
-      ctx.strokeStyle = book.color[0]; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.moveTo(84, 178); ctx.lineTo(84 + 110, 178); ctx.stroke();
-
-      ctx.font = '15px Georgia,serif';
-      ctx.fillStyle = '#2a2a2a';
-      ctx.textBaseline = 'top';
-      wrapText(ctx, book.description, 84, 192, PW - 120, 26);
-
-      ctx.font = '11px Arial'; ctx.fillStyle = '#aaa';
-      ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
-      ctx.fillText(String(i * 2 + 3), PW - 20, PH - 12);
-
+      drawRuled(ctx, rightNum);
       drawSpiral(ctx, spineEdge(pageIndex), false);
     }));
     pageIndex++;
-  });
+  }
 
-  // Back cover
+  // Back cover — dark placeholder
   pages.push(makePage(ctx => {
     const g = ctx.createLinearGradient(PW, PH, 0, 0);
     g.addColorStop(0, '#1e0f08'); g.addColorStop(1, '#3a1e10');
     ctx.fillStyle = g; ctx.fillRect(0, 0, PW, PH);
     ctx.strokeStyle = 'rgba(212,168,83,0.4)'; ctx.lineWidth = 2;
     ctx.strokeRect(22, 22, PW - 44, PH - 44);
-
-    ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(212,168,83,0.55)';
-    ctx.font = 'italic 22px Georgia,serif';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('"A reader lives a thousand lives', PW / 2, PH / 2 - 28);
-    ctx.fillText('before he dies."', PW / 2, PH / 2 + 10);
-    ctx.font = '14px Georgia,serif';
-    ctx.fillStyle = 'rgba(212,168,83,0.35)';
-    ctx.fillText('— George R.R. Martin', PW / 2, PH / 2 + 48);
-
     drawSpiral(ctx, spineEdge(pageIndex), true);
   }));
 
@@ -713,9 +556,8 @@ function generatePages(books, coverImgs) {
    INIT
 ============================= */
 document.addEventListener('DOMContentLoaded', async () => {
-  const books     = await loadBooks();
-  const coverImgs = await preloadCovers(books);
-  const pages     = generatePages(books, coverImgs);
+  const books = await loadBooks();
+  const pages = generatePages(books, {});
 
   totalPageCount = pages.length;
   document.getElementById('ctrl-page-total').textContent = totalPageCount;
@@ -757,12 +599,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Hide any remaining native DearFlip UI elements after render
-  setTimeout(() => {
-    document.querySelectorAll('.df-ui-btn, .df-ui-prev, .df-ui-next, .df-ui-nav, .df-controls-bottom').forEach(el => {
-      el.style.cssText += '; display:none!important; visibility:hidden!important;';
+  // Permanently kill native DearFlip controls (CSS + MutationObserver layer)
+  const NAV_SELECTORS = '.df-ui-nav,.df-ui-prev,.df-ui-next,.df-ui-left,.df-ui-right,.df-control-bar,.df-controls-bottom';
+  function killNativeControls() {
+    document.querySelectorAll(NAV_SELECTORS).forEach(el => {
+      el.style.setProperty('display',          'none',    'important');
+      el.style.setProperty('visibility',       'hidden',  'important');
+      el.style.setProperty('opacity',          '0',       'important');
+      el.style.setProperty('pointer-events',   'none',    'important');
     });
-  }, 800);
+  }
+  // Run immediately and after brief delay
+  killNativeControls();
+  setTimeout(killNativeControls, 300);
+  setTimeout(killNativeControls, 800);
+  // Watch for any DearFlip re-injection of nav elements
+  new MutationObserver(killNativeControls).observe(document.body, { childList: true, subtree: true });
 
   updatePageDecor(1);
   initSpatialNav(flipApp, pages.length);

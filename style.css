@@ -17,20 +17,31 @@ html, body {
 }
 
 /* ===========================
+   LAYOUT GRID CONSTANTS
+   All peripheral elements snap to this 16px edge grid.
+   --nav-h: visual height of the pill (36px buttons + 8px top/bottom inset)
+=========================== */
+:root {
+  --edge: 16px;
+  --nav-h: 52px;
+}
+
+/* ===========================
    KILL ALL NATIVE DEARFLIP UI
-   (arrows, white control bar, page nav buttons)
+   CSS layer. JS layer (MutationObserver) handles runtime re-injection.
 =========================== */
 .df-control-bar,
+.df-controls-bottom,
+.df-ui-nav,
 .df-ui-prev,
 .df-ui-next,
-.df-ui-nav,
 .df-ui-left,
 .df-ui-right,
 .df-ui-more,
-.df-ui-search,
-.df-ui-btn {
+.df-ui-search {
   display: none !important;
   visibility: hidden !important;
+  opacity: 0 !important;
   pointer-events: none !important;
 }
 
@@ -39,7 +50,7 @@ html, body {
 =========================== */
 .stage-label {
   position: fixed;
-  top: 14px;
+  top: var(--edge);
   left: 50%;
   transform: translateX(-50%);
   z-index: 50;
@@ -55,6 +66,9 @@ html, body {
 
 /* ===========================
    SIDE TEXT
+   writing-mode keeps element box aligned to edges — no rotation math.
+   Left: reads bottom-to-top (vertical-rl + rotate 180°)
+   Right: reads top-to-bottom (vertical-rl)
 =========================== */
 .side-text {
   position: fixed;
@@ -72,24 +86,22 @@ html, body {
   text-transform: uppercase;
   color: rgba(0, 0, 0, 0.35);
   white-space: nowrap;
-  transition: opacity 0.35s ease;
+  transition: opacity 0.32s ease;
 }
 
 .side-text--left {
-  left: 14px;
-  transform: translateY(-50%) rotate(-90deg);
-  transform-origin: center center;
+  left: var(--edge);
+  writing-mode: vertical-rl;
+  transform: translateY(-50%) rotate(180deg);
 }
 
 .side-text--right {
-  right: 14px;
-  transform: translateY(-50%) rotate(90deg);
-  transform-origin: center center;
+  right: var(--edge);
+  writing-mode: vertical-rl;
+  transform: translateY(-50%);
 }
 
-.side-text.transitioning span {
-  opacity: 0;
-}
+.side-text.transitioning span { opacity: 0; }
 
 /* ===========================
    ARTIFACTS
@@ -101,17 +113,17 @@ html, body {
   gap: 5px;
   z-index: 50;
   pointer-events: none;
-  transition: opacity 0.35s ease;
+  transition: opacity 0.32s ease;
 }
+.artifacts.transitioning { opacity: 0; }
 
-.artifacts.transitioning {
-  opacity: 0;
-}
+/* Top — same top as stage-label */
+.artifacts--top-left  { top: var(--edge); left:  var(--edge); }
+.artifacts--top-right { top: var(--edge); right: var(--edge); }
 
-.artifacts--top-left  { top: 32px;    left: 40px;  }
-.artifacts--top-right { top: 32px;    right: 40px; }
-.artifacts--bottom-left  { bottom: 80px; left: 40px;  }
-.artifacts--bottom-right { bottom: 80px; right: 40px; }
+/* Bottom — 16px gap above the nav pill */
+.artifacts--bottom-left  { bottom: calc(var(--nav-h) + var(--edge) * 2); left:  var(--edge); }
+.artifacts--bottom-right { bottom: calc(var(--nav-h) + var(--edge) * 2); right: var(--edge); }
 
 .artifact-item {
   width: 46px;
@@ -131,8 +143,7 @@ html, body {
 }
 
 .artifact-item img {
-  width: 100%;
-  height: 100%;
+  width: 100%; height: 100%;
   object-fit: cover;
   display: block;
 }
@@ -161,10 +172,11 @@ html, body {
 
 /* ===========================
    MERGED NAV PILL
+   Sits var(--edge) from the bottom.
 =========================== */
 #ctrl-nav {
   position: fixed;
-  bottom: 28px;
+  bottom: var(--edge);
   left: 50%;
   transform: translateX(-50%);
   z-index: 200;
@@ -176,7 +188,6 @@ html, body {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 0;
   isolation: isolate;
 }
 
@@ -197,23 +208,17 @@ html, body {
   min-width: 52px;
 }
 
-.ctrl-counter-sep {
-  opacity: 0.4;
-  margin: 0 1px;
-}
+.ctrl-counter-sep { opacity: 0.4; margin: 0 1px; }
 
-/* Divider between counter and buttons */
 #ctrl-counter::after {
   content: '';
   position: absolute;
   right: 0;
-  top: 20%;
-  height: 60%;
-  width: 1px;
+  top: 20%; height: 60%; width: 1px;
   background: rgba(255, 255, 255, 0.15);
 }
 
-/* Tooltip window */
+/* Tooltip */
 #ctrl-tooltip {
   position: absolute;
   bottom: calc(100% + 14px);
@@ -258,7 +263,7 @@ html, body {
   opacity: 0.45;
 }
 
-/* Button row */
+/* Buttons */
 #ctrl-buttons {
   display: flex;
   list-style: none;
@@ -266,9 +271,7 @@ html, body {
   z-index: 1;
 }
 
-#ctrl-buttons li {
-  display: grid;
-}
+#ctrl-buttons li { display: grid; }
 
 .ctrl-btn {
   width: 36px;
@@ -287,23 +290,11 @@ html, body {
   z-index: 1;
 }
 
-.ctrl-btn:hover {
-  background: rgba(255, 255, 255, 0.13);
-  color: #fff;
-}
+.ctrl-btn:hover  { background: rgba(255,255,255,0.13); color: #fff; }
+.ctrl-btn:active { background: rgba(255,255,255,0.20); transform: scale(0.93); }
+.ctrl-btn svg    { width: 100%; height: 100%; display: block; }
 
-.ctrl-btn:active {
-  background: rgba(255, 255, 255, 0.2);
-  transform: scale(0.93);
-}
-
-.ctrl-btn svg {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-/* Dark pill background */
+/* Pill background */
 .ctrl-pill-bg {
   position: absolute;
   inset: -8px;
