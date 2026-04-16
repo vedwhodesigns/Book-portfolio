@@ -1,10 +1,9 @@
 /* =============================
    PAGE PERIPHERAL DATA
    Each entry maps to one flipbook page (1-indexed).
-   left/right: text shown on side edges — swap with your own copy.
-   topLeft/topRight: artifact clusters at top corners.
-   bottomLeft/bottomRight: thumbnail strip at bottom corners.
-   Each artifact: { label: string } for placeholder, or { src: string, label: string } for image.
+   left/right: text shown on rotated side edges.
+   topLeft/topRight/bottomLeft/bottomRight: artifact clusters.
+   Artifact: { label: string } for placeholder, { src: string, label: string } for image.
 ============================= */
 const PAGE_DATA = [
   // 1 — Front Cover
@@ -16,7 +15,7 @@ const PAGE_DATA = [
     bottomLeft:  [{ label: "WORK" }, { label: "CRAFT" }, { label: "IDEA" }],
     bottomRight: [{ label: "DESIGN" }, { label: "ART" }, { label: "TYPE" }],
   },
-  // 2–3 — Spread 1
+  // 2–3 Spread 1
   {
     left:        "CHAPTER 01 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
     right:       "SPREAD 01 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
@@ -33,7 +32,7 @@ const PAGE_DATA = [
     bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }],
     bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
   },
-  // 4–5 — Spread 2
+  // 4–5 Spread 2
   {
     left:        "CHAPTER 02 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
     right:       "SPREAD 02 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
@@ -50,7 +49,7 @@ const PAGE_DATA = [
     bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
     bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }],
   },
-  // 6–7 — Spread 3
+  // 6–7 Spread 3
   {
     left:        "CHAPTER 03 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
     right:       "SPREAD 03 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
@@ -67,7 +66,7 @@ const PAGE_DATA = [
     bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }],
     bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
   },
-  // 8–9 — Spread 4
+  // 8–9 Spread 4
   {
     left:        "CHAPTER 04 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
     right:       "SPREAD 04 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
@@ -84,7 +83,7 @@ const PAGE_DATA = [
     bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
     bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }],
   },
-  // 10–11 — Spread 5
+  // 10–11 Spread 5
   {
     left:        "CHAPTER 05 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
     right:       "SPREAD 05 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
@@ -101,7 +100,7 @@ const PAGE_DATA = [
     bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }],
     bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
   },
-  // 12–13 — Spread 6
+  // 12–13 Spread 6
   {
     left:        "CHAPTER 06 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
     right:       "SPREAD 06 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
@@ -118,7 +117,7 @@ const PAGE_DATA = [
     bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
     bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }],
   },
-  // 14–15 — Spread 7
+  // 14–15 Spread 7
   {
     left:        "CHAPTER 07 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
     right:       "SPREAD 07 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
@@ -135,7 +134,7 @@ const PAGE_DATA = [
     bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }],
     bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
   },
-  // 16–17 — Spread 8
+  // 16–17 Spread 8
   {
     left:        "CHAPTER 08 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
     right:       "SPREAD 08 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
@@ -152,7 +151,7 @@ const PAGE_DATA = [
     bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
     bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }],
   },
-  // 18–19 — Spread 9
+  // 18–19 Spread 9
   {
     left:        "CHAPTER 09 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
     right:       "SPREAD 09 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
@@ -169,7 +168,7 @@ const PAGE_DATA = [
     bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }],
     bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
   },
-  // 20–21 — Spread 10
+  // 20–21 Spread 10
   {
     left:        "CHAPTER 10 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
     right:       "SPREAD 10 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
@@ -186,7 +185,7 @@ const PAGE_DATA = [
     bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
     bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }],
   },
-  // 22–23 — Spread 11
+  // 22–23 Spread 11
   {
     left:        "CHAPTER 11 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
     right:       "SPREAD 11 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
@@ -203,7 +202,7 @@ const PAGE_DATA = [
     bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }],
     bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
   },
-  // 24–25 — Spread 12
+  // 24–25 Spread 12
   {
     left:        "CHAPTER 12 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
     right:       "SPREAD 12 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
@@ -234,6 +233,8 @@ const PAGE_DATA = [
 /* =============================
    PERIPHERAL CONTENT UPDATER
 ============================= */
+let totalPageCount = 26;
+
 function buildArtifacts(items) {
   const frag = document.createDocumentFragment();
   items.forEach((item, i) => {
@@ -258,10 +259,19 @@ function buildArtifacts(items) {
   return frag;
 }
 
+function updatePageCounter(pageNum) {
+  const numEl   = document.getElementById('ctrl-page-num');
+  const totalEl = document.getElementById('ctrl-page-total');
+  if (numEl)   numEl.textContent   = pageNum;
+  if (totalEl) totalEl.textContent = totalPageCount;
+}
+
 function updatePageDecor(pageNum) {
   const idx = Math.max(0, Math.min(pageNum - 1, PAGE_DATA.length - 1));
   const data = PAGE_DATA[idx];
   if (!data) return;
+
+  updatePageCounter(pageNum);
 
   const leftEl   = document.getElementById('side-text-left');
   const rightEl  = document.getElementById('side-text-right');
@@ -272,27 +282,23 @@ function updatePageDecor(pageNum) {
   const bl = document.getElementById('artifacts-bottom-left');
   const br = document.getElementById('artifacts-bottom-right');
 
-  // Fade out
   [leftEl, rightEl, tl, tr, bl, br].forEach(el => el.classList.add('transitioning'));
 
   setTimeout(() => {
-    // Update text
     leftTxt.textContent  = data.left  || '';
     rightTxt.textContent = data.right || '';
 
-    // Update artifacts
     tl.innerHTML = ''; tl.appendChild(buildArtifacts(data.topLeft     || []));
     tr.innerHTML = ''; tr.appendChild(buildArtifacts(data.topRight    || []));
     bl.innerHTML = ''; bl.appendChild(buildArtifacts(data.bottomLeft  || []));
     br.innerHTML = ''; br.appendChild(buildArtifacts(data.bottomRight || []));
 
-    // Fade in
     [leftEl, rightEl, tl, tr, bl, br].forEach(el => el.classList.remove('transitioning'));
-  }, 350);
+  }, 320);
 }
 
 /* =============================
-   BOOK DATA
+   BOOK DATA (static fallback)
 ============================= */
 const BOOKS = [
   { id:1,  title:"The Great Gatsby",          author:"F. Scott Fitzgerald", genre:"Classic Fiction", year:1925, pages:180, rating:4.5, color:["#8b2635","#c0392b"], description:"A portrait of the Jazz Age in all of its excess and decadence. Jay Gatsby's obsession with the beautiful Daisy Buchanan becomes a timeless meditation on the American Dream and the impossibility of recapturing the past." },
@@ -384,6 +390,66 @@ function makePage(drawFn) {
   c.width = PW; c.height = PH;
   drawFn(c.getContext('2d'));
   return c.toDataURL('image/jpeg', 0.91);
+}
+
+/* ── Spiral binding ──────────────────────────────────────────
+   side: 'left' | 'right'
+   isDark: true for dark-background pages (cover, back cover)
+*/
+function drawSpiral(ctx, side, isDark) {
+  const x         = side === 'left' ? 15 : PW - 15;
+  const spacing   = 23;
+  const startY    = 38;
+  const count     = Math.floor((PH - startY * 2) / spacing);
+  const rW        = 8;
+  const rH        = 5.5;
+  const ringColor = isDark ? 'rgba(212,175,70,0.75)'  : 'rgba(175,175,175,0.85)';
+  const backColor = isDark ? 'rgba(130,100,30,0.55)'  : 'rgba(120,120,120,0.5)';
+  const holeColor = isDark ? 'rgba(0,0,0,0.55)'       : 'rgba(0,0,0,0.18)';
+
+  for (let i = 0; i < count; i++) {
+    const cy = startY + i * spacing;
+
+    // Hole punch
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(x, cy, 4.5, 3.5, 0, 0, Math.PI * 2);
+    ctx.fillStyle = holeColor;
+    ctx.fill();
+    ctx.restore();
+
+    // Back arc (behind page)
+    const backStart = side === 'left' ? 0         : Math.PI;
+    const backEnd   = side === 'left' ? Math.PI   : Math.PI * 2;
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(x, cy, rW, rH, 0, backStart, backEnd);
+    ctx.strokeStyle = backColor;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+
+    // Front arc (over page — drawn last so it's on top)
+    const frontStart = side === 'left' ? Math.PI   : 0;
+    const frontEnd   = side === 'left' ? Math.PI * 2 : Math.PI;
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(x, cy, rW, rH, 0, frontStart, frontEnd);
+    ctx.strokeStyle = ringColor;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+/* Spine edge for a given page index (0-based in pages array):
+   - index 0 (front cover): left
+   - odd index (left-side spread page): right
+   - even index > 0 (right-side spread page or back cover): left
+*/
+function spineEdge(i) {
+  if (i === 0) return 'left';
+  return i % 2 === 1 ? 'right' : 'left';
 }
 
 function drawRuled(ctx) {
@@ -494,7 +560,9 @@ function drawGenreSticker(ctx, label, color, x, y) {
 ============================= */
 function generatePages(books, coverImgs) {
   const pages = [];
+  let pageIndex = 0;
 
+  // Front cover
   pages.push(makePage(ctx => {
     const g = ctx.createLinearGradient(0, 0, PW, PH);
     g.addColorStop(0, '#1e0f08'); g.addColorStop(1, '#3a1e10');
@@ -528,13 +596,18 @@ function generatePages(books, coverImgs) {
     ctx.font = '14px Georgia,serif';
     ctx.fillStyle = 'rgba(240,201,122,0.38)';
     ctx.fillText('A Collection of 12 Books', PW / 2, PH - 76);
-  }));
 
+    drawSpiral(ctx, spineEdge(pageIndex), true);
+  }));
+  pageIndex++;
+
+  // Book spreads
   books.forEach((book, i) => {
     const ld = bookDate(i, 0);
     const rd = bookDate(i, 1);
     const tilt = [-4, 2, -2, 3, -3, 2][i % 6];
 
+    // Left page
     pages.push(makePage(ctx => {
       drawRuled(ctx);
       drawDateBox(ctx, ld, false);
@@ -570,8 +643,12 @@ function generatePages(books, coverImgs) {
       ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
       const n = i * 2 + 2;
       ctx.fillText(n + '-' + (n+1) + '  ·  ' + (n + 2), 84, PH - 12);
-    }));
 
+      drawSpiral(ctx, spineEdge(pageIndex), false);
+    }));
+    pageIndex++;
+
+    // Right page
     pages.push(makePage(ctx => {
       drawRuled(ctx);
       drawDateBox(ctx, rd, true);
@@ -602,9 +679,13 @@ function generatePages(books, coverImgs) {
       ctx.font = '11px Arial'; ctx.fillStyle = '#aaa';
       ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
       ctx.fillText(String(i * 2 + 3), PW - 20, PH - 12);
+
+      drawSpiral(ctx, spineEdge(pageIndex), false);
     }));
+    pageIndex++;
   });
 
+  // Back cover
   pages.push(makePage(ctx => {
     const g = ctx.createLinearGradient(PW, PH, 0, 0);
     g.addColorStop(0, '#1e0f08'); g.addColorStop(1, '#3a1e10');
@@ -621,6 +702,8 @@ function generatePages(books, coverImgs) {
     ctx.font = '14px Georgia,serif';
     ctx.fillStyle = 'rgba(212,168,83,0.35)';
     ctx.fillText('— George R.R. Martin', PW / 2, PH / 2 + 48);
+
+    drawSpiral(ctx, spineEdge(pageIndex), true);
   }));
 
   return pages;
@@ -634,7 +717,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const coverImgs = await preloadCovers(books);
   const pages     = generatePages(books, coverImgs);
 
-  // Set minZoom before and in config for maximum compatibility
+  totalPageCount = pages.length;
+  document.getElementById('ctrl-page-total').textContent = totalPageCount;
+
   if (window.DEARFLIP) {
     window.DEARFLIP.defaults.minZoom = 0.35;
   }
@@ -658,44 +743,53 @@ document.addEventListener('DOMContentLoaded', async () => {
     minZoom:              0.35,
     maxZoom:              3,
     onFlip: function(e, pageNum) {
-      const num = (typeof pageNum === 'object' && pageNum !== null)
-        ? (pageNum.page || pageNum.currentPage || 1)
+      const num = typeof pageNum === 'object'
+        ? (pageNum && (pageNum.page || pageNum.currentPage) || 1)
         : (pageNum || 1);
       updatePageDecor(num);
     },
   });
 
-  // Also listen via jQuery event for redundancy
+  // jQuery event fallback for page change
   window.jQuery('#portfolio-viewer').on('afterFlip.dearflip flip.dearflip', function(e, data) {
     if (data && (data.page || data.currentPage)) {
       updatePageDecor(data.page || data.currentPage);
     }
   });
 
-  // Set initial peripheral content
-  updatePageDecor(1);
+  // Hide any remaining native DearFlip UI elements after render
+  setTimeout(() => {
+    document.querySelectorAll('.df-ui-btn, .df-ui-prev, .df-ui-next, .df-ui-nav, .df-controls-bottom').forEach(el => {
+      el.style.cssText += '; display:none!important; visibility:hidden!important;';
+    });
+  }, 800);
 
-  setTimeout(() => initSpatialNav(flipApp), 600);
+  updatePageDecor(1);
+  initSpatialNav(flipApp, pages.length);
 });
 
 /* =============================
    SPATIAL TOOLTIP NAV
 ============================= */
-function initSpatialNav(flipApp) {
+function initSpatialNav(flipApp, totalPages) {
   const tooltip    = document.getElementById('ctrl-tooltip');
   const labelsUl   = document.getElementById('ctrl-labels');
   const labelItems = Array.from(labelsUl.querySelectorAll('li'));
   const buttons    = Array.from(document.querySelectorAll('.ctrl-btn'));
   const BTN = 36;
 
+  let soundOn = true;
+
   function showTooltip(idx) {
     const item   = labelItems[idx];
     const itemW  = item.offsetWidth;
     const itemOL = item.offsetLeft;
     const x      = -((itemW - BTN) / 2);
-    const leftPct = (idx / buttons.length) * 100;
+    // Offset tooltip to account for the counter to the left of buttons
+    const counterW = document.getElementById('ctrl-counter').offsetWidth || 52;
+    const leftPx   = counterW + (idx / buttons.length) * (buttons.length * BTN);
 
-    tooltip.style.left      = leftPct + '%';
+    tooltip.style.left      = leftPx + 'px';
     tooltip.style.transform = `translateX(${x}px)`;
     tooltip.style.width     = itemW + 'px';
     tooltip.style.opacity   = '1';
@@ -723,32 +817,63 @@ function initSpatialNav(flipApp) {
     return false;
   }
 
-  document.getElementById('ctrl-cover').addEventListener('click', () => {
-    try { flipApp.gotoPage(1); } catch (_) {
-      try { flipApp.app.gotoPage(1); } catch (_2) {
-        clickNative('.df-btn-first-page, [data-df-btn="firstPage"]');
-      }
-    }
+  function gotoPage(num) {
+    try { flipApp.gotoPage(num); return; } catch (_) {}
+    try { flipApp.app.gotoPage(num); } catch (_) {}
+  }
+
+  // First page
+  document.getElementById('ctrl-first').addEventListener('click', () => {
+    gotoPage(1);
+    updatePageDecor(1);
   });
 
+  // Cover (home)
+  document.getElementById('ctrl-cover').addEventListener('click', () => {
+    gotoPage(1);
+    updatePageDecor(1);
+  });
+
+  // Thumbnails
   document.getElementById('ctrl-pages').addEventListener('click', () => {
     if (!clickNative('.df-btn-thumbnail')) {
       try { flipApp.app.toggleThumbnail(); } catch (_) {}
     }
   });
 
+  // Zoom in
   document.getElementById('ctrl-zoomin').addEventListener('click', () => {
     if (!clickNative('.df-btn-zoom-in, [class*="zoom-in"]')) {
       try { flipApp.app.zoomIn(); } catch (_) {}
     }
   });
 
+  // Zoom out
   document.getElementById('ctrl-zoomout').addEventListener('click', () => {
     if (!clickNative('.df-btn-zoom-out, [class*="zoom-out"]')) {
       try { flipApp.app.zoomOut(); } catch (_) {}
     }
   });
 
+  // Last page
+  document.getElementById('ctrl-last').addEventListener('click', () => {
+    gotoPage(totalPages);
+    updatePageDecor(totalPages);
+  });
+
+  // Sound toggle
+  document.getElementById('ctrl-sound').addEventListener('click', () => {
+    soundOn = !soundOn;
+    try {
+      if (window.DEARFLIP) window.DEARFLIP.defaults.soundEnable = soundOn;
+      if (flipApp.app) flipApp.app.enableSound = soundOn;
+    } catch (_) {}
+    document.getElementById('icon-sound-on').style.display  = soundOn ? ''      : 'none';
+    document.getElementById('icon-sound-off').style.display = soundOn ? 'none'  : '';
+    document.getElementById('ctrl-sound').title = soundOn ? 'Sound On' : 'Sound Off';
+  });
+
+  // Fullscreen
   document.getElementById('ctrl-fullscreen').addEventListener('click', () => {
     if (!clickNative('.df-btn-fullscreen, [class*="fullscreen"]')) {
       try { flipApp.toggleFullScreen(); } catch (_) {
@@ -760,6 +885,14 @@ function initSpatialNav(flipApp) {
           }
         }
       }
+    }
+  });
+
+  // Download PDF (stub — ready for when PDF source is connected)
+  document.getElementById('ctrl-download').addEventListener('click', () => {
+    if (!clickNative('.df-btn-download, [data-df-btn="download"]')) {
+      // When a PDF source URL is added, replace this with: window.open(PDF_URL, '_blank')
+      alert('PDF download will be available once the portfolio PDF is connected.');
     }
   });
 }

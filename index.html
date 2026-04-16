@@ -31,21 +31,39 @@
   <!-- FLIPBOOK -->
   <div id="portfolio-viewer"></div>
 
-  <!-- NAV -->
+  <!-- MERGED NAV PILL -->
   <nav id="ctrl-nav" aria-label="Flipbook controls">
     <div id="ctrl-core">
 
+      <!-- Tooltip label window -->
       <div id="ctrl-tooltip" aria-hidden="true">
         <ul id="ctrl-labels">
+          <li><span>First Page</span></li>
           <li><span>Cover</span></li>
           <li><span>Pages</span></li>
           <li><span>Zoom In</span></li>
           <li><span>Zoom Out</span></li>
+          <li><span>Last Page</span></li>
+          <li><span>Sound</span></li>
           <li><span>Full Screen</span></li>
+          <li><span>Download</span></li>
         </ul>
       </div>
 
+      <!-- Page counter -->
+      <div id="ctrl-counter" aria-live="polite">
+        <span id="ctrl-page-num">1</span><span class="ctrl-counter-sep">/</span><span id="ctrl-page-total">26</span>
+      </div>
+
+      <!-- Buttons -->
       <ul id="ctrl-buttons">
+
+        <li><button class="ctrl-btn" id="ctrl-first" title="First Page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15.75 19.5 8.25 12l7.5-7.5"/><line x1="6" y1="4.5" x2="6" y2="19.5"/>
+          </svg>
+          <span class="sr-only">First Page</span>
+        </button></li>
 
         <li><button class="ctrl-btn" id="ctrl-cover" title="Cover">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -75,11 +93,37 @@
           <span class="sr-only">Zoom Out</span>
         </button></li>
 
+        <li><button class="ctrl-btn" id="ctrl-last" title="Last Page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8.25 4.5l7.5 7.5-7.5 7.5"/><line x1="18" y1="4.5" x2="18" y2="19.5"/>
+          </svg>
+          <span class="sr-only">Last Page</span>
+        </button></li>
+
+        <li><button class="ctrl-btn" id="ctrl-sound" title="Sound">
+          <!-- Sound ON icon (default) -->
+          <svg id="icon-sound-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19.114 5.636a9 9 0 0 1 0 12.728M16.463 8.288a5.25 5.25 0 0 1 0 7.424M6.75 8.25l4.72-4.72a.75.75 0 0 1 1.28.53v15.88a.75.75 0 0 1-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.009 9.009 0 0 1 2.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75Z"/>
+          </svg>
+          <!-- Sound OFF icon (hidden by default) -->
+          <svg id="icon-sound-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+            <path d="M17.25 9.75 19.5 12m0 0 2.25 2.25M19.5 12l2.25-2.25M19.5 12l-2.25 2.25m-10.5-6 4.72-4.72a.75.75 0 0 1 1.28.53v15.88a.75.75 0 0 1-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 0 1 2.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75Z"/>
+          </svg>
+          <span class="sr-only">Sound</span>
+        </button></li>
+
         <li><button class="ctrl-btn" id="ctrl-fullscreen" title="Full Screen">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15"/>
           </svg>
           <span class="sr-only">Full Screen</span>
+        </button></li>
+
+        <li><button class="ctrl-btn" id="ctrl-download" title="Download PDF">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+          </svg>
+          <span class="sr-only">Download PDF</span>
         </button></li>
 
       </ul>

@@ -17,6 +17,24 @@ html, body {
 }
 
 /* ===========================
+   KILL ALL NATIVE DEARFLIP UI
+   (arrows, white control bar, page nav buttons)
+=========================== */
+.df-control-bar,
+.df-ui-prev,
+.df-ui-next,
+.df-ui-nav,
+.df-ui-left,
+.df-ui-right,
+.df-ui-more,
+.df-ui-search,
+.df-ui-btn {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* ===========================
    TOP CENTER LABEL
 =========================== */
 .stage-label {
@@ -28,7 +46,7 @@ html, body {
   font-size: 9px;
   font-weight: 800;
   letter-spacing: 5px;
-  color: rgba(0, 0, 0, 0.3);
+  color: rgba(0, 0, 0, 0.28);
   text-transform: uppercase;
   pointer-events: none;
   user-select: none;
@@ -44,7 +62,6 @@ html, body {
   z-index: 50;
   pointer-events: none;
   user-select: none;
-  max-width: 40vh;
 }
 
 .side-text span {
@@ -53,9 +70,9 @@ html, body {
   font-weight: 700;
   letter-spacing: 2.5px;
   text-transform: uppercase;
-  color: rgba(0, 0, 0, 0.38);
+  color: rgba(0, 0, 0, 0.35);
   white-space: nowrap;
-  transition: opacity 0.4s ease;
+  transition: opacity 0.35s ease;
 }
 
 .side-text--left {
@@ -91,29 +108,11 @@ html, body {
   opacity: 0;
 }
 
-/* TOP */
-.artifacts--top-left {
-  top: 32px;
-  left: 40px;
-}
+.artifacts--top-left  { top: 32px;    left: 40px;  }
+.artifacts--top-right { top: 32px;    right: 40px; }
+.artifacts--bottom-left  { bottom: 80px; left: 40px;  }
+.artifacts--bottom-right { bottom: 80px; right: 40px; }
 
-.artifacts--top-right {
-  top: 32px;
-  right: 40px;
-}
-
-/* BOTTOM */
-.artifacts--bottom-left {
-  bottom: 22px;
-  left: 40px;
-}
-
-.artifacts--bottom-right {
-  bottom: 22px;
-  right: 40px;
-}
-
-/* Artifact items */
 .artifact-item {
   width: 46px;
   height: 46px;
@@ -138,17 +137,11 @@ html, body {
   display: block;
 }
 
-.artifact-item.artifact-item--small {
-  width: 36px;
-  height: 36px;
-}
-
 .artifact-arrow {
   font-size: 9px;
   font-weight: 700;
   color: rgba(0, 0, 0, 0.28);
   flex-shrink: 0;
-  margin: 0 1px;
 }
 
 /* ===========================
@@ -166,16 +159,8 @@ html, body {
   background: transparent !important;
 }
 
-.df-control-bar {
-  position: absolute !important;
-  top: -9999px !important;
-  left: -9999px !important;
-  pointer-events: none !important;
-  visibility: hidden !important;
-}
-
 /* ===========================
-   SPATIAL TOOLTIP NAV
+   MERGED NAV PILL
 =========================== */
 #ctrl-nav {
   position: fixed;
@@ -189,10 +174,46 @@ html, body {
 
 #ctrl-core {
   position: relative;
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
   isolation: isolate;
 }
 
+/* Page counter */
+#ctrl-counter {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 0 10px 0 14px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: rgba(255, 255, 255, 0.65);
+  user-select: none;
+  white-space: nowrap;
+  min-width: 52px;
+}
+
+.ctrl-counter-sep {
+  opacity: 0.4;
+  margin: 0 1px;
+}
+
+/* Divider between counter and buttons */
+#ctrl-counter::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 20%;
+  height: 60%;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Tooltip window */
 #ctrl-tooltip {
   position: absolute;
   bottom: calc(100% + 14px);
@@ -237,6 +258,7 @@ html, body {
   opacity: 0.45;
 }
 
+/* Button row */
 #ctrl-buttons {
   display: flex;
   list-style: none;
@@ -253,7 +275,7 @@ html, body {
   height: 36px;
   border: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.78);
+  color: rgba(255, 255, 255, 0.72);
   border-radius: 10px;
   cursor: pointer;
   display: flex;
@@ -281,10 +303,11 @@ html, body {
   display: block;
 }
 
+/* Dark pill background */
 .ctrl-pill-bg {
   position: absolute;
   inset: -8px;
-  border-radius: 20px;
+  border-radius: 22px;
   background: rgba(12, 12, 12, 0.68);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
