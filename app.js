@@ -1,4 +1,297 @@
 /* =============================
+   PAGE PERIPHERAL DATA
+   Each entry maps to one flipbook page (1-indexed).
+   left/right: text shown on side edges — swap with your own copy.
+   topLeft/topRight: artifact clusters at top corners.
+   bottomLeft/bottomRight: thumbnail strip at bottom corners.
+   Each artifact: { label: string } for placeholder, or { src: string, label: string } for image.
+============================= */
+const PAGE_DATA = [
+  // 1 — Front Cover
+  {
+    left:        "VEDANT PARIKH — CREATIVE DIRECTOR — 2026",
+    right:       "BOOK PORTFOLIO — A VISUAL ARCHIVE OF WORK",
+    topLeft:     [{ label: "VP" }, { label: "CD" }],
+    topRight:    [{ label: "2026" }, { label: "BK" }],
+    bottomLeft:  [{ label: "WORK" }, { label: "CRAFT" }, { label: "IDEA" }],
+    bottomRight: [{ label: "DESIGN" }, { label: "ART" }, { label: "TYPE" }],
+  },
+  // 2–3 — Spread 1
+  {
+    left:        "CHAPTER 01 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
+    right:       "SPREAD 01 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
+    topLeft:     [{ label: "S01" }, { label: "CH1" }],
+    topRight:    [{ label: "PG2" }, { label: "PG3" }],
+    bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }],
+    bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
+  },
+  {
+    left:        "CHAPTER 01 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
+    right:       "SPREAD 01 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
+    topLeft:     [{ label: "S01" }, { label: "CH1" }],
+    topRight:    [{ label: "PG2" }, { label: "PG3" }],
+    bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }],
+    bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
+  },
+  // 4–5 — Spread 2
+  {
+    left:        "CHAPTER 02 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
+    right:       "SPREAD 02 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
+    topLeft:     [{ label: "S02" }, { label: "CH2" }],
+    topRight:    [{ label: "PG4" }, { label: "PG5" }],
+    bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
+    bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }],
+  },
+  {
+    left:        "CHAPTER 02 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
+    right:       "SPREAD 02 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
+    topLeft:     [{ label: "S02" }, { label: "CH2" }],
+    topRight:    [{ label: "PG4" }, { label: "PG5" }],
+    bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
+    bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }],
+  },
+  // 6–7 — Spread 3
+  {
+    left:        "CHAPTER 03 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
+    right:       "SPREAD 03 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
+    topLeft:     [{ label: "S03" }, { label: "CH3" }],
+    topRight:    [{ label: "PG6" }, { label: "PG7" }],
+    bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }],
+    bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
+  },
+  {
+    left:        "CHAPTER 03 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
+    right:       "SPREAD 03 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
+    topLeft:     [{ label: "S03" }, { label: "CH3" }],
+    topRight:    [{ label: "PG6" }, { label: "PG7" }],
+    bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }],
+    bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
+  },
+  // 8–9 — Spread 4
+  {
+    left:        "CHAPTER 04 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
+    right:       "SPREAD 04 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
+    topLeft:     [{ label: "S04" }, { label: "CH4" }],
+    topRight:    [{ label: "PG8" }, { label: "PG9" }],
+    bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
+    bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }],
+  },
+  {
+    left:        "CHAPTER 04 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
+    right:       "SPREAD 04 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
+    topLeft:     [{ label: "S04" }, { label: "CH4" }],
+    topRight:    [{ label: "PG8" }, { label: "PG9" }],
+    bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
+    bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }],
+  },
+  // 10–11 — Spread 5
+  {
+    left:        "CHAPTER 05 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
+    right:       "SPREAD 05 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
+    topLeft:     [{ label: "S05" }, { label: "CH5" }],
+    topRight:    [{ label: "P10" }, { label: "P11" }],
+    bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }],
+    bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
+  },
+  {
+    left:        "CHAPTER 05 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
+    right:       "SPREAD 05 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
+    topLeft:     [{ label: "S05" }, { label: "CH5" }],
+    topRight:    [{ label: "P10" }, { label: "P11" }],
+    bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }],
+    bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
+  },
+  // 12–13 — Spread 6
+  {
+    left:        "CHAPTER 06 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
+    right:       "SPREAD 06 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
+    topLeft:     [{ label: "S06" }, { label: "CH6" }],
+    topRight:    [{ label: "P12" }, { label: "P13" }],
+    bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
+    bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }],
+  },
+  {
+    left:        "CHAPTER 06 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
+    right:       "SPREAD 06 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
+    topLeft:     [{ label: "S06" }, { label: "CH6" }],
+    topRight:    [{ label: "P12" }, { label: "P13" }],
+    bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
+    bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }],
+  },
+  // 14–15 — Spread 7
+  {
+    left:        "CHAPTER 07 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
+    right:       "SPREAD 07 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
+    topLeft:     [{ label: "S07" }, { label: "CH7" }],
+    topRight:    [{ label: "P14" }, { label: "P15" }],
+    bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }],
+    bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
+  },
+  {
+    left:        "CHAPTER 07 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
+    right:       "SPREAD 07 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
+    topLeft:     [{ label: "S07" }, { label: "CH7" }],
+    topRight:    [{ label: "P14" }, { label: "P15" }],
+    bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }],
+    bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
+  },
+  // 16–17 — Spread 8
+  {
+    left:        "CHAPTER 08 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
+    right:       "SPREAD 08 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
+    topLeft:     [{ label: "S08" }, { label: "CH8" }],
+    topRight:    [{ label: "P16" }, { label: "P17" }],
+    bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
+    bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }],
+  },
+  {
+    left:        "CHAPTER 08 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
+    right:       "SPREAD 08 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
+    topLeft:     [{ label: "S08" }, { label: "CH8" }],
+    topRight:    [{ label: "P16" }, { label: "P17" }],
+    bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
+    bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }],
+  },
+  // 18–19 — Spread 9
+  {
+    left:        "CHAPTER 09 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
+    right:       "SPREAD 09 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
+    topLeft:     [{ label: "S09" }, { label: "CH9" }],
+    topRight:    [{ label: "P18" }, { label: "P19" }],
+    bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }],
+    bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
+  },
+  {
+    left:        "CHAPTER 09 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
+    right:       "SPREAD 09 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
+    topLeft:     [{ label: "S09" }, { label: "CH9" }],
+    topRight:    [{ label: "P18" }, { label: "P19" }],
+    bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }],
+    bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
+  },
+  // 20–21 — Spread 10
+  {
+    left:        "CHAPTER 10 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
+    right:       "SPREAD 10 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
+    topLeft:     [{ label: "S10" }, { label: "C10" }],
+    topRight:    [{ label: "P20" }, { label: "P21" }],
+    bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
+    bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }],
+  },
+  {
+    left:        "CHAPTER 10 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
+    right:       "SPREAD 10 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
+    topLeft:     [{ label: "S10" }, { label: "C10" }],
+    topRight:    [{ label: "P20" }, { label: "P21" }],
+    bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
+    bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }],
+  },
+  // 22–23 — Spread 11
+  {
+    left:        "CHAPTER 11 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
+    right:       "SPREAD 11 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
+    topLeft:     [{ label: "S11" }, { label: "C11" }],
+    topRight:    [{ label: "P22" }, { label: "P23" }],
+    bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }],
+    bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
+  },
+  {
+    left:        "CHAPTER 11 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
+    right:       "SPREAD 11 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
+    topLeft:     [{ label: "S11" }, { label: "C11" }],
+    topRight:    [{ label: "P22" }, { label: "P23" }],
+    bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }],
+    bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
+  },
+  // 24–25 — Spread 12
+  {
+    left:        "CHAPTER 12 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
+    right:       "SPREAD 12 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
+    topLeft:     [{ label: "S12" }, { label: "C12" }],
+    topRight:    [{ label: "P24" }, { label: "P25" }],
+    bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
+    bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }],
+  },
+  {
+    left:        "CHAPTER 12 — PLACEHOLDER TITLE — REPLACE WITH YOUR COPY",
+    right:       "SPREAD 12 — PROJECT DESCRIPTION OR KEY INSIGHT GOES HERE",
+    topLeft:     [{ label: "S12" }, { label: "C12" }],
+    topRight:    [{ label: "P24" }, { label: "P25" }],
+    bottomLeft:  [{ label: "[IMG]" }, { label: "[IMG]" }, { label: "[IMG]" }],
+    bottomRight: [{ label: "[IMG]" }, { label: "[IMG]" }],
+  },
+  // 26 — Back Cover
+  {
+    left:        "VEDANT PARIKH — CREATIVE DIRECTOR — END OF PORTFOLIO",
+    right:       "THANK YOU — VEDWHODESIGNS@GMAIL.COM",
+    topLeft:     [{ label: "VP" }],
+    topRight:    [{ label: "FIN" }],
+    bottomLeft:  [{ label: "2026" }],
+    bottomRight: [{ label: "END" }],
+  },
+];
+
+/* =============================
+   PERIPHERAL CONTENT UPDATER
+============================= */
+function buildArtifacts(items) {
+  const frag = document.createDocumentFragment();
+  items.forEach((item, i) => {
+    const el = document.createElement('div');
+    el.className = 'artifact-item';
+    if (item.src) {
+      const img = document.createElement('img');
+      img.src = item.src;
+      img.alt = item.label || '';
+      el.appendChild(img);
+    } else {
+      el.textContent = item.label || '?';
+    }
+    frag.appendChild(el);
+    if (i < items.length - 1) {
+      const arrow = document.createElement('span');
+      arrow.className = 'artifact-arrow';
+      arrow.textContent = '→';
+      frag.appendChild(arrow);
+    }
+  });
+  return frag;
+}
+
+function updatePageDecor(pageNum) {
+  const idx = Math.max(0, Math.min(pageNum - 1, PAGE_DATA.length - 1));
+  const data = PAGE_DATA[idx];
+  if (!data) return;
+
+  const leftEl   = document.getElementById('side-text-left');
+  const rightEl  = document.getElementById('side-text-right');
+  const leftTxt  = document.getElementById('side-text-left-content');
+  const rightTxt = document.getElementById('side-text-right-content');
+  const tl = document.getElementById('artifacts-top-left');
+  const tr = document.getElementById('artifacts-top-right');
+  const bl = document.getElementById('artifacts-bottom-left');
+  const br = document.getElementById('artifacts-bottom-right');
+
+  // Fade out
+  [leftEl, rightEl, tl, tr, bl, br].forEach(el => el.classList.add('transitioning'));
+
+  setTimeout(() => {
+    // Update text
+    leftTxt.textContent  = data.left  || '';
+    rightTxt.textContent = data.right || '';
+
+    // Update artifacts
+    tl.innerHTML = ''; tl.appendChild(buildArtifacts(data.topLeft     || []));
+    tr.innerHTML = ''; tr.appendChild(buildArtifacts(data.topRight    || []));
+    bl.innerHTML = ''; bl.appendChild(buildArtifacts(data.bottomLeft  || []));
+    br.innerHTML = ''; br.appendChild(buildArtifacts(data.bottomRight || []));
+
+    // Fade in
+    [leftEl, rightEl, tl, tr, bl, br].forEach(el => el.classList.remove('transitioning'));
+  }, 350);
+}
+
+/* =============================
    BOOK DATA
 ============================= */
 const BOOKS = [
@@ -19,11 +312,11 @@ const BOOKS = [
 /* =============================
    SUPABASE CONFIG
 ============================= */
-const SUPABASE_URL = 'YOUR_SUPABASE_URL';       // e.g. https://xxxx.supabase.co
-const SUPABASE_KEY = 'YOUR_SUPABASE_ANON_KEY';  // public anon key
+const SUPABASE_URL = 'YOUR_SUPABASE_URL';
+const SUPABASE_KEY = 'YOUR_SUPABASE_ANON_KEY';
 
 async function loadBooks() {
-  if (SUPABASE_URL === 'YOUR_SUPABASE_URL') return BOOKS; // placeholder — use static data
+  if (SUPABASE_URL === 'YOUR_SUPABASE_URL') return BOOKS;
   try {
     const res = await fetch(
       `${SUPABASE_URL}/rest/v1/books?select=*&order=id.asc`,
@@ -57,7 +350,7 @@ async function preloadCovers(books) {
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload  = () => { imgs[book.id] = img; resolve(); };
-      img.onerror = resolve; // missing cover → fall back to gradient
+      img.onerror = resolve;
       img.src = book.cover_url;
     });
   }));
@@ -71,14 +364,14 @@ const PW = 700;
 const PH = 933;
 
 /* =============================
-   DATE GENERATOR  (diary style)
+   DATE GENERATOR
 ============================= */
 const DAYS   = ['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
 const MONTHS = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY',
                 'AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
 
 function bookDate(bookIdx, side) {
-  const base = new Date(2026, 3, 1); // 1 April 2026
+  const base = new Date(2026, 3, 1);
   base.setDate(base.getDate() + bookIdx * 2 + side);
   return { day: DAYS[base.getDay()], num: base.getDate(), month: MONTHS[base.getMonth()] };
 }
@@ -93,23 +386,19 @@ function makePage(drawFn) {
   return c.toDataURL('image/jpeg', 0.91);
 }
 
-// Ruled notebook base
 function drawRuled(ctx) {
   ctx.fillStyle = '#f6f2e8';
   ctx.fillRect(0, 0, PW, PH);
-  // horizontal lines
   ctx.strokeStyle = 'rgba(120,165,215,0.32)';
   ctx.lineWidth = 1;
   for (let y = 108; y < PH - 18; y += 26) {
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(PW, y); ctx.stroke();
   }
-  // red margin
   ctx.strokeStyle = 'rgba(210,80,80,0.45)';
   ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.moveTo(70, 0); ctx.lineTo(70, PH); ctx.stroke();
 }
 
-// Date header box (top corner)
 function drawDateBox(ctx, d, right) {
   const bw = 130, bh = 86;
   const x = right ? PW - bw - 18 : 18;
@@ -132,7 +421,6 @@ function drawDateBox(ctx, d, right) {
   ctx.fillText(d.month, cx, 72);
 }
 
-// Text wrap — returns next Y
 function wrapText(ctx, text, x, y, maxW, lh) {
   const words = text.split(' ');
   let line = '';
@@ -147,7 +435,6 @@ function wrapText(ctx, text, x, y, maxW, lh) {
   return y + lh;
 }
 
-// Polaroid-style book card (with slight tilt)
 function drawPolaroid(ctx, book, cx, cy, tilt, coverImg) {
   ctx.save();
   ctx.translate(cx, cy);
@@ -155,14 +442,12 @@ function drawPolaroid(ctx, book, cx, cy, tilt, coverImg) {
 
   const fw = 148, fh = 190, pad = 10, photoH = 148;
 
-  // shadow
   ctx.shadowColor = 'rgba(0,0,0,0.22)';
   ctx.shadowBlur = 14; ctx.shadowOffsetX = 5; ctx.shadowOffsetY = 5;
   ctx.fillStyle = '#fff';
   ctx.fillRect(-fw / 2 - pad, -fh / 2 - pad, fw + pad * 2, fh + pad * 2);
   ctx.shadowColor = 'transparent';
 
-  // photo area — real cover image or gradient fallback
   if (coverImg) {
     ctx.drawImage(coverImg, -fw / 2, -fh / 2, fw, photoH);
   } else {
@@ -172,19 +457,16 @@ function drawPolaroid(ctx, book, cx, cy, tilt, coverImg) {
     ctx.fillRect(-fw / 2, -fh / 2, fw, photoH);
   }
 
-  // book title inside photo
   ctx.fillStyle = 'rgba(255,255,255,0.9)';
   ctx.font = `bold ${book.title.length > 16 ? 11 : 13}px Georgia,serif`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   wrapText(ctx, book.title, 0, -fh / 2 + photoH / 2 - 10, fw - 16, 18);
 
-  // year tag bottom-right of photo
   ctx.font = '10px Arial,sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,0.55)';
   ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
   ctx.fillText(book.year, fw / 2 - 4, -fh / 2 + photoH - 4);
 
-  // caption (author) below photo
   ctx.fillStyle = '#666';
   ctx.font = 'italic 10px Georgia,serif';
   ctx.textAlign = 'center'; ctx.textBaseline = 'top';
@@ -193,7 +475,6 @@ function drawPolaroid(ctx, book, cx, cy, tilt, coverImg) {
   ctx.restore();
 }
 
-// Genre sticker
 function drawGenreSticker(ctx, label, color, x, y) {
   ctx.font = 'bold 11px Arial,sans-serif';
   const tw = ctx.measureText(label).width;
@@ -214,62 +495,50 @@ function drawGenreSticker(ctx, label, color, x, y) {
 function generatePages(books, coverImgs) {
   const pages = [];
 
-  // ── FRONT COVER ──────────────────────────────────────────
   pages.push(makePage(ctx => {
     const g = ctx.createLinearGradient(0, 0, PW, PH);
     g.addColorStop(0, '#1e0f08'); g.addColorStop(1, '#3a1e10');
     ctx.fillStyle = g; ctx.fillRect(0, 0, PW, PH);
 
-    // subtle horizontal texture
     ctx.strokeStyle = 'rgba(255,255,255,0.025)'; ctx.lineWidth = 1;
     for (let y = 0; y < PH; y += 5) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(PW,y); ctx.stroke(); }
 
-    // gold double border
     ctx.strokeStyle = 'rgba(212,168,83,0.55)'; ctx.lineWidth = 2;
     ctx.strokeRect(22, 22, PW - 44, PH - 44);
     ctx.strokeStyle = 'rgba(212,168,83,0.25)'; ctx.lineWidth = 1;
     ctx.strokeRect(30, 30, PW - 60, PH - 60);
 
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-
-    // eyebrow
     ctx.font = '13px Georgia,serif';
     ctx.fillStyle = 'rgba(212,168,83,0.55)';
     ctx.fillText('A PERSONAL', PW / 2, PH / 2 - 130);
 
-    // title
     ctx.font = 'bold 68px Georgia,serif';
     ctx.fillStyle = '#f0c97a';
     ctx.fillText('BOOK', PW / 2, PH / 2 - 100);
     ctx.fillText('PORTFOLIO', PW / 2, PH / 2 - 22);
 
-    // gold rule
     ctx.strokeStyle = '#d4a853'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(PW/2 - 90, PH/2 + 62); ctx.lineTo(PW/2 + 90, PH/2 + 62); ctx.stroke();
 
-    // year
     ctx.font = 'italic 20px Georgia,serif';
     ctx.fillStyle = 'rgba(212,168,83,0.65)';
     ctx.fillText('2026', PW / 2, PH / 2 + 76);
 
-    // subtitle
     ctx.font = '14px Georgia,serif';
     ctx.fillStyle = 'rgba(240,201,122,0.38)';
     ctx.fillText('A Collection of 12 Books', PW / 2, PH - 76);
   }));
 
-  // ── ONE SPREAD PER BOOK ────────────────────────────────────
   books.forEach((book, i) => {
     const ld = bookDate(i, 0);
     const rd = bookDate(i, 1);
     const tilt = [-4, 2, -2, 3, -3, 2][i % 6];
 
-    // LEFT PAGE — cover card + title info
     pages.push(makePage(ctx => {
       drawRuled(ctx);
       drawDateBox(ctx, ld, false);
 
-      // vertical book-number label in red margin
       ctx.save();
       ctx.translate(35, PH / 2);
       ctx.rotate(-Math.PI / 2);
@@ -279,42 +548,34 @@ function generatePages(books, coverImgs) {
       ctx.fillText('No.' + String(i + 1).padStart(2, '0'), 0, 0);
       ctx.restore();
 
-      // genre sticker
       drawGenreSticker(ctx, book.genre, book.color[0], 84, 118);
 
-      // book title
       const fs = book.title.length > 20 ? 24 : 30;
       ctx.fillStyle = '#1a1a1a';
       ctx.font = `bold ${fs}px Georgia,serif`;
       ctx.textAlign = 'left'; ctx.textBaseline = 'top';
       const afterTitle = wrapText(ctx, book.title, 84, 158, PW - 120, fs + 10);
 
-      // author
       ctx.font = 'italic 16px Georgia,serif';
       ctx.fillStyle = '#555';
       ctx.fillText('by ' + book.author, 84, afterTitle + 4);
 
-      // year · pages
       ctx.font = '13px Arial,sans-serif';
       ctx.fillStyle = '#888';
       ctx.fillText('Published ' + book.year + '  ·  ' + book.pages + ' pages', 84, afterTitle + 32);
 
-      // polaroid card — lower-right quadrant
       drawPolaroid(ctx, book, PW * 0.68, PH * 0.68, tilt, coverImgs && coverImgs[book.id]);
 
-      // page number
       ctx.font = '11px Arial'; ctx.fillStyle = '#aaa';
       ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
       const n = i * 2 + 2;
       ctx.fillText(n + '-' + (n+1) + '  ·  ' + (n + 2), 84, PH - 12);
     }));
 
-    // RIGHT PAGE — rating + description
     pages.push(makePage(ctx => {
       drawRuled(ctx);
       drawDateBox(ctx, rd, true);
 
-      // star rating
       let stars = '';
       for (let s = 1; s <= 5; s++)
         stars += book.rating >= s ? '★' : book.rating >= s - 0.5 ? '✦' : '☆';
@@ -326,29 +587,24 @@ function generatePages(books, coverImgs) {
       ctx.fillStyle = '#888';
       ctx.fillText('  ' + book.rating + ' / 5', 84 + ctx.measureText(stars).width, 126);
 
-      // "My thoughts" heading
       ctx.font = 'bold 13px Arial,sans-serif';
       ctx.fillStyle = '#444';
       ctx.fillText('MY THOUGHTS', 84, 162);
 
-      // underline
       ctx.strokeStyle = book.color[0]; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.moveTo(84, 178); ctx.lineTo(84 + 110, 178); ctx.stroke();
 
-      // description
       ctx.font = '15px Georgia,serif';
       ctx.fillStyle = '#2a2a2a';
       ctx.textBaseline = 'top';
       wrapText(ctx, book.description, 84, 192, PW - 120, 26);
 
-      // page number
       ctx.font = '11px Arial'; ctx.fillStyle = '#aaa';
       ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
       ctx.fillText(String(i * 2 + 3), PW - 20, PH - 12);
     }));
   });
 
-  // ── BACK COVER ────────────────────────────────────────────
   pages.push(makePage(ctx => {
     const g = ctx.createLinearGradient(PW, PH, 0, 0);
     g.addColorStop(0, '#1e0f08'); g.addColorStop(1, '#3a1e10');
@@ -371,16 +627,16 @@ function generatePages(books, coverImgs) {
 }
 
 /* =============================
-   INIT DEARFLIP
+   INIT
 ============================= */
 document.addEventListener('DOMContentLoaded', async () => {
   const books     = await loadBooks();
   const coverImgs = await preloadCovers(books);
   const pages     = generatePages(books, coverImgs);
 
-  // Lower the minimum zoom so zoom-out has an extra step
+  // Set minZoom before and in config for maximum compatibility
   if (window.DEARFLIP) {
-    window.DEARFLIP.defaults.minZoom = 0.2;
+    window.DEARFLIP.defaults.minZoom = 0.35;
   }
 
   const flipApp = new window.DEARFLIP.Application({
@@ -396,12 +652,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     showDownloadControl:  false,
     showShareControl:     false,
     showSearchControl:    false,
-    controlsPosition:     'bottom',   // rendered but hidden via CSS
+    controlsPosition:     'bottom',
     autoEnableThumbnail:  false,
     openPage:             1,
+    minZoom:              0.35,
+    maxZoom:              3,
+    onFlip: function(e, pageNum) {
+      const num = (typeof pageNum === 'object' && pageNum !== null)
+        ? (pageNum.page || pageNum.currentPage || 1)
+        : (pageNum || 1);
+      updatePageDecor(num);
+    },
   });
 
-  // Wire custom nav after dearflip has mounted its DOM
+  // Also listen via jQuery event for redundancy
+  window.jQuery('#portfolio-viewer').on('afterFlip.dearflip flip.dearflip', function(e, data) {
+    if (data && (data.page || data.currentPage)) {
+      updatePageDecor(data.page || data.currentPage);
+    }
+  });
+
+  // Set initial peripheral content
+  updatePageDecor(1);
+
   setTimeout(() => initSpatialNav(flipApp), 600);
 });
 
@@ -409,13 +682,12 @@ document.addEventListener('DOMContentLoaded', async () => {
    SPATIAL TOOLTIP NAV
 ============================= */
 function initSpatialNav(flipApp) {
-  const tooltip   = document.getElementById('ctrl-tooltip');
-  const labelsUl  = document.getElementById('ctrl-labels');
+  const tooltip    = document.getElementById('ctrl-tooltip');
+  const labelsUl   = document.getElementById('ctrl-labels');
   const labelItems = Array.from(labelsUl.querySelectorAll('li'));
-  const buttons   = Array.from(document.querySelectorAll('.ctrl-btn'));
-  const BTN = 36; // button size in px
+  const buttons    = Array.from(document.querySelectorAll('.ctrl-btn'));
+  const BTN = 36;
 
-  // ── Spatial tooltip logic ──────────────────────────────────
   function showTooltip(idx) {
     const item   = labelItems[idx];
     const itemW  = item.offsetWidth;
@@ -431,11 +703,8 @@ function initSpatialNav(flipApp) {
 
     labelItems.forEach((li, i) => {
       const span = li.querySelector('span');
-      if (i === idx) {
-        span.classList.remove('blurred');
-      } else {
-        span.classList.add('blurred');
-      }
+      if (i === idx) span.classList.remove('blurred');
+      else span.classList.add('blurred');
     });
   }
 
@@ -448,14 +717,12 @@ function initSpatialNav(flipApp) {
     btn.addEventListener('mouseleave', hideTooltip);
   });
 
-  // ── Helper: click a hidden native dearflip button ──────────
   function clickNative(selector) {
     const el = document.querySelector(selector);
     if (el) { el.click(); return true; }
     return false;
   }
 
-  // ── Cover — go to page 1 ───────────────────────────────────
   document.getElementById('ctrl-cover').addEventListener('click', () => {
     try { flipApp.gotoPage(1); } catch (_) {
       try { flipApp.app.gotoPage(1); } catch (_2) {
@@ -464,32 +731,24 @@ function initSpatialNav(flipApp) {
     }
   });
 
-  // ── Pages — toggle thumbnail panel ────────────────────────
   document.getElementById('ctrl-pages').addEventListener('click', () => {
     if (!clickNative('.df-btn-thumbnail')) {
       try { flipApp.app.toggleThumbnail(); } catch (_) {}
     }
   });
 
-  // ── Zoom In ────────────────────────────────────────────────
   document.getElementById('ctrl-zoomin').addEventListener('click', () => {
     if (!clickNative('.df-btn-zoom-in, [class*="zoom-in"]')) {
       try { flipApp.app.zoomIn(); } catch (_) {}
     }
   });
 
-  // ── Zoom Out — two steps for extra range ──────────────────
   document.getElementById('ctrl-zoomout').addEventListener('click', () => {
-    const btn = document.querySelector('.df-btn-zoom-out, [class*="zoom-out"]');
-    if (btn) {
-      btn.click();
-      setTimeout(() => btn.click(), 160); // second step
-    } else {
-      try { flipApp.app.zoomOut(); flipApp.app.zoomOut(); } catch (_) {}
+    if (!clickNative('.df-btn-zoom-out, [class*="zoom-out"]')) {
+      try { flipApp.app.zoomOut(); } catch (_) {}
     }
   });
 
-  // ── Full Screen ────────────────────────────────────────────
   document.getElementById('ctrl-fullscreen').addEventListener('click', () => {
     if (!clickNative('.df-btn-fullscreen, [class*="fullscreen"]')) {
       try { flipApp.toggleFullScreen(); } catch (_) {

@@ -7,7 +7,7 @@ html, body {
   height: 100%;
   overflow: hidden;
   background: #b8b5b0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
 }
 
 .sr-only {
@@ -17,7 +17,7 @@ html, body {
 }
 
 /* ===========================
-   STAGE LABEL
+   TOP CENTER LABEL
 =========================== */
 .stage-label {
   position: fixed;
@@ -25,17 +25,134 @@ html, body {
   left: 50%;
   transform: translateX(-50%);
   z-index: 50;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 4px;
-  color: rgba(255,255,255,0.3);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 5px;
+  color: rgba(0, 0, 0, 0.3);
   text-transform: uppercase;
   pointer-events: none;
   user-select: none;
+  white-space: nowrap;
 }
 
 /* ===========================
-   DEARFLIP VIEWER
+   SIDE TEXT
+=========================== */
+.side-text {
+  position: fixed;
+  top: 50%;
+  z-index: 50;
+  pointer-events: none;
+  user-select: none;
+  max-width: 40vh;
+}
+
+.side-text span {
+  display: block;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: rgba(0, 0, 0, 0.38);
+  white-space: nowrap;
+  transition: opacity 0.4s ease;
+}
+
+.side-text--left {
+  left: 14px;
+  transform: translateY(-50%) rotate(-90deg);
+  transform-origin: center center;
+}
+
+.side-text--right {
+  right: 14px;
+  transform: translateY(-50%) rotate(90deg);
+  transform-origin: center center;
+}
+
+.side-text.transitioning span {
+  opacity: 0;
+}
+
+/* ===========================
+   ARTIFACTS
+=========================== */
+.artifacts {
+  position: fixed;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  z-index: 50;
+  pointer-events: none;
+  transition: opacity 0.35s ease;
+}
+
+.artifacts.transitioning {
+  opacity: 0;
+}
+
+/* TOP */
+.artifacts--top-left {
+  top: 32px;
+  left: 40px;
+}
+
+.artifacts--top-right {
+  top: 32px;
+  right: 40px;
+}
+
+/* BOTTOM */
+.artifacts--bottom-left {
+  bottom: 22px;
+  left: 40px;
+}
+
+.artifacts--bottom-right {
+  bottom: 22px;
+  right: 40px;
+}
+
+/* Artifact items */
+.artifact-item {
+  width: 46px;
+  height: 46px;
+  background: rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 6.5px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.artifact-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.artifact-item.artifact-item--small {
+  width: 36px;
+  height: 36px;
+}
+
+.artifact-arrow {
+  font-size: 9px;
+  font-weight: 700;
+  color: rgba(0, 0, 0, 0.28);
+  flex-shrink: 0;
+  margin: 0 1px;
+}
+
+/* ===========================
+   FLIPBOOK VIEWER
 =========================== */
 #portfolio-viewer {
   position: fixed;
@@ -49,7 +166,6 @@ html, body {
   background: transparent !important;
 }
 
-/* ── Hide the native dearflip control bar ── */
 .df-control-bar {
   position: absolute !important;
   top: -9999px !important;
@@ -71,14 +187,12 @@ html, body {
   justify-content: center;
 }
 
-/* Relative positioning context — sized exactly to the button row */
 #ctrl-core {
   position: relative;
   display: inline-block;
   isolation: isolate;
 }
 
-/* ── Tooltip window ── */
 #ctrl-tooltip {
   position: absolute;
   bottom: calc(100% + 14px);
@@ -98,7 +212,6 @@ html, body {
     opacity   0.18s ease;
 }
 
-/* Inner ul — all labels laid out in a single horizontal row */
 #ctrl-labels {
   display: flex;
   list-style: none;
@@ -119,13 +232,11 @@ html, body {
   transition: filter 0.22s ease, opacity 0.22s ease;
 }
 
-/* blurred state for inactive labels */
 #ctrl-labels li span.blurred {
   filter: blur(3px);
   opacity: 0.45;
 }
 
-/* ── Button pill ── */
 #ctrl-buttons {
   display: flex;
   list-style: none;
@@ -170,7 +281,6 @@ html, body {
   display: block;
 }
 
-/* ── Dark pill background ── */
 .ctrl-pill-bg {
   position: absolute;
   inset: -8px;

@@ -9,15 +9,32 @@
 </head>
 <body>
 
-  <div class="stage-label">BOOK PORTFOLIO</div>
+  <!-- TOP CENTER LABEL -->
+  <div class="stage-label" id="stage-label">BOOK PORTFOLIO</div>
 
+  <!-- SIDE TEXT — changes per page -->
+  <div class="side-text side-text--left" id="side-text-left" aria-hidden="true">
+    <span id="side-text-left-content">VEDANT PARIKH — CREATIVE DIRECTOR — 2026</span>
+  </div>
+  <div class="side-text side-text--right" id="side-text-right" aria-hidden="true">
+    <span id="side-text-right-content">BOOK PORTFOLIO — A VISUAL ARCHIVE OF WORK</span>
+  </div>
+
+  <!-- TOP ARTIFACTS — changes per page -->
+  <div class="artifacts artifacts--top-left" id="artifacts-top-left"></div>
+  <div class="artifacts artifacts--top-right" id="artifacts-top-right"></div>
+
+  <!-- BOTTOM ARTIFACT STRIPS — changes per page -->
+  <div class="artifacts artifacts--bottom-left" id="artifacts-bottom-left"></div>
+  <div class="artifacts artifacts--bottom-right" id="artifacts-bottom-right"></div>
+
+  <!-- FLIPBOOK -->
   <div id="portfolio-viewer"></div>
 
-  <!-- ── SPATIAL TOOLTIP NAV ─────────────────────────────── -->
+  <!-- NAV -->
   <nav id="ctrl-nav" aria-label="Flipbook controls">
     <div id="ctrl-core">
 
-      <!-- sliding tooltip label window -->
       <div id="ctrl-tooltip" aria-hidden="true">
         <ul id="ctrl-labels">
           <li><span>Cover</span></li>
@@ -28,7 +45,6 @@
         </ul>
       </div>
 
-      <!-- icon buttons -->
       <ul id="ctrl-buttons">
 
         <li><button class="ctrl-btn" id="ctrl-cover" title="Cover">
@@ -68,7 +84,6 @@
 
       </ul>
 
-      <!-- dark pill background (extends beyond buttons) -->
       <div class="ctrl-pill-bg"></div>
     </div>
   </nav>
