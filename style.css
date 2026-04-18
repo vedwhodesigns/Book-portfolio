@@ -107,14 +107,14 @@ html, body {
 
 .side-text--left {
   top: 50%;
-  left: 30px;
+  left: 72px;
   writing-mode: vertical-rl;
   transform: translateY(-50%) rotate(180deg);
 }
 
 .side-text--right {
   top: 50%;
-  right: 30px;
+  right: 72px;
   writing-mode: vertical-rl;
   transform: translateY(-50%);
 }
@@ -136,12 +136,12 @@ html, body {
 .artifacts.transitioning { opacity: 0; }
 
 /* Top */
-.artifacts--top-left  { top: 30px; left: 30px; }
-.artifacts--top-right { top: 30px; right: 30px; }
+.artifacts--top-left  { top: 56px; left: 72px; }
+.artifacts--top-right { top: 56px; right: 72px; }
 
 /* Bottom */
-.artifacts--bottom-left  { bottom: 30px; left: 30px; }
-.artifacts--bottom-right { bottom: 30px; right: 30px; }
+.artifacts--bottom-left  { bottom: 56px; left: 72px; }
+.artifacts--bottom-right { bottom: 56px; right: 72px; }
 
 .artifact-item {
   width: 46px;
