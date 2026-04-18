@@ -528,7 +528,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // Permanently kill native DearFlip controls (CSS + MutationObserver layer)
-  const NAV_SELECTORS = '.df-ui-nav,.df-ui-prev,.df-ui-next,.df-ui-left,.df-ui-right,.df-control-bar,.df-controls-bottom';
+  const NAV_SELECTORS = '.df-ui-nav,.df-ui-prev,.df-ui-next,.df-ui-left,.df-ui-right,.df-control-bar';
   function killNativeControls() {
     document.querySelectorAll(NAV_SELECTORS).forEach(el => {
       el.style.setProperty('display',          'none',    'important');

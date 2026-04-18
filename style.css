@@ -31,7 +31,6 @@ html, body {
    CSS layer. JS layer (MutationObserver) handles runtime re-injection.
 =========================== */
 .df-control-bar,
-.df-controls-bottom,
 .df-ui-nav,
 .df-ui-prev,
 .df-ui-next,
