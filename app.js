@@ -593,9 +593,10 @@ function initSpatialNav(flipApp, totalPages, initialSoundOn) {
     const item   = labelItems[idx];
     const itemW  = item.offsetWidth;
     const itemOL = item.offsetLeft;
-    const x      = -((itemW - BTN) / 2);
-    const counterW = document.getElementById('ctrl-counter').offsetWidth || 52;
-    const leftPx   = counterW + (idx / buttons.length) * (buttons.length * BTN);
+    const btn    = buttons[idx];
+    
+    const x = -((itemW - btn.offsetWidth) / 2);
+    const leftPx = btn.getBoundingClientRect().left - document.getElementById('ctrl-core').getBoundingClientRect().left;
 
     tooltip.style.left      = leftPx + 'px';
     tooltip.style.transform = `translateX(${x}px)`;
@@ -630,42 +631,22 @@ function initSpatialNav(flipApp, totalPages, initialSoundOn) {
     }
   }, PAGE_POLL_MS);
 
-  // First page
-  document.getElementById('ctrl-first').addEventListener('click', () => {
-    const app = getApp(); if (!app) return;
-    app.start(); updatePageDecor(1); lastTrackedPage = 1;
+  // Previous page
+  document.getElementById('ctrl-prev').addEventListener('click', () => {
+    const btn = document.querySelector('.df-ui-prev');
+    if (btn) btn.click();
+  });
+
+  // Next page
+  document.getElementById('ctrl-next').addEventListener('click', () => {
+    const btn = document.querySelector('.df-ui-next');
+    if (btn) btn.click();
   });
 
   // Cover (home)
   document.getElementById('ctrl-cover').addEventListener('click', () => {
     const app = getApp(); if (!app) return;
     app.start(); updatePageDecor(1); lastTrackedPage = 1;
-  });
-
-  // Thumbnails / grid view
-  document.getElementById('ctrl-pages').addEventListener('click', () => {
-    const btn = document.querySelector('.df-ui-thumbnail');
-    if (btn) { btn.click(); return; }
-    const app = getApp(); if (!app) return;
-    try { app.initThumbs(); } catch (_) {}
-  });
-
-  // Zoom in — delegate to DearFlip's native hidden button (dfApp.zoom() broken in 3D mode)
-  document.getElementById('ctrl-zoomin').addEventListener('click', () => {
-    const btn = document.querySelector('.df-ui-zoomin');
-    if (btn) btn.click();
-  });
-
-  // Zoom out — same approach
-  document.getElementById('ctrl-zoomout').addEventListener('click', () => {
-    const btn = document.querySelector('.df-ui-zoomout');
-    if (btn) btn.click();
-  });
-
-  // Last page
-  document.getElementById('ctrl-last').addEventListener('click', () => {
-    const app = getApp(); if (!app) return;
-    app.end(); updatePageDecor(totalPages); lastTrackedPage = totalPages;
   });
 
   // Sound toggle — click DearFlip's hidden native btn (it owns viewer.soundOn state)
