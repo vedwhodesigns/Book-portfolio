@@ -27,17 +27,17 @@ html, body {
   --nav-h: 52px;
 
   /* Top Center Label */
-  --stage-label-top: 16px;
+  --stage-label-top: 56px;
 
   /* Navigation Pill */
-  --nav-bottom: 30px;
+  --nav-bottom: 61px;
   --nav-offset-x: 0px;
   --nav-scale: 1;
 
   /* Pill background bleed */
-  --pill-top:    -8px;
+  --pill-top:    -6px;
   --pill-right:  -8px;
-  --pill-bottom: -8px;
+  --pill-bottom: -6px;
   --pill-left:   -8px;
 }
 
