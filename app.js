@@ -392,66 +392,6 @@ function makePage(drawFn) {
   return c.toDataURL('image/jpeg', 0.91);
 }
 
-/* ── Spiral binding ──────────────────────────────────────────
-   side: 'left' | 'right'
-   isDark: true for dark-background pages (cover, back cover)
-*/
-function drawSpiral(ctx, side, isDark) {
-  const x         = side === 'left' ? 15 : PW - 15;
-  const spacing   = 23;
-  const startY    = 38;
-  const count     = Math.floor((PH - startY * 2) / spacing);
-  const rW        = 8;
-  const rH        = 5.5;
-  const ringColor = isDark ? 'rgba(212,175,70,0.75)'  : 'rgba(175,175,175,0.85)';
-  const backColor = isDark ? 'rgba(130,100,30,0.55)'  : 'rgba(120,120,120,0.5)';
-  const holeColor = isDark ? 'rgba(0,0,0,0.55)'       : 'rgba(0,0,0,0.18)';
-
-  for (let i = 0; i < count; i++) {
-    const cy = startY + i * spacing;
-
-    // Hole punch
-    ctx.save();
-    ctx.beginPath();
-    ctx.ellipse(x, cy, 4.5, 3.5, 0, 0, Math.PI * 2);
-    ctx.fillStyle = holeColor;
-    ctx.fill();
-    ctx.restore();
-
-    // Back arc (behind page)
-    const backStart = side === 'left' ? 0         : Math.PI;
-    const backEnd   = side === 'left' ? Math.PI   : Math.PI * 2;
-    ctx.save();
-    ctx.beginPath();
-    ctx.ellipse(x, cy, rW, rH, 0, backStart, backEnd);
-    ctx.strokeStyle = backColor;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.restore();
-
-    // Front arc (over page — drawn last so it's on top)
-    const frontStart = side === 'left' ? Math.PI   : 0;
-    const frontEnd   = side === 'left' ? Math.PI * 2 : Math.PI;
-    ctx.save();
-    ctx.beginPath();
-    ctx.ellipse(x, cy, rW, rH, 0, frontStart, frontEnd);
-    ctx.strokeStyle = ringColor;
-    ctx.lineWidth = 2.5;
-    ctx.stroke();
-    ctx.restore();
-  }
-}
-
-/* Spine edge for a given page index (0-based in pages array):
-   - index 0 (front cover): left
-   - odd index (left-side spread page): right
-   - even index > 0 (right-side spread page or back cover): left
-*/
-function spineEdge(i) {
-  if (i === 0) return 'left';
-  return i % 2 === 1 ? 'right' : 'left';
-}
-
 /* Clean ruled page — white paper, black horizontal lines, left margin */
 function drawRuled(ctx, pageNum) {
   ctx.fillStyle = '#ffffff';
@@ -484,9 +424,8 @@ function drawRuled(ctx, pageNum) {
    Cover: dark placeholder. Interior pages: clean white ruled paper only.
    Swap interior pages with PDF renders when PDF is ready.
 ============================= */
-function generatePages(books, coverImgs) {
+function generatePages(books) {
   const pages = [];
-  let pageIndex = 0;
   const totalSpreads = books.length; // 12
 
   // Front cover — dark placeholder
@@ -517,26 +456,14 @@ function generatePages(books, coverImgs) {
     ctx.fillStyle = 'rgba(212,168,83,0.6)';
     ctx.fillText('2026', PW / 2, PH / 2 + 76);
 
-    drawSpiral(ctx, spineEdge(pageIndex), true);
   }));
-  pageIndex++;
 
   // Interior pages — clean ruled paper, one pair per book spread
   for (let i = 0; i < totalSpreads; i++) {
     const leftNum  = i * 2 + 2;
     const rightNum = i * 2 + 3;
-
-    pages.push(makePage(ctx => {
-      drawRuled(ctx, leftNum);
-      drawSpiral(ctx, spineEdge(pageIndex), false);
-    }));
-    pageIndex++;
-
-    pages.push(makePage(ctx => {
-      drawRuled(ctx, rightNum);
-      drawSpiral(ctx, spineEdge(pageIndex), false);
-    }));
-    pageIndex++;
+    pages.push(makePage(ctx => { drawRuled(ctx, leftNum);  }));
+    pages.push(makePage(ctx => { drawRuled(ctx, rightNum); }));
   }
 
   // Back cover — dark placeholder
@@ -546,7 +473,6 @@ function generatePages(books, coverImgs) {
     ctx.fillStyle = g; ctx.fillRect(0, 0, PW, PH);
     ctx.strokeStyle = 'rgba(212,168,83,0.4)'; ctx.lineWidth = 2;
     ctx.strokeRect(22, 22, PW - 44, PH - 44);
-    drawSpiral(ctx, spineEdge(pageIndex), true);
   }));
 
   return pages;
@@ -557,7 +483,7 @@ function generatePages(books, coverImgs) {
 ============================= */
 document.addEventListener('DOMContentLoaded', async () => {
   const books = await loadBooks();
-  const pages = generatePages(books, {});
+  const pages = generatePages(books);
 
   totalPageCount = pages.length;
   document.getElementById('ctrl-page-total').textContent = totalPageCount;
@@ -573,6 +499,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     backgroundColor:      '#b8b5b0',
     is3D:                 true,
     has3DShadow:          true,
+    hasSpiral:            true,
+    spiralColor:          0xC0C0C0,
     flipbookHardPages:    'cover',
     duration:             900,
     enableSound:          true,
