@@ -22,8 +22,22 @@ html, body {
    --nav-h: visual height of the pill (36px buttons + 8px top/bottom inset)
 =========================== */
 :root {
-  --edge: 16px;
+  --edge: 16px;        /* left/right distance from viewport edges */
+  --edge-top: 16px;    /* top distance — stage-label + top artifacts */
+  --edge-bottom: 16px; /* bottom distance — nav pill + bottom artifacts */
   --nav-h: 52px;
+  --viewer-zoom: 0.79; /* default book size as fraction of viewport (zoom-out default) */
+
+  /* ── Nav pill position (tweak these in DevTools) ── */
+  --nav-bottom: var(--edge-bottom);
+  --nav-offset-x: 0px;
+  --nav-scale: 1;
+
+  /* ── Pill background bleed (how far bg extends beyond buttons) ── */
+  --pill-top:    -8px;
+  --pill-right:  -8px;
+  --pill-bottom: -8px;
+  --pill-left:   -8px;
 }
 
 /* ===========================
@@ -31,13 +45,16 @@ html, body {
    CSS layer. JS layer (MutationObserver) handles runtime re-injection.
 =========================== */
 .df-control-bar,
+.df-ui,
+.df-ui-center,
 .df-ui-nav,
 .df-ui-prev,
 .df-ui-next,
 .df-ui-left,
 .df-ui-right,
 .df-ui-more,
-.df-ui-search {
+.df-ui-search,
+.df-sidemenu-wrapper {
   display: none !important;
   visibility: hidden !important;
   opacity: 0 !important;
@@ -49,7 +66,7 @@ html, body {
 =========================== */
 .stage-label {
   position: fixed;
-  top: var(--edge);
+  top: var(--edge-top);
   left: 50%;
   transform: translateX(-50%);
   z-index: 50;
@@ -116,13 +133,13 @@ html, body {
 }
 .artifacts.transitioning { opacity: 0; }
 
-/* Top — same top as stage-label */
-.artifacts--top-left  { top: var(--edge); left:  var(--edge); }
-.artifacts--top-right { top: var(--edge); right: var(--edge); }
+/* Top — snaps to --edge-top */
+.artifacts--top-left  { top: var(--edge-top); left:  var(--edge); }
+.artifacts--top-right { top: var(--edge-top); right: var(--edge); }
 
-/* Bottom — 16px gap above the nav pill */
-.artifacts--bottom-left  { bottom: calc(var(--nav-h) + var(--edge) * 2); left:  var(--edge); }
-.artifacts--bottom-right { bottom: calc(var(--nav-h) + var(--edge) * 2); right: var(--edge); }
+/* Bottom — sits above nav pill, tracks --edge-bottom */
+.artifacts--bottom-left  { bottom: calc(var(--nav-h) + var(--edge-bottom) * 2); left:  var(--edge); }
+.artifacts--bottom-right { bottom: calc(var(--nav-h) + var(--edge-bottom) * 2); right: var(--edge); }
 
 .artifact-item {
   width: 46px;
@@ -159,14 +176,21 @@ html, body {
 =========================== */
 #portfolio-viewer {
   position: fixed;
-  inset: 0;
-  width: 100vw;
-  height: 100vh;
+  top: 50%;
+  left: 50%;
+  width:  calc(100vw * var(--viewer-zoom));
+  height: calc(100vh * var(--viewer-zoom));
+  transform: translate(-50%, -50%);
+  overflow: visible;
+  z-index: 10;
 }
 
 #portfolio-viewer .df-wrapper,
-#portfolio-viewer .df-container {
+#portfolio-viewer .df-container,
+#portfolio-viewer .df-book-host,
+#portfolio-viewer .df-book {
   background: transparent !important;
+  overflow: visible !important;
 }
 
 /* ===========================
@@ -175,9 +199,10 @@ html, body {
 =========================== */
 #ctrl-nav {
   position: fixed;
-  bottom: var(--edge);
+  bottom: var(--nav-bottom);
   left: 50%;
-  transform: translateX(-50%);
+  transform: translateX(calc(-50% + var(--nav-offset-x))) scale(var(--nav-scale));
+  transform-origin: bottom center;
   z-index: 200;
   display: flex;
   justify-content: center;
@@ -296,7 +321,10 @@ html, body {
 /* Pill background */
 .ctrl-pill-bg {
   position: absolute;
-  inset: -8px;
+  top:    var(--pill-top);
+  right:  var(--pill-right);
+  bottom: var(--pill-bottom);
+  left:   var(--pill-left);
   border-radius: 22px;
   background: rgba(12, 12, 12, 0.68);
   backdrop-filter: blur(16px);

@@ -1,4 +1,12 @@
 /* =============================
+   TIMING CONSTANTS (ms)
+============================= */
+const DECOR_TRANSITION_MS   = 320;
+const NAV_KILL_RETRY_DELAYS = [300, 800];
+const DEARFLIP_STABLE_MS    = 5000;
+const PAGE_POLL_MS          = 150;
+
+/* =============================
    PAGE PERIPHERAL DATA
    Each entry maps to one flipbook page (1-indexed).
    left/right: text shown on rotated side edges.
@@ -264,9 +272,17 @@ function updatePageCounter(pageNum) {
   const totalEl = document.getElementById('ctrl-page-total');
   if (numEl)   numEl.textContent   = pageNum;
   if (totalEl) totalEl.textContent = totalPageCount;
+  savePrefs({ page: pageNum });
 }
 
+let lastDecorPage    = 0;
+let pendingDecorTimer = null;
+
 function updatePageDecor(pageNum) {
+  if (pageNum === lastDecorPage) return;
+  lastDecorPage = pageNum;
+  if (pendingDecorTimer) { clearTimeout(pendingDecorTimer); pendingDecorTimer = null; }
+
   const idx = Math.max(0, Math.min(pageNum - 1, PAGE_DATA.length - 1));
   const data = PAGE_DATA[idx];
   if (!data) return;
@@ -282,19 +298,20 @@ function updatePageDecor(pageNum) {
   const bl = document.getElementById('artifacts-bottom-left');
   const br = document.getElementById('artifacts-bottom-right');
 
-  [leftEl, rightEl, tl, tr, bl, br].forEach(el => el.classList.add('transitioning'));
+  [leftEl, rightEl, tl, tr, bl, br].filter(Boolean).forEach(el => el.classList.add('transitioning'));
 
-  setTimeout(() => {
-    leftTxt.textContent  = data.left  || '';
-    rightTxt.textContent = data.right || '';
+  pendingDecorTimer = setTimeout(() => {
+    if (leftTxt)  leftTxt.textContent  = data.left  || '';
+    if (rightTxt) rightTxt.textContent = data.right || '';
 
-    tl.innerHTML = ''; tl.appendChild(buildArtifacts(data.topLeft     || []));
-    tr.innerHTML = ''; tr.appendChild(buildArtifacts(data.topRight    || []));
-    bl.innerHTML = ''; bl.appendChild(buildArtifacts(data.bottomLeft  || []));
-    br.innerHTML = ''; br.appendChild(buildArtifacts(data.bottomRight || []));
+    if (tl) { tl.innerHTML = ''; tl.appendChild(buildArtifacts(data.topLeft     || [])); }
+    if (tr) { tr.innerHTML = ''; tr.appendChild(buildArtifacts(data.topRight    || [])); }
+    if (bl) { bl.innerHTML = ''; bl.appendChild(buildArtifacts(data.bottomLeft  || [])); }
+    if (br) { br.innerHTML = ''; br.appendChild(buildArtifacts(data.bottomRight || [])); }
 
-    [leftEl, rightEl, tl, tr, bl, br].forEach(el => el.classList.remove('transitioning'));
-  }, 320);
+    [leftEl, rightEl, tl, tr, bl, br].filter(Boolean).forEach(el => el.classList.remove('transitioning'));
+    pendingDecorTimer = null;
+  }, DECOR_TRANSITION_MS);
 }
 
 /* =============================
@@ -314,6 +331,35 @@ const BOOKS = [
   { id:11, title:"Project Hail Mary",          author:"Andy Weir",            genre:"Sci-Fi",          year:2021, pages:476, rating:5,   color:["#1a2a5c","#2c4499"], description:"Ryland Grace wakes alone on a spacecraft with no memory of why he's there. The answer is staggering: he's humanity's last hope against an extinction-level threat." },
   { id:12, title:"Man's Search for Meaning",   author:"Viktor E. Frankl",     genre:"Non-Fiction",     year:1946, pages:165, rating:5,   color:["#3a2a1a","#6b4a30"], description:"A Holocaust survivor describes his experiences in Nazi concentration camps and argues that we cannot avoid suffering but can choose how to find meaning within it." },
 ];
+
+/* =============================
+   PREFERENCES (localStorage)
+============================= */
+const SESSION_KEY = 'bookportfolio_session'; // cleared on tab close
+const PREFS_KEY   = 'bookportfolio_prefs';   // persists across sessions
+
+function savePrefs(patch) {
+  // page → sessionStorage (resets on tab close)
+  // sound → localStorage (true preference, survives close)
+  try {
+    if (patch.page !== undefined) {
+      const s = JSON.parse(sessionStorage.getItem(SESSION_KEY) || '{}');
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify({ ...s, page: patch.page }));
+    }
+    if (patch.sound !== undefined) {
+      const p = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
+      localStorage.setItem(PREFS_KEY, JSON.stringify({ ...p, sound: patch.sound }));
+    }
+  } catch (_) {}
+}
+
+function loadPrefs() {
+  try {
+    const session = JSON.parse(sessionStorage.getItem(SESSION_KEY) || '{}');
+    const prefs   = JSON.parse(localStorage.getItem(PREFS_KEY)   || '{}');
+    return { ...prefs, ...session };
+  } catch (_) { return {}; }
+}
 
 /* =============================
    SUPABASE CONFIG
@@ -342,25 +388,9 @@ async function loadBooks() {
       cover_url:   r.cover_url || null,
       description: r.description,
     }));
-  } catch (err) {
-    console.warn('Supabase fetch failed, using static data:', err);
+  } catch (_) {
     return BOOKS;
   }
-}
-
-async function preloadCovers(books) {
-  const imgs = {};
-  await Promise.all(books.map(book => {
-    if (!book.cover_url) return Promise.resolve();
-    return new Promise(resolve => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload  = () => { imgs[book.id] = img; resolve(); };
-      img.onerror = resolve;
-      img.src = book.cover_url;
-    });
-  }));
-  return imgs;
 }
 
 /* =============================
@@ -368,19 +398,6 @@ async function preloadCovers(books) {
 ============================= */
 const PW = 700;
 const PH = 933;
-
-/* =============================
-   DATE GENERATOR
-============================= */
-const DAYS   = ['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
-const MONTHS = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY',
-                'AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
-
-function bookDate(bookIdx, side) {
-  const base = new Date(2026, 3, 1);
-  base.setDate(base.getDate() + bookIdx * 2 + side);
-  return { day: DAYS[base.getDay()], num: base.getDate(), month: MONTHS[base.getMonth()] };
-}
 
 /* =============================
    CANVAS HELPERS
@@ -482,8 +499,11 @@ function generatePages(books) {
    INIT
 ============================= */
 document.addEventListener('DOMContentLoaded', async () => {
-  const books = await loadBooks();
-  const pages = generatePages(books);
+  const books      = await loadBooks();
+  const pages      = generatePages(books);
+  const savedPrefs = loadPrefs();
+  const startPage  = (savedPrefs.page && savedPrefs.page > 1) ? savedPrefs.page : 1;
+  const startSound = savedPrefs.sound !== false;
 
   totalPageCount = pages.length;
   document.getElementById('ctrl-page-total').textContent = totalPageCount;
@@ -495,7 +515,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const flipApp = new window.DEARFLIP.Application({
     source:               pages,
     element:              window.jQuery('#portfolio-viewer'),
-    height:               window.innerHeight,
+    height:               Math.round(window.innerHeight * 0.79),
     backgroundColor:      '#b8b5b0',
     is3D:                 true,
     has3DShadow:          true,
@@ -509,63 +529,71 @@ document.addEventListener('DOMContentLoaded', async () => {
     showSearchControl:    false,
     controlsPosition:     'bottom',
     autoEnableThumbnail:  false,
-    openPage:             1,
+    openPage:             startPage,
     minZoom:              0.35,
     maxZoom:              3,
-    onFlip: function(e, pageNum) {
-      const num = typeof pageNum === 'object'
-        ? (pageNum && (pageNum.page || pageNum.currentPage) || 1)
-        : (pageNum || 1);
-      updatePageDecor(num);
+    onFlip: function(app) {
+      updatePageDecor(app.currentPageNumber || 1);
     },
   });
 
-  // jQuery event fallback for page change
-  window.jQuery('#portfolio-viewer').on('afterFlip.dearflip flip.dearflip', function(e, data) {
-    if (data && (data.page || data.currentPage)) {
-      updatePageDecor(data.page || data.currentPage);
-    }
-  });
+  updatePageDecor(startPage);
 
-  // Permanently kill native DearFlip controls (CSS + MutationObserver layer)
-  const NAV_SELECTORS = '.df-ui-nav,.df-ui-prev,.df-ui-next,.df-ui-left,.df-ui-right,.df-control-bar';
+  // Kill native DearFlip controls — CSS layer + JS layer (scoped to viewer only)
+  const NAV_SELECTORS = '.df-ui,.df-ui-center,.df-ui-nav,.df-ui-prev,.df-ui-next,.df-ui-left,.df-ui-right,.df-control-bar,.df-sidemenu-wrapper';
   function killNativeControls() {
     document.querySelectorAll(NAV_SELECTORS).forEach(el => {
-      el.style.setProperty('display',          'none',    'important');
-      el.style.setProperty('visibility',       'hidden',  'important');
-      el.style.setProperty('opacity',          '0',       'important');
-      el.style.setProperty('pointer-events',   'none',    'important');
+      el.style.setProperty('display',        'none',  'important');
+      el.style.setProperty('visibility',     'hidden','important');
+      el.style.setProperty('opacity',        '0',     'important');
+      el.style.setProperty('pointer-events', 'none',  'important');
     });
   }
-  // Run immediately and after brief delay
   killNativeControls();
-  setTimeout(killNativeControls, 300);
-  setTimeout(killNativeControls, 800);
-  // Watch for any DearFlip re-injection of nav elements
-  new MutationObserver(killNativeControls).observe(document.body, { childList: true, subtree: true });
+  NAV_KILL_RETRY_DELAYS.forEach(ms => setTimeout(killNativeControls, ms));
 
-  updatePageDecor(1);
-  initSpatialNav(flipApp, pages.length);
+  // MutationObserver scoped to viewer; disconnects after DearFlip stabilises
+  const navObserver = new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      if (m.addedNodes && m.addedNodes.length > 0) {
+        killNativeControls();
+        return;
+      }
+    }
+  });
+  navObserver.observe(document.getElementById('portfolio-viewer'), { childList: true, subtree: true });
+  setTimeout(() => navObserver.disconnect(), DEARFLIP_STABLE_MS);
+
+  initSpatialNav(flipApp, pages.length, startSound);
 });
 
 /* =============================
    SPATIAL TOOLTIP NAV
 ============================= */
-function initSpatialNav(flipApp, totalPages) {
+function initSpatialNav(flipApp, totalPages, initialSoundOn) {
+  // Lazy getter — DearFlip stores dfApp in jQuery data asynchronously after init
+  function getApp() { return window.jQuery('#portfolio-viewer').data('dfApp'); }
   const tooltip    = document.getElementById('ctrl-tooltip');
   const labelsUl   = document.getElementById('ctrl-labels');
   const labelItems = Array.from(labelsUl.querySelectorAll('li'));
   const buttons    = Array.from(document.querySelectorAll('.ctrl-btn'));
   const BTN = 36;
 
-  let soundOn = true;
+  let soundOn = initialSoundOn !== false;
+
+  // Apply saved sound state immediately
+  if (!soundOn) {
+    const nativeSound = document.querySelector('.df-ui-sound');
+    if (nativeSound) nativeSound.click();
+    document.getElementById('icon-sound-on').style.display  = 'none';
+    document.getElementById('icon-sound-off').style.display = '';
+  }
 
   function showTooltip(idx) {
     const item   = labelItems[idx];
     const itemW  = item.offsetWidth;
     const itemOL = item.offsetLeft;
     const x      = -((itemW - BTN) / 2);
-    // Offset tooltip to account for the counter to the left of buttons
     const counterW = document.getElementById('ctrl-counter').offsetWidth || 52;
     const leftPx   = counterW + (idx / buttons.length) * (buttons.length * BTN);
 
@@ -591,88 +619,93 @@ function initSpatialNav(flipApp, totalPages) {
     btn.addEventListener('mouseleave', hideTooltip);
   });
 
-  function clickNative(selector) {
-    const el = document.querySelector(selector);
-    if (el) { el.click(); return true; }
-    return false;
-  }
-
-  function gotoPage(num) {
-    try { flipApp.gotoPage(num); return; } catch (_) {}
-    try { flipApp.app.gotoPage(num); } catch (_) {}
-  }
+  // Poll currentPageNumber to keep counter + decor in sync
+  let lastTrackedPage = 1;
+  setInterval(() => {
+    const app = getApp();
+    const p = app && app.currentPageNumber;
+    if (p && p !== lastTrackedPage) {
+      lastTrackedPage = p;
+      updatePageDecor(p);
+    }
+  }, PAGE_POLL_MS);
 
   // First page
   document.getElementById('ctrl-first').addEventListener('click', () => {
-    gotoPage(1);
-    updatePageDecor(1);
+    const app = getApp(); if (!app) return;
+    app.start(); updatePageDecor(1); lastTrackedPage = 1;
   });
 
   // Cover (home)
   document.getElementById('ctrl-cover').addEventListener('click', () => {
-    gotoPage(1);
-    updatePageDecor(1);
+    const app = getApp(); if (!app) return;
+    app.start(); updatePageDecor(1); lastTrackedPage = 1;
   });
 
-  // Thumbnails
+  // Thumbnails / grid view
   document.getElementById('ctrl-pages').addEventListener('click', () => {
-    if (!clickNative('.df-btn-thumbnail')) {
-      try { flipApp.app.toggleThumbnail(); } catch (_) {}
-    }
+    const btn = document.querySelector('.df-ui-thumbnail');
+    if (btn) { btn.click(); return; }
+    const app = getApp(); if (!app) return;
+    try { app.initThumbs(); } catch (_) {}
   });
 
-  // Zoom in
+  // Zoom in — delegate to DearFlip's native hidden button (dfApp.zoom() broken in 3D mode)
   document.getElementById('ctrl-zoomin').addEventListener('click', () => {
-    if (!clickNative('.df-btn-zoom-in, [class*="zoom-in"]')) {
-      try { flipApp.app.zoomIn(); } catch (_) {}
-    }
+    const btn = document.querySelector('.df-ui-zoomin');
+    if (btn) btn.click();
   });
 
-  // Zoom out
+  // Zoom out — same approach
   document.getElementById('ctrl-zoomout').addEventListener('click', () => {
-    if (!clickNative('.df-btn-zoom-out, [class*="zoom-out"]')) {
-      try { flipApp.app.zoomOut(); } catch (_) {}
-    }
+    const btn = document.querySelector('.df-ui-zoomout');
+    if (btn) btn.click();
   });
 
   // Last page
   document.getElementById('ctrl-last').addEventListener('click', () => {
-    gotoPage(totalPages);
-    updatePageDecor(totalPages);
+    const app = getApp(); if (!app) return;
+    app.end(); updatePageDecor(totalPages); lastTrackedPage = totalPages;
   });
 
-  // Sound toggle
+  // Sound toggle — click DearFlip's hidden native btn (it owns viewer.soundOn state)
   document.getElementById('ctrl-sound').addEventListener('click', () => {
     soundOn = !soundOn;
-    try {
-      if (window.DEARFLIP) window.DEARFLIP.defaults.soundEnable = soundOn;
-      if (flipApp.app) flipApp.app.enableSound = soundOn;
-    } catch (_) {}
-    document.getElementById('icon-sound-on').style.display  = soundOn ? ''      : 'none';
-    document.getElementById('icon-sound-off').style.display = soundOn ? 'none'  : '';
+    const nativeSound = document.querySelector('.df-ui-sound');
+    if (nativeSound) nativeSound.click();
+    document.getElementById('icon-sound-on').style.display  = soundOn ? ''     : 'none';
+    document.getElementById('icon-sound-off').style.display = soundOn ? 'none' : '';
     document.getElementById('ctrl-sound').title = soundOn ? 'Sound On' : 'Sound Off';
+    savePrefs({ sound: soundOn });
   });
 
-  // Fullscreen
-  document.getElementById('ctrl-fullscreen').addEventListener('click', () => {
-    if (!clickNative('.df-btn-fullscreen, [class*="fullscreen"]')) {
-      try { flipApp.toggleFullScreen(); } catch (_) {
-        try { flipApp.app.toggleFullScreen(); } catch (_2) {
-          if (!document.fullscreenElement) {
-            document.documentElement.requestFullscreen().catch(() => {});
-          } else {
-            document.exitFullscreen().catch(() => {});
-          }
-        }
-      }
+  // Fullscreen — whole-page fullscreen keeps fixed-position controls visible
+  const fsBtn = document.getElementById('ctrl-fullscreen');
+  fsBtn.addEventListener('click', () => {
+    const el  = document.documentElement;
+    const inFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    const enter = el.requestFullscreen || el.webkitRequestFullscreen;
+    const exit  = document.exitFullscreen || document.webkitExitFullscreen;
+    if (!inFs && enter) {
+      enter.call(el).catch(() => {});
+    } else if (inFs && exit) {
+      exit.call(document).catch(() => {});
     }
   });
+  // Sync icon when fullscreen changes (Esc key, etc.)
+  document.addEventListener('fullscreenchange', syncFsIcon);
+  document.addEventListener('webkitfullscreenchange', syncFsIcon);
+  function syncFsIcon() {
+    const inFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    document.getElementById('icon-fullscreen-enter').style.display = inFs ? 'none' : '';
+    document.getElementById('icon-fullscreen-exit').style.display  = inFs ? ''     : 'none';
+  }
 
-  // Download PDF (stub — ready for when PDF source is connected)
-  document.getElementById('ctrl-download').addEventListener('click', () => {
-    if (!clickNative('.df-btn-download, [data-df-btn="download"]')) {
-      // When a PDF source URL is added, replace this with: window.open(PDF_URL, '_blank')
-      alert('PDF download will be available once the portfolio PDF is connected.');
-    }
-  });
+  // Download PDF — disabled until PDF source is connected
+  const dlBtn = document.getElementById('ctrl-download');
+  dlBtn.disabled = true;
+  dlBtn.setAttribute('aria-disabled', 'true');
+  dlBtn.title  = 'PDF download — coming soon';
+  dlBtn.style.opacity = '0.4';
+  dlBtn.style.cursor  = 'not-allowed';
 }
