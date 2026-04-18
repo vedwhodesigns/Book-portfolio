@@ -516,6 +516,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     source:               pages,
     element:              window.jQuery('#portfolio-viewer'),
     height:               window.innerHeight,
+    paddingTop:           100,
+    paddingBottom:        100,
     backgroundColor:      '#b8b5b0',
     is3D:                 true,
     has3DShadow:          true,
@@ -536,6 +538,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       updatePageDecor(app.currentPageNumber || 1);
     },
   });
+
+  window.flipApp = flipApp;
 
   updatePageDecor(startPage);
 
