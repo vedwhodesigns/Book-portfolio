@@ -515,7 +515,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const flipApp = new window.DEARFLIP.Application({
     source:               pages,
     element:              window.jQuery('#portfolio-viewer'),
-    height:               Math.round(window.innerHeight * 0.79),
+    height:               window.innerHeight,
     backgroundColor:      '#b8b5b0',
     is3D:                 true,
     has3DShadow:          true,

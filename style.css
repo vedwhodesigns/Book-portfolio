@@ -22,18 +22,45 @@ html, body {
    --nav-h: visual height of the pill (36px buttons + 8px top/bottom inset)
 =========================== */
 :root {
-  --edge: 16px;        /* left/right distance from viewport edges */
-  --edge-top: 16px;    /* top distance — stage-label + top artifacts */
-  --edge-bottom: 16px; /* bottom distance — nav pill + bottom artifacts */
+  /* Book Scale */
+  --viewer-zoom: 0.79;
   --nav-h: 52px;
-  --viewer-zoom: 0.79; /* default book size as fraction of viewport (zoom-out default) */
 
-  /* ── Nav pill position (tweak these in DevTools) ── */
-  --nav-bottom: var(--edge-bottom);
+  /* --- INDIVIDUAL CONTROLS --- */
+  
+  /* Top Left Artifacts */
+  --tl-top: 16px;
+  --tl-left: 16px;
+
+  /* Top Right Artifacts */
+  --tr-top: 16px;
+  --tr-right: 16px;
+
+  /* Bottom Left Artifacts */
+  --bl-bottom: 68px; /* nav-h + edge */
+  --bl-left: 16px;
+
+  /* Bottom Right Artifacts */
+  --br-bottom: 68px;
+  --br-right: 16px;
+
+  /* Left Side Text */
+  --side-l-left: 16px;
+  --side-l-top: 50%;
+
+  /* Right Side Text */
+  --side-r-right: 16px;
+  --side-r-top: 50%;
+
+  /* Top Center Label */
+  --stage-label-top: 16px;
+
+  /* Navigation Pill */
+  --nav-bottom: 16px;
   --nav-offset-x: 0px;
   --nav-scale: 1;
 
-  /* ── Pill background bleed (how far bg extends beyond buttons) ── */
+  /* Pill background bleed */
   --pill-top:    -8px;
   --pill-right:  -8px;
   --pill-bottom: -8px;
@@ -66,7 +93,7 @@ html, body {
 =========================== */
 .stage-label {
   position: fixed;
-  top: var(--edge-top);
+  top: var(--stage-label-top);
   left: 50%;
   transform: translateX(-50%);
   z-index: 50;
@@ -88,7 +115,6 @@ html, body {
 =========================== */
 .side-text {
   position: fixed;
-  top: 50%;
   z-index: 50;
   pointer-events: none;
   user-select: none;
@@ -106,13 +132,15 @@ html, body {
 }
 
 .side-text--left {
-  left: var(--edge);
+  top: var(--side-l-top);
+  left: var(--side-l-left);
   writing-mode: vertical-rl;
   transform: translateY(-50%) rotate(180deg);
 }
 
 .side-text--right {
-  right: var(--edge);
+  top: var(--side-r-top);
+  right: var(--side-r-right);
   writing-mode: vertical-rl;
   transform: translateY(-50%);
 }
@@ -133,13 +161,13 @@ html, body {
 }
 .artifacts.transitioning { opacity: 0; }
 
-/* Top — snaps to --edge-top */
-.artifacts--top-left  { top: var(--edge-top); left:  var(--edge); }
-.artifacts--top-right { top: var(--edge-top); right: var(--edge); }
+/* Top */
+.artifacts--top-left  { top: var(--tl-top); left: var(--tl-left); }
+.artifacts--top-right { top: var(--tr-top); right: var(--tr-right); }
 
-/* Bottom — sits above nav pill, tracks --edge-bottom */
-.artifacts--bottom-left  { bottom: calc(var(--nav-h) + var(--edge-bottom) * 2); left:  var(--edge); }
-.artifacts--bottom-right { bottom: calc(var(--nav-h) + var(--edge-bottom) * 2); right: var(--edge); }
+/* Bottom */
+.artifacts--bottom-left  { bottom: var(--bl-bottom); left: var(--bl-left); }
+.artifacts--bottom-right { bottom: var(--br-bottom); right: var(--br-right); }
 
 .artifact-item {
   width: 46px;
@@ -178,9 +206,9 @@ html, body {
   position: fixed;
   top: 50%;
   left: 50%;
-  width:  calc(100vw * var(--viewer-zoom));
-  height: calc(100vh * var(--viewer-zoom));
-  transform: translate(-50%, -50%);
+  width: 100vw;
+  height: 100vh;
+  transform: translate(-50%, -50%) scale(var(--viewer-zoom));
   overflow: visible;
   z-index: 10;
 }
