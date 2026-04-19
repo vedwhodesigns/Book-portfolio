@@ -325,7 +325,7 @@ html, body {
   right:  var(--pill-right);
   bottom: var(--pill-bottom);
   left:   var(--pill-left);
-  border-radius: 22px;
+  border-radius: 24px;
   background: rgba(12, 12, 12, 0.68);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
