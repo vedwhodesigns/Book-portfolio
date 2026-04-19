@@ -173,23 +173,43 @@ html, body {
 
 /* ===========================
    FLIPBOOK VIEWER
+   Full-viewport rendering context.
+   Book visual size is controlled by DearFlip's internal padding,
+   NOT by CSS transforms. This eliminates bounding-box clipping
+   during the 3D page-turn animation arc.
 =========================== */
 #portfolio-viewer {
   position: fixed;
-  top: 50%;
-  left: 50%;
+  top: 0;
+  left: 0;
   width: 100vw;
   height: 100vh;
-  transform: translate(-50%, -50%) scale(var(--viewer-zoom));
   overflow: visible;
   z-index: 10;
 }
 
+/* Force ALL DearFlip internal containers to fill viewport and never clip */
 #portfolio-viewer .df-wrapper,
-#portfolio-viewer .df-container,
+#portfolio-viewer .df-container {
+  width: 100% !important;
+  height: 100% !important;
+  overflow: visible !important;
+  background: transparent !important;
+}
+
+#portfolio-viewer .df-stage {
+  overflow: visible !important;
+}
+
 #portfolio-viewer .df-book-host,
 #portfolio-viewer .df-book {
+  overflow: visible !important;
   background: transparent !important;
+}
+
+/* Force the WebGL canvas to fill its container — no tight crop */
+#portfolio-viewer canvas {
+  display: block;
   overflow: visible !important;
 }
 

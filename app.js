@@ -512,12 +512,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.DEARFLIP.defaults.minZoom = 0.35;
   }
 
+  /* Dynamic padding — keeps book at ~70% of viewport, gives the
+     3D arc sweep 15% headroom on each side vertically. */
+  const vPad = Math.round(window.innerHeight * 0.15);
+  const hPad = Math.round(window.innerWidth  * 0.12);
+
   const flipApp = new window.DEARFLIP.Application({
     source:               pages,
     element:              window.jQuery('#portfolio-viewer'),
     height:               window.innerHeight,
-    paddingTop:           100,
-    paddingBottom:        100,
+    paddingTop:           vPad,
+    paddingBottom:        vPad,
+    paddingLeft:          hPad,
+    paddingRight:         hPad,
     backgroundColor:      '#b8b5b0',
     is3D:                 true,
     has3DShadow:          true,
@@ -540,6 +547,48 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   updatePageDecor(startPage);
+
+  /* ── Post-init: patch Three.js renderer to fill viewport ── */
+  function patchRendererSize() {
+    const dfApp = window.jQuery('#portfolio-viewer').data('dfApp');
+    if (!dfApp) return;
+    const viewer = dfApp.viewer || dfApp;
+    const stage  = viewer.stage;
+    if (!stage || !stage.renderer || !stage.camera) return;
+
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    stage.renderer.setSize(w, h);
+    stage.camera.aspect = w / h;
+    stage.camera.updateProjectionMatrix();
+
+    if (stage.cssRenderer) {
+      stage.cssRenderer.setSize(w, h);
+    }
+  }
+
+  // DearFlip creates the stage asynchronously — retry until available
+  let patchAttempts = 0;
+  const patchInterval = setInterval(() => {
+    patchAttempts++;
+    const dfApp = window.jQuery('#portfolio-viewer').data('dfApp');
+    if (dfApp && dfApp.viewer && dfApp.viewer.stage) {
+      patchRendererSize();
+      clearInterval(patchInterval);
+    }
+    if (patchAttempts > 30) clearInterval(patchInterval); // bail after 3s
+  }, 100);
+
+  /* ── Resize handler — keep renderer + padding in sync ── */
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      patchRendererSize();
+      const dfApp = window.jQuery('#portfolio-viewer').data('dfApp');
+      if (dfApp && dfApp.resize) dfApp.resize();
+    }, 100);
+  });
 
   // Kill native DearFlip controls — CSS layer + JS layer (scoped to viewer only)
   const NAV_SELECTORS = '.df-ui,.df-ui-center,.df-ui-nav,.df-ui-prev,.df-ui-next,.df-ui-left,.df-ui-right,.df-control-bar,.df-sidemenu-wrapper';
