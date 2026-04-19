@@ -304,10 +304,10 @@ function updatePageDecor(pageNum) {
     if (leftTxt)  leftTxt.textContent  = data.left  || '';
     if (rightTxt) rightTxt.textContent = data.right || '';
 
-    if (tl) { tl.innerHTML = ''; tl.appendChild(buildArtifacts(data.topLeft     || [])); }
-    if (tr) { tr.innerHTML = ''; tr.appendChild(buildArtifacts(data.topRight    || [])); }
-    if (bl) { bl.innerHTML = ''; bl.appendChild(buildArtifacts(data.bottomLeft  || [])); }
-    if (br) { br.innerHTML = ''; br.appendChild(buildArtifacts(data.bottomRight || [])); }
+    if (tl) { tl.replaceChildren(); tl.appendChild(buildArtifacts(data.topLeft     || [])); }
+    if (tr) { tr.replaceChildren(); tr.appendChild(buildArtifacts(data.topRight    || [])); }
+    if (bl) { bl.replaceChildren(); bl.appendChild(buildArtifacts(data.bottomLeft  || [])); }
+    if (br) { br.replaceChildren(); br.appendChild(buildArtifacts(data.bottomRight || [])); }
 
     [leftEl, rightEl, tl, tr, bl, br].filter(Boolean).forEach(el => el.classList.remove('transitioning'));
     pendingDecorTimer = null;
@@ -539,8 +539,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     },
   });
 
-  window.flipApp = flipApp;
-
   updatePageDecor(startPage);
 
   // Kill native DearFlip controls — CSS layer + JS layer (scoped to viewer only)
@@ -693,4 +691,15 @@ function initSpatialNav(flipApp, totalPages, initialSoundOn) {
   dlBtn.title  = 'PDF download — coming soon';
   dlBtn.style.opacity = '0.4';
   dlBtn.style.cursor  = 'not-allowed';
+
+  // Keyboard arrow navigation
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft') {
+      const btn = document.querySelector('.df-ui-prev');
+      if (btn) btn.click();
+    } else if (e.key === 'ArrowRight') {
+      const btn = document.querySelector('.df-ui-next');
+      if (btn) btn.click();
+    }
+  });
 }

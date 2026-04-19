@@ -17,9 +17,7 @@ html, body {
 }
 
 /* ===========================
-   LAYOUT GRID CONSTANTS
-   All peripheral elements snap to this 16px edge grid.
-   --nav-h: visual height of the pill (36px buttons + 8px top/bottom inset)
+   LAYOUT CONSTANTS
 =========================== */
 :root {
   /* Book Scale */
@@ -333,4 +331,23 @@ html, body {
   -webkit-backdrop-filter: blur(16px);
   z-index: -1;
   box-shadow: 0 4px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+
+/* ===========================
+   RESPONSIVE BREAKPOINTS
+=========================== */
+@media (max-width: 1024px) {
+  :root { --viewer-zoom: 0.65; }
+  .side-text { display: none; }
+  .artifacts--top-left,
+  .artifacts--top-right   { top: 20px; }
+  .artifacts--bottom-left,
+  .artifacts--bottom-right { bottom: 20px; }
+}
+
+@media (max-width: 768px) {
+  :root { --viewer-zoom: 0.50; }
+  .artifacts { display: none; }
+  .stage-label { font-size: 7px; letter-spacing: 3px; }
+  #ctrl-nav { --nav-bottom: 16px; }
 }
