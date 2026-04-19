@@ -544,7 +544,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     onFlip: function(app) {
       updatePageDecor(app.currentPageNumber || 1);
     },
+    onPagesReady: function() {
+      // Hide preloader when pages are ready
+      const preloader = document.getElementById('preloader');
+      if (preloader) preloader.classList.add('loaded');
+    }
   });
+
+  // Safety fallback: Hide preloader after 5s max
+  setTimeout(() => {
+    const preloader = document.getElementById('preloader');
+    if (preloader) preloader.classList.add('loaded');
+  }, 5000);
 
   updatePageDecor(startPage);
 
@@ -633,10 +644,9 @@ function initSpatialNav(flipApp, totalPages, initialSoundOn) {
 
   // Apply saved sound state immediately
   if (!soundOn) {
-    const nativeSound = document.querySelector('.df-ui-sound');
-    if (nativeSound) nativeSound.click();
     document.getElementById('icon-sound-on').style.display  = 'none';
     document.getElementById('icon-sound-off').style.display = '';
+    // Let the poll apply it to DearFlip when it initializes
   }
 
   function showTooltip(idx) {
@@ -675,7 +685,12 @@ function initSpatialNav(flipApp, totalPages, initialSoundOn) {
   let lastTrackedPage = 1;
   setInterval(() => {
     const app = getApp();
-    const p = app && app.currentPageNumber;
+    if (!app) return;
+    
+    // Ensure sound state matches our UI (useful for initial load)
+    if (app.viewer) app.viewer.soundOn = soundOn;
+
+    const p = app.currentPageNumber;
     if (p && p !== lastTrackedPage) {
       lastTrackedPage = p;
       updatePageDecor(p);
@@ -712,11 +727,13 @@ function initSpatialNav(flipApp, totalPages, initialSoundOn) {
     app.start(); updatePageDecor(1); lastTrackedPage = 1;
   });
 
-  // Sound toggle — click DearFlip's hidden native btn (it owns viewer.soundOn state)
+  // Sound toggle
   document.getElementById('ctrl-sound').addEventListener('click', () => {
     soundOn = !soundOn;
-    const nativeSound = document.querySelector('.df-ui-sound');
-    if (nativeSound) nativeSound.click();
+    const app = getApp();
+    if (app && app.viewer) {
+      app.viewer.soundOn = soundOn;
+    }
     document.getElementById('icon-sound-on').style.display  = soundOn ? ''     : 'none';
     document.getElementById('icon-sound-off').style.display = soundOn ? 'none' : '';
     document.getElementById('ctrl-sound').title = soundOn ? 'Sound On' : 'Sound Off';
