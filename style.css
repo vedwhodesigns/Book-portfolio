@@ -7,7 +7,8 @@ html, body {
   height: 100%;
   overflow: hidden;
   background: #b8b5b0;
-  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  text-transform: uppercase;
 }
 
 .sr-only {
