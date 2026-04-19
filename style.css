@@ -234,14 +234,6 @@ html, body {
 
 .ctrl-counter-sep { opacity: 0.4; margin: 0 1px; }
 
-#ctrl-counter::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  top: 20%; height: 60%; width: 1px;
-  background: rgba(255, 255, 255, 0.15);
-}
-
 /* Tooltip */
 #ctrl-tooltip {
   position: absolute;
@@ -296,6 +288,14 @@ html, body {
 }
 
 #ctrl-buttons li { display: grid; }
+
+.ctrl-sep {
+  width: 1px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.15);
+  align-self: center;
+  margin: 0 4px;
+}
 
 .ctrl-btn {
   width: 36px;

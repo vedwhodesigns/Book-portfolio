@@ -46,8 +46,10 @@
       <!-- Tooltip label window -->
       <div id="ctrl-tooltip" aria-hidden="true">
         <ul id="ctrl-labels">
+          <li><span>First Page</span></li>
           <li><span>Previous Page</span></li>
           <li><span>Next Page</span></li>
+          <li><span>Last Page</span></li>
           <li><span>Cover</span></li>
           <li><span>Sound</span></li>
           <li><span>Full Screen</span></li>
@@ -57,6 +59,13 @@
 
       <!-- Buttons -->
       <ul id="ctrl-buttons">
+
+        <li><button class="ctrl-btn" id="ctrl-first" title="First Page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18.75 19.5 11.25 12l7.5-7.5"/><path d="M12.75 19.5 5.25 12l7.5-7.5"/>
+          </svg>
+          <span class="sr-only">First Page</span>
+        </button></li>
 
         <li><button class="ctrl-btn" id="ctrl-prev" title="Previous Page">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -78,6 +87,15 @@
           </svg>
           <span class="sr-only">Next Page</span>
         </button></li>
+
+        <li><button class="ctrl-btn" id="ctrl-last" title="Last Page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5.25 4.5l7.5 7.5-7.5 7.5"/><path d="M11.25 4.5l7.5 7.5-7.5 7.5"/>
+          </svg>
+          <span class="sr-only">Last Page</span>
+        </button></li>
+
+        <li class="ctrl-sep" aria-hidden="true"></li>
 
         <li><button class="ctrl-btn" id="ctrl-cover" title="Cover">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">

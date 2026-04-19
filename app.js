@@ -579,7 +579,6 @@ function initSpatialNav(flipApp, totalPages, initialSoundOn) {
   const labelsUl   = document.getElementById('ctrl-labels');
   const labelItems = Array.from(labelsUl.querySelectorAll('li'));
   const buttons    = Array.from(document.querySelectorAll('.ctrl-btn'));
-  const BTN = 36;
 
   let soundOn = initialSoundOn !== false;
 
@@ -593,10 +592,11 @@ function initSpatialNav(flipApp, totalPages, initialSoundOn) {
 
   function showTooltip(idx) {
     const item   = labelItems[idx];
+    if (!item) return;
     const itemW  = item.offsetWidth;
     const itemOL = item.offsetLeft;
     const btn    = buttons[idx];
-    
+
     const x = -((itemW - btn.offsetWidth) / 2);
     const leftPx = btn.getBoundingClientRect().left - document.getElementById('ctrl-core').getBoundingClientRect().left;
 
@@ -633,6 +633,12 @@ function initSpatialNav(flipApp, totalPages, initialSoundOn) {
     }
   }, PAGE_POLL_MS);
 
+  // First page
+  document.getElementById('ctrl-first').addEventListener('click', () => {
+    const app = getApp(); if (!app) return;
+    app.start(); updatePageDecor(1); lastTrackedPage = 1;
+  });
+
   // Previous page
   document.getElementById('ctrl-prev').addEventListener('click', () => {
     const btn = document.querySelector('.df-ui-prev');
@@ -645,7 +651,13 @@ function initSpatialNav(flipApp, totalPages, initialSoundOn) {
     if (btn) btn.click();
   });
 
-  // Cover (home)
+  // Last page
+  document.getElementById('ctrl-last').addEventListener('click', () => {
+    const app = getApp(); if (!app) return;
+    app.end(); updatePageDecor(totalPages); lastTrackedPage = totalPages;
+  });
+
+  // Cover (home) — goes to page 1
   document.getElementById('ctrl-cover').addEventListener('click', () => {
     const app = getApp(); if (!app) return;
     app.start(); updatePageDecor(1); lastTrackedPage = 1;
