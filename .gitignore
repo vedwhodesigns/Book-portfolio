@@ -34,9 +34,9 @@ node_modules/
 skills/
 skills-lock.json
 package-lock.json
-package.json
 inspect.js
 inspect_dflip.js
 update_html.sh
 *.pid
 server.log
+dist/
