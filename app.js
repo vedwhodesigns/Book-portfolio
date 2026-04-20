@@ -628,27 +628,24 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   initSpatialNav(flipApp, pages.length, startSound);
 
-  // Block click-to-flip outside actual book bounds.
-  // DearFlip's 3D mouseUp skips the isInsideSheet guard (unlike 2D mode).
-  // We intercept pointerdown on the canvas and stop propagation for out-of-bounds clicks.
+  // Block click-to-flip outside the actual book page area.
+  // DearFlip 3D mouseUp doesn't check isInsideSheet (unlike 2D mode).
+  // Mirror eventToPoint's exact coordinate calculation to clip correctly.
   setTimeout(() => {
     const canvas = document.querySelector('#portfolio-viewer canvas');
     if (!canvas) return;
     canvas.addEventListener('pointerdown', (e) => {
       const dfApp = window.jQuery('#portfolio-viewer').data('dfApp');
-      if (!dfApp) return;
-      const dim    = dfApp.dimensions;
-      const pad    = dim.padding;
-      const origin = dim.origin;
-      const rect   = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      const halfW = dim.stage.innerWidth  / 2;
-      const halfH = dim.stage.innerHeight / 2;
-      const left   = origin.x - halfW;
-      const right  = origin.x + halfW;
-      const top    = pad.top;
-      const bottom = pad.top + dim.stage.innerHeight;
+      if (!dfApp || !dfApp.viewer) return;
+      const viewer     = dfApp.viewer;
+      const dim        = dfApp.dimensions;
+      const parentRect = viewer.parentElement[0].getBoundingClientRect();
+      const x = e.clientX - parentRect.left;
+      const y = e.clientY - parentRect.top;
+      const left   = (-dim.offset.width + dim.containerWidth) / 2 - dim.stage.width / 2;
+      const right  = (-dim.offset.width + dim.containerWidth) / 2 + dim.stage.width / 2;
+      const top    = dim.padding.top;
+      const bottom = dim.padding.top + viewer.availablePageHeight();
       if (x < left || x > right || y < top || y > bottom) {
         e.stopPropagation();
       }
