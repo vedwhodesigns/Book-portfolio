@@ -539,6 +539,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     controlsPosition:     'bottom',
     autoEnableThumbnail:  false,
     openPage:             startPage,
+    clickAction:          'none',
     minZoom:              0.35,
     maxZoom:              3,
     onFlip: function(app) {
