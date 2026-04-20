@@ -628,25 +628,30 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   initSpatialNav(flipApp, pages.length, startSound);
 
-  // Block click-to-flip outside the actual book page area.
-  // DearFlip 3D mouseUp doesn't check isInsideSheet (unlike 2D mode).
-  // Mirror eventToPoint's exact coordinate calculation to clip correctly.
+  // Block click-to-flip outside actual book pages.
+  // DearFlip 3D mouseUp skips isInsideSheet (2D mode checks it; 3D doesn't).
+  // Must intercept mousedown (DearFlip uses mousedown, not pointerdown).
+  // Bounds derived from vPad/hPad percentages — same values passed to Application.
+  // Coords relative to viewport origin (#portfolio-viewer is fixed 0,0 100vw×100vh).
   setTimeout(() => {
-    const canvas = document.querySelector('#portfolio-viewer canvas');
-    if (!canvas) return;
-    canvas.addEventListener('pointerdown', (e) => {
-      const dfApp = window.jQuery('#portfolio-viewer').data('dfApp');
-      if (!dfApp || !dfApp.viewer) return;
-      const viewer     = dfApp.viewer;
-      const dim        = dfApp.dimensions;
-      const parentRect = viewer.parentElement[0].getBoundingClientRect();
-      const x = e.clientX - parentRect.left;
-      const y = e.clientY - parentRect.top;
-      const left   = (-dim.offset.width + dim.containerWidth) / 2 - dim.stage.width / 2;
-      const right  = (-dim.offset.width + dim.containerWidth) / 2 + dim.stage.width / 2;
-      const top    = dim.padding.top;
-      const bottom = dim.padding.top + viewer.availablePageHeight();
-      if (x < left || x > right || y < top || y > bottom) {
+    const viewer = document.getElementById('portfolio-viewer');
+    if (!viewer) return;
+    const hPad = window.innerWidth  * 0.12;
+    const vPad = window.innerHeight * 0.15;
+    const bookLeft   = hPad;
+    const bookRight  = window.innerWidth  - hPad;
+    const bookTop    = vPad;
+    const bookBottom = window.innerHeight - vPad;
+    viewer.addEventListener('mousedown', (e) => {
+      if (e.clientX < bookLeft || e.clientX > bookRight ||
+          e.clientY < bookTop  || e.clientY > bookBottom) {
+        e.stopPropagation();
+      }
+    }, { capture: true });
+    viewer.addEventListener('touchstart', (e) => {
+      const t = e.touches[0];
+      if (t.clientX < bookLeft || t.clientX > bookRight ||
+          t.clientY < bookTop  || t.clientY > bookBottom) {
         e.stopPropagation();
       }
     }, { capture: true });
