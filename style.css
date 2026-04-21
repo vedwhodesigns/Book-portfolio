@@ -77,7 +77,7 @@ html, body {
   --stage-label-top: 56px;
 
   /* Navigation Pill */
-  --nav-bottom: 61px;
+  --nav-bottom: 32px;
   --nav-offset-x: 0px;
   --nav-scale: 1;
 
@@ -183,16 +183,16 @@ html, body {
 .artifacts.transitioning { opacity: 0; }
 
 /* Top */
-.artifacts--top-left  { top: 56px; left: 72px; }
-.artifacts--top-right { top: 56px; right: 72px; }
+.artifacts--top-left  { top: 84px; left: 72px; }
+.artifacts--top-right { top: 84px; right: 72px; }
 
 /* Bottom */
-.artifacts--bottom-left  { bottom: 56px; left: 72px; }
-.artifacts--bottom-right { bottom: 56px; right: 72px; }
+.artifacts--bottom-left  { bottom: 84px; left: 72px; }
+.artifacts--bottom-right { bottom: 84px; right: 72px; }
 
 .artifact-item {
-  width: 46px;
-  height: 46px;
+  width: 44px;
+  height: 44px;
   background: rgba(0, 0, 0, 0.1);
   border: 1px solid rgba(0, 0, 0, 0.18);
   display: flex;

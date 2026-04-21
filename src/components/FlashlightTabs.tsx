@@ -62,12 +62,12 @@ export function FlashlightTabs({ activeTab, onTabChange, onPageChange }: Props) 
   return (
     <div className="flex items-center gap-3">
       <nav className="relative isolate">
-        <ul className="relative flex overflow-hidden rounded-full border border-white/20 bg-black/50 backdrop-blur-md p-1.5 list-none m-0">
+        <ul className="relative flex overflow-hidden rounded-full border border-white/20 bg-black/50 backdrop-blur-md p-1 list-none m-0">
           {tabs.map((tab, index) => (
             <li key={tab.id} className="group relative isolate">
               <button
                 onClick={() => handleTab(index)}
-                className={`relative z-10 px-4 py-2 text-[10px] font-medium tracking-widest transition-all duration-300 border-0 bg-transparent cursor-pointer whitespace-nowrap uppercase ${
+                className={`relative z-10 h-9 px-3 text-[10px] font-medium tracking-widest transition-all duration-300 border-0 bg-transparent cursor-pointer whitespace-nowrap uppercase ${
                   active === index
                     ? 'text-white [text-shadow:rgba(255,255,255,0.5)_1px_1px_12px]'
                     : 'text-white/70 hover:text-white'
@@ -111,7 +111,7 @@ export function FlashlightTabs({ activeTab, onTabChange, onPageChange }: Props) 
       </nav>
 
       {/* Mail button */}
-      <div className="rounded-full border border-white/20 bg-black/50 backdrop-blur-md p-1.5">
+      <div className="rounded-full border border-white/20 bg-black/50 backdrop-blur-md p-1">
         <a
           href="mailto:vedwhodesigns@gmail.com"
           aria-label="Contact"
