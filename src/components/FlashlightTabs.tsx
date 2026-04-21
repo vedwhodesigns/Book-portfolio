@@ -26,7 +26,7 @@ export function FlashlightTabs({ activeTab, onTabChange }: Props) {
   return (
     <div className="flex items-center gap-3">
       <nav className="relative isolate">
-        <ul className="relative flex overflow-hidden rounded-full border border-white/30 bg-white/[0.08] p-1.5 list-none m-0">
+        <ul className="relative flex overflow-hidden rounded-full border border-white/20 bg-black/50 backdrop-blur-md p-1.5 list-none m-0">
           {tabs.map((tab, index) => (
             <li key={tab.id} className="group relative isolate">
               <button
@@ -75,7 +75,7 @@ export function FlashlightTabs({ activeTab, onTabChange }: Props) {
       </nav>
 
       {/* Mail button */}
-      <div className="rounded-full border border-white/30 bg-white/[0.08] p-1.5">
+      <div className="rounded-full border border-white/20 bg-black/50 backdrop-blur-md p-1.5">
         <button
           type="button"
           aria-label="Contact"

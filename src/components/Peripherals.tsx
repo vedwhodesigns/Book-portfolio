@@ -27,7 +27,7 @@ export function Peripherals({ page, transitioning }: Props) {
 
   return (
     <>
-      <div className="stage-label" id="stage-label">BOOK PORTFOLIO</div>
+      {/* stage-label removed */}
 
       <div className={cls('side-text side-text--left')} id="side-text-left" aria-hidden="true">
         <span>{data.left}</span>
