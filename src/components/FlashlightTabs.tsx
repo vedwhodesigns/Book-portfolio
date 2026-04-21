@@ -1,19 +1,37 @@
 import { Fragment, useState } from 'react'
 import { motion } from 'motion/react'
 
+interface LocalWindow {
+  jQuery: (selector: string) => { data: (key: string) => DFApp | undefined }
+}
+interface DFApp {
+  currentPageNumber: number
+  viewer?: { soundOn: boolean }
+  start: () => void
+  end: () => void
+  gotoPage?: (n: number) => void
+}
+
+function getApp(): DFApp | undefined {
+  return (window as unknown as LocalWindow).jQuery('#portfolio-viewer').data('dfApp')
+}
+
+const VIBE_URL = 'https://www.instagram.com/vedwhodesigns'
+
 const tabs = [
-  { id: 'home', label: 'Home' },
-  { id: 'about', label: 'About' },
-  { id: 'work', label: 'Work' },
-  { id: 'i-vibe-here', label: 'I Vibe here' },
+  { id: 'home',       label: 'HOME' },
+  { id: 'about',      label: 'ABOUT' },
+  { id: 'work',       label: 'WORK' },
+  { id: 'i-vibe-here', label: 'I VIBE HERE' },
 ]
 
 interface Props {
   activeTab?: number
   onTabChange?: (i: number) => void
+  onPageChange?: (p: number) => void
 }
 
-export function FlashlightTabs({ activeTab, onTabChange }: Props) {
+export function FlashlightTabs({ activeTab, onTabChange, onPageChange }: Props) {
   const [localActive, setLocalActive] = useState(0)
   const [mailOpen, setMailOpen] = useState(false)
 
@@ -23,6 +41,24 @@ export function FlashlightTabs({ activeTab, onTabChange }: Props) {
     onTabChange?.(i)
   }
 
+  const handleTab = (index: number) => {
+    setActive(index)
+    const app = getApp()
+    if (index === 0) {
+      app?.start()
+      onPageChange?.(1)
+    } else if (index === 1) {
+      if (app?.gotoPage) {
+        app.gotoPage(5)
+      } else {
+        app?.start()
+      }
+      onPageChange?.(5)
+    } else if (index === 3) {
+      window.open(VIBE_URL, '_blank', 'noopener,noreferrer')
+    }
+  }
+
   return (
     <div className="flex items-center gap-3">
       <nav className="relative isolate">
@@ -30,8 +66,8 @@ export function FlashlightTabs({ activeTab, onTabChange }: Props) {
           {tabs.map((tab, index) => (
             <li key={tab.id} className="group relative isolate">
               <button
-                onClick={() => setActive(index)}
-                className={`relative z-10 px-4 py-2 text-sm font-medium transition-all duration-300 border-0 bg-transparent cursor-pointer whitespace-nowrap ${
+                onClick={() => handleTab(index)}
+                className={`relative z-10 px-4 py-2 text-[8px] font-medium tracking-widest transition-all duration-300 border-0 bg-transparent cursor-pointer whitespace-nowrap uppercase ${
                   active === index
                     ? 'text-white [text-shadow:rgba(255,255,255,0.5)_1px_1px_12px]'
                     : 'text-white/70 hover:text-white'
@@ -76,12 +112,12 @@ export function FlashlightTabs({ activeTab, onTabChange }: Props) {
 
       {/* Mail button */}
       <div className="rounded-full border border-white/20 bg-black/50 backdrop-blur-md p-1.5">
-        <button
-          type="button"
+        <a
+          href="mailto:vedwhodesigns@gmail.com"
           aria-label="Contact"
           onMouseEnter={() => setMailOpen(true)}
           onMouseLeave={() => setMailOpen(false)}
-          className="group relative grid h-9 w-9 place-items-center rounded-full text-white/90 transition-colors hover:text-white cursor-pointer border-0 bg-transparent"
+          className="group relative grid h-9 w-9 place-items-center rounded-full text-white/90 transition-colors hover:text-white cursor-pointer"
         >
           {/* Top gradient line on mail button */}
           <div className="absolute -top-[7px] left-0 z-10 h-px w-full bg-linear-to-r from-transparent from-20% via-white/60 via-50% to-transparent to-80%" />
@@ -108,7 +144,7 @@ export function FlashlightTabs({ activeTab, onTabChange }: Props) {
             <path d="M3 9.5 12 4l9 5.5" />
             <path d="M3 9.5V18a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9.5" />
           </motion.svg>
-        </button>
+        </a>
       </div>
     </div>
   )

@@ -68,7 +68,7 @@ export default function App() {
       )}
 
       <div style={{ position: 'fixed', top: 28, left: '50%', transform: 'translateX(-50%)', zIndex: 200 }}>
-        <FlashlightTabs />
+        <FlashlightTabs onPageChange={setPage} />
       </div>
 
       <Peripherals page={page} transitioning={transitioning} />
