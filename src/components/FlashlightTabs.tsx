@@ -22,7 +22,7 @@ const tabs = [
   { id: 'home',       label: 'HOME' },
   { id: 'about',      label: 'ABOUT' },
   { id: 'work',       label: 'WORK' },
-  { id: 'i-vibe-here', label: 'I VIBE HERE' },
+  { id: 'i-vibe-here', label: 'I VIBED HERE' },
 ]
 
 interface Props {
@@ -67,7 +67,7 @@ export function FlashlightTabs({ activeTab, onTabChange, onPageChange }: Props) 
             <li key={tab.id} className="group relative isolate">
               <button
                 onClick={() => handleTab(index)}
-                className={`relative z-10 px-4 py-2 text-[8px] font-medium tracking-widest transition-all duration-300 border-0 bg-transparent cursor-pointer whitespace-nowrap uppercase ${
+                className={`relative z-10 px-4 py-2 text-[10px] font-medium tracking-widest transition-all duration-300 border-0 bg-transparent cursor-pointer whitespace-nowrap uppercase ${
                   active === index
                     ? 'text-white [text-shadow:rgba(255,255,255,0.5)_1px_1px_12px]'
                     : 'text-white/70 hover:text-white'

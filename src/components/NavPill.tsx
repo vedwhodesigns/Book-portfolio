@@ -165,7 +165,7 @@ export function NavPill({ totalPages, page, soundOn, onPageChange, onSoundChange
           <ul className="flex transition-all duration-300" style={{ transform: `translateX(${tooltipSetting.offsetLeft}px)` }}>
             {controls.map(item => (
               <li key={item.id} className="relative isolate grid px-3 py-2">
-                <span className={`text-sm text-white transition-all duration-300 ${tooltipSetting.id === item.id ? 'delay-75' : 'blur-[2px] opacity-50'}`}>
+                <span className={`text-[8px] font-medium tracking-widest uppercase text-white transition-all duration-300 ${tooltipSetting.id === item.id ? 'delay-75' : 'blur-[2px] opacity-50'}`}>
                   {item.label}
                 </span>
               </li>
