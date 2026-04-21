@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { DearFlipViewer } from './components/DearFlipViewer'
 import { NavPill } from './components/NavPill'
 import { Peripherals } from './components/Peripherals'
+import { FlashlightTabs } from './components/FlashlightTabs'
 import { generatePages } from './lib/pageGenerator'
 import { loadPrefs, savePrefs } from './lib/prefs'
 
@@ -65,6 +66,10 @@ export default function App() {
           </div>
         </div>
       )}
+
+      <div style={{ position: 'fixed', top: 28, left: '50%', transform: 'translateX(-50%)', zIndex: 200 }}>
+        <FlashlightTabs />
+      </div>
 
       <Peripherals page={page} transitioning={transitioning} />
 

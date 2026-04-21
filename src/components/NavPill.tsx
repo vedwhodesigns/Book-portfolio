@@ -1,10 +1,10 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
+import { motion } from 'motion/react'
 import { savePrefs } from '../lib/prefs'
 
 interface LocalWindow {
   jQuery: (selector: string) => { data: (key: string) => DFApp | undefined }
 }
-
 interface DFApp {
   currentPageNumber: number
   viewer?: { soundOn: boolean }
@@ -20,20 +20,43 @@ interface Props {
   onSoundChange: (on: boolean) => void
 }
 
-const LABELS = ['First Page', 'Previous Page', 'Next Page', 'Last Page', 'Cover', 'Sound', 'Full Screen', 'Download']
+interface TooltipSetting {
+  left: number
+  x: number
+  width: number
+  offsetLeft: number
+  id: string | null
+}
+
+type ControlId = 'first' | 'prev' | 'next' | 'last' | 'cover' | 'sound' | 'fullscreen' | 'download'
+
+const controls = [
+  { id: 'first' as ControlId,      label: 'First Page' },
+  { id: 'prev' as ControlId,       label: 'Previous Page' },
+  { id: 'next' as ControlId,       label: 'Next Page' },
+  { id: 'last' as ControlId,       label: 'Last Page' },
+  { id: 'cover' as ControlId,      label: 'Cover' },
+  { id: 'sound' as ControlId,      label: 'Sound' },
+  { id: 'fullscreen' as ControlId, label: 'Full Screen' },
+  { id: 'download' as ControlId,   label: 'Download' },
+]
 
 function getApp(): DFApp | undefined {
   return (window as unknown as LocalWindow).jQuery('#portfolio-viewer').data('dfApp')
 }
 
 export function NavPill({ totalPages, page, soundOn, onPageChange, onSoundChange }: Props) {
-  const [tooltip, setTooltip]   = useState<{ left: number; width: number; labelLeft: number; idx: number } | null>(null)
-  const [inFs, setInFs]         = useState(false)
-  const coreRef                 = useRef<HTMLDivElement>(null)
-  const btnRefs                 = useRef<(HTMLButtonElement | null)[]>([])
+  const [activeId, setActiveId] = useState<ControlId>('cover')
+  const [inFs, setInFs] = useState(false)
+  const [tooltipSetting, setTooltipSetting] = useState<TooltipSetting>({
+    left: 0, x: 0, width: 0, offsetLeft: 0, id: null,
+  })
+
+  const tooltipRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const sync = () => setInFs(!!(document.fullscreenElement || (document as { webkitFullscreenElement?: Element }).webkitFullscreenElement))
+    const sync = () =>
+      setInFs(!!(document.fullscreenElement || (document as { webkitFullscreenElement?: Element }).webkitFullscreenElement))
     document.addEventListener('fullscreenchange', sync)
     document.addEventListener('webkitfullscreenchange', sync)
     return () => {
@@ -42,32 +65,31 @@ export function NavPill({ totalPages, page, soundOn, onPageChange, onSoundChange
     }
   }, [])
 
-  const showTooltip = useCallback((idx: number) => {
-    const btn  = btnRefs.current[idx]
-    const core = coreRef.current
-    if (!btn || !core) return
-    const btnRect  = btn.getBoundingClientRect()
-    const coreRect = core.getBoundingClientRect()
-    setTooltip({ left: btnRect.left - coreRect.left, width: btnRect.width, labelLeft: idx, idx })
-  }, [])
-
-  const hideTooltip = useCallback(() => setTooltip(null), [])
-
-  const navPrev = () => { document.querySelector<HTMLElement>('.df-ui-prev')?.click() }
-  const navNext = () => { document.querySelector<HTMLElement>('.df-ui-next')?.click() }
-
-  const navFirst = () => {
-    const app = getApp(); if (!app) return
-    app.start(); onPageChange(1)
+  const handleMouseEnter = (index: number) => {
+    const listItems = tooltipRef.current?.querySelectorAll('li')
+    if (!listItems?.[index]) return
+    const itemWidth = listItems[index].clientWidth
+    const offsetLeft = -listItems[index].offsetLeft
+    const x = (itemWidth - 36) / 2
+    setTooltipSetting({
+      left: (index / controls.length) * 100,
+      x: -x,
+      width: itemWidth,
+      offsetLeft,
+      id: controls[index].id,
+    })
   }
-  const navLast = () => {
-    const app = getApp(); if (!app) return
-    app.end(); onPageChange(totalPages)
-  }
-  const navCover = () => {
-    const app = getApp(); if (!app) return
-    app.start(); onPageChange(1)
-  }
+
+  const handleMouseLeave = () =>
+    setTooltipSetting(prev => ({ ...prev, id: null }))
+
+  const activate = (id: ControlId) => setActiveId(id)
+
+  const navFirst = () => { const app = getApp(); if (!app) return; app.start(); onPageChange(1); activate('first') }
+  const navPrev  = () => { document.querySelector<HTMLElement>('.df-ui-prev')?.click(); activate('prev') }
+  const navNext  = () => { document.querySelector<HTMLElement>('.df-ui-next')?.click(); activate('next') }
+  const navLast  = () => { const app = getApp(); if (!app) return; app.end(); onPageChange(totalPages); activate('last') }
+  const navCover = () => { const app = getApp(); if (!app) return; app.start(); onPageChange(1); activate('cover') }
 
   const toggleSound = () => {
     const next = !soundOn
@@ -75,10 +97,11 @@ export function NavPill({ totalPages, page, soundOn, onPageChange, onSoundChange
     const app = getApp()
     if (app?.viewer) app.viewer.soundOn = next
     savePrefs({ sound: next })
+    activate('sound')
   }
 
   const toggleFullscreen = () => {
-    const el  = document.documentElement
+    const el = document.documentElement
     const cur = !!(document.fullscreenElement || (document as { webkitFullscreenElement?: Element }).webkitFullscreenElement)
     if (!cur) {
       const enter = (el.requestFullscreen ?? (el as { webkitRequestFullscreen?: () => Promise<void> }).webkitRequestFullscreen)?.bind(el)
@@ -87,179 +110,173 @@ export function NavPill({ totalPages, page, soundOn, onPageChange, onSoundChange
       const exit = (document.exitFullscreen ?? (document as { webkitExitFullscreen?: () => Promise<void> }).webkitExitFullscreen)?.bind(document)
       exit?.().catch(() => {})
     }
+    activate('fullscreen')
   }
 
+  // Keep tooltip position fresh when page/sound state changes
+  useEffect(() => {
+    if (!tooltipSetting.id) return
+    const index = controls.findIndex(c => c.id === tooltipSetting.id)
+    if (index >= 0) handleMouseEnter(index)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, soundOn])
+
+  const btn = (id: ControlId) =>
+    `relative z-10 grid h-9 w-9 place-items-center rounded-xl p-2 border-0 bg-transparent cursor-pointer transition-all duration-300 ${
+      activeId === id
+        ? 'text-white [text-shadow:rgba(255,255,255,0.5)_1px_1px_12px]'
+        : 'text-white/70 hover:text-white'
+    }`
+
+  const ActiveDecor = ({ id }: { id: ControlId }) =>
+    activeId === id ? (
+      <Fragment>
+        <motion.div layoutId="np-pill" className="absolute inset-0 rounded-xl bg-white/5" style={{ zIndex: -1 }} transition={{ type: 'spring', duration: 0.7 }} />
+        <motion.div layoutId="np-shade" className="absolute left-0 w-full rounded-full bg-white/10" style={{ bottom: -90, height: 100, filter: 'blur(7px)', zIndex: -2 }} transition={{ type: 'spring', duration: 0.7 }} />
+      </Fragment>
+    ) : null
+
   return (
-    <nav id="ctrl-nav" aria-label="Flipbook controls">
-      <div id="ctrl-core" ref={coreRef}>
+    <nav
+      id="ctrl-nav"
+      aria-label="Flipbook controls"
+      style={{
+        position: 'fixed',
+        bottom: 'var(--nav-bottom, 28px)',
+        left: '50%',
+        transform: 'translateX(calc(-50% + var(--nav-offset-x, 0px))) scale(var(--nav-scale, 1))',
+        transformOrigin: 'bottom center',
+        zIndex: 200,
+      }}
+    >
+      <div className="relative isolate">
 
-        {tooltip && (
-          <div
-            id="ctrl-tooltip"
-            aria-hidden="true"
-            style={{
-              position: 'absolute',
-              bottom: 'calc(100% + 14px)',
-              left: tooltip.left,
-              width: tooltip.width,
-              opacity: 1,
-              overflow: 'hidden',
-              borderRadius: 10,
-              background: 'rgba(15,15,15,0.72)',
-              backdropFilter: 'blur(10px)',
-              WebkitBackdropFilter: 'blur(10px)',
-              pointerEvents: 'none',
-              transition: 'opacity 0.18s ease',
-              whiteSpace: 'nowrap',
-              padding: '7px 14px',
-            }}
-          >
-            <span style={{ fontSize: 8, fontWeight: 500, color: '#fff', display: 'block' }}>
-              {LABELS[tooltip.idx]}
-            </span>
-          </div>
-        )}
+        {/* Spatial tooltip */}
+        <div
+          ref={tooltipRef}
+          className="absolute bottom-[calc(100%+10px)] overflow-hidden rounded-2xl bg-black/50 transition-all duration-300"
+          style={{
+            left: `${tooltipSetting.left}%`,
+            transform: `translateX(${tooltipSetting.x}px)`,
+            width: `${tooltipSetting.width}px`,
+            opacity: tooltipSetting.id ? 1 : 0,
+          }}
+        >
+          <ul className="flex transition-all duration-300" style={{ transform: `translateX(${tooltipSetting.offsetLeft}px)` }}>
+            {controls.map(item => (
+              <li key={item.id} className="relative isolate grid px-3 py-2">
+                <span className={`text-sm text-white transition-all duration-300 ${tooltipSetting.id === item.id ? 'delay-75' : 'blur-[2px] opacity-50'}`}>
+                  {item.label}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
 
-        <ul id="ctrl-buttons">
+        {/* Pill */}
+        <ul className="relative flex items-center overflow-hidden rounded-full border border-white/30 bg-white/[0.08] px-4 py-2 list-none m-0">
 
-          <li>
-            <button
-              className="ctrl-btn" id="ctrl-first" title="First Page"
-              ref={el => { btnRefs.current[0] = el }}
-              onMouseEnter={() => showTooltip(0)} onMouseLeave={hideTooltip}
-              onClick={navFirst}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M18.75 19.5 11.25 12l7.5-7.5"/><path d="M12.75 19.5 5.25 12l7.5-7.5"/>
+          {/* Top gradient line */}
+          <div className="absolute -top-px left-0 z-10 h-px w-full bg-linear-to-r from-transparent from-20% via-white/60 via-50% to-transparent to-80%" />
+
+          <li className="group relative isolate">
+            <button onClick={navFirst} onMouseEnter={() => handleMouseEnter(0)} onMouseLeave={handleMouseLeave} className={btn('first')} aria-label="First Page">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                <path d="M18.5 18 12.5 12l6-6" /><path d="M11.5 18 5.5 12l6-6" />
               </svg>
-              <span className="sr-only">First Page</span>
             </button>
+            <ActiveDecor id="first" />
           </li>
 
-          <li>
-            <button
-              className="ctrl-btn" id="ctrl-prev" title="Previous Page"
-              ref={el => { btnRefs.current[1] = el }}
-              onMouseEnter={() => showTooltip(1)} onMouseLeave={hideTooltip}
-              onClick={navPrev}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M15.75 19.5 8.25 12l7.5-7.5"/>
+          <li className="group relative isolate">
+            <button onClick={navPrev} onMouseEnter={() => handleMouseEnter(1)} onMouseLeave={handleMouseLeave} className={btn('prev')} aria-label="Previous Page">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                <path d="M15.75 18 9.75 12l6-6" />
               </svg>
-              <span className="sr-only">Previous Page</span>
             </button>
+            <ActiveDecor id="prev" />
           </li>
 
-          <li>
-            <div id="ctrl-counter" aria-live="polite">
-              <span id="ctrl-page-num">{page}</span>
-              <span className="ctrl-counter-sep">/</span>
-              <span id="ctrl-page-total">{totalPages}</span>
-            </div>
+          <li className="px-3 text-sm font-semibold tracking-[0.04em] text-white/80 select-none tabular-nums">
+            {page} / {totalPages}
           </li>
 
-          <li>
-            <button
-              className="ctrl-btn" id="ctrl-next" title="Next Page"
-              ref={el => { btnRefs.current[2] = el }}
-              onMouseEnter={() => showTooltip(2)} onMouseLeave={hideTooltip}
-              onClick={navNext}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M8.25 4.5l7.5 7.5-7.5 7.5"/>
+          <li className="group relative isolate">
+            <button onClick={navNext} onMouseEnter={() => handleMouseEnter(2)} onMouseLeave={handleMouseLeave} className={btn('next')} aria-label="Next Page">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                <path d="m8.25 6 6 6-6 6" />
               </svg>
-              <span className="sr-only">Next Page</span>
             </button>
+            <ActiveDecor id="next" />
           </li>
 
-          <li>
-            <button
-              className="ctrl-btn" id="ctrl-last" title="Last Page"
-              ref={el => { btnRefs.current[3] = el }}
-              onMouseEnter={() => showTooltip(3)} onMouseLeave={hideTooltip}
-              onClick={navLast}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M5.25 4.5l7.5 7.5-7.5 7.5"/><path d="M11.25 4.5l7.5 7.5-7.5 7.5"/>
+          <li className="group relative isolate">
+            <button onClick={navLast} onMouseEnter={() => handleMouseEnter(3)} onMouseLeave={handleMouseLeave} className={btn('last')} aria-label="Last Page">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                <path d="m5.5 6 6 6-6 6" /><path d="m12.5 6 6 6-6 6" />
               </svg>
-              <span className="sr-only">Last Page</span>
             </button>
+            <ActiveDecor id="last" />
           </li>
 
-          <li className="ctrl-sep" aria-hidden="true" />
+          <li className="mx-1 h-7 w-px bg-white/20 self-center" aria-hidden="true" />
 
-          <li>
-            <button
-              className="ctrl-btn" id="ctrl-cover" title="Cover"
-              ref={el => { btnRefs.current[4] = el }}
-              onMouseEnter={() => showTooltip(4)} onMouseLeave={hideTooltip}
-              onClick={navCover}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                <path d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/>
+          <li className="group relative isolate">
+            <button onClick={navCover} onMouseEnter={() => handleMouseEnter(4)} onMouseLeave={handleMouseLeave} className={btn('cover')} aria-label="Cover">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                <path d="M3 11.5 12 4l9 7.5" /><path d="M5.5 10.5V20h4.75v-4.75h3.5V20h4.75v-9.5" />
               </svg>
-              <span className="sr-only">Cover</span>
             </button>
+            <ActiveDecor id="cover" />
           </li>
 
-          <li>
-            <button
-              className="ctrl-btn" id="ctrl-sound" title={soundOn ? 'Sound On' : 'Sound Off'}
-              ref={el => { btnRefs.current[5] = el }}
-              onMouseEnter={() => showTooltip(5)} onMouseLeave={hideTooltip}
-              onClick={toggleSound}
-            >
+          <li className="group relative isolate">
+            <button onClick={toggleSound} onMouseEnter={() => handleMouseEnter(5)} onMouseLeave={handleMouseLeave} className={btn('sound')} aria-label={soundOn ? 'Mute' : 'Unmute'}>
               {soundOn ? (
-                <svg id="icon-sound-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M19.114 5.636a9 9 0 0 1 0 12.728M16.463 8.288a5.25 5.25 0 0 1 0 7.424M6.75 8.25l4.72-4.72a.75.75 0 0 1 1.28.53v15.88a.75.75 0 0 1-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.009 9.009 0 0 1 2.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75Z"/>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                  <path d="M4 10v4h3.5L12 18V6l-4.5 4H4Z" />
+                  <path d="M15.5 9.5a4 4 0 0 1 0 5" /><path d="M18.5 7a8 8 0 0 1 0 10" />
                 </svg>
               ) : (
-                <svg id="icon-sound-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M17.25 9.75 19.5 12m0 0 2.25 2.25M19.5 12l2.25-2.25M19.5 12l-2.25 2.25m-10.5-6 4.72-4.72a.75.75 0 0 1 1.28.53v15.88a.75.75 0 0 1-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 0 1 2.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75Z"/>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                  <path d="M4 10v4h3.5L12 18V6l-4.5 4H4Z" />
+                  <path d="m16 9 5 5" /><path d="m21 9-5 5" />
                 </svg>
               )}
-              <span className="sr-only">Sound</span>
             </button>
+            <ActiveDecor id="sound" />
           </li>
 
-          <li>
-            <button
-              className="ctrl-btn" id="ctrl-fullscreen" title="Full Screen"
-              ref={el => { btnRefs.current[6] = el }}
-              onMouseEnter={() => showTooltip(6)} onMouseLeave={hideTooltip}
-              onClick={toggleFullscreen}
-            >
+          <li className="group relative isolate">
+            <button onClick={toggleFullscreen} onMouseEnter={() => handleMouseEnter(6)} onMouseLeave={handleMouseLeave} className={btn('fullscreen')} aria-label="Full Screen">
               {inFs ? (
-                <svg id="icon-fullscreen-exit" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M9 9V4.5M9 9H4.5M9 9 3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5 5.25 5.25"/>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                  <path d="M9 9V4.5M9 9H4.5M9 9 3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5 5.25 5.25" />
                 </svg>
               ) : (
-                <svg id="icon-fullscreen-enter" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15"/>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                  <path d="M9 4H4v5" /><path d="m4 4 6 6" />
+                  <path d="M15 4h5v5" /><path d="m20 4-6 6" />
+                  <path d="M9 20H4v-5" /><path d="m4 20 6-6" />
+                  <path d="M15 20h5v-5" /><path d="m20 20-6-6" />
                 </svg>
               )}
-              <span className="sr-only">Full Screen</span>
             </button>
+            <ActiveDecor id="fullscreen" />
           </li>
 
-          <li>
-            <button
-              className="ctrl-btn" id="ctrl-download" title="PDF download — coming soon"
-              ref={el => { btnRefs.current[7] = el }}
-              onMouseEnter={() => showTooltip(7)} onMouseLeave={hideTooltip}
-              disabled
-              style={{ opacity: 0.4, cursor: 'not-allowed' }}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/>
+          <li className="mx-1 h-7 w-px bg-white/20 self-center" aria-hidden="true" />
+
+          <li className="group relative isolate">
+            <button onMouseEnter={() => handleMouseEnter(7)} onMouseLeave={handleMouseLeave} disabled className="relative z-10 grid h-9 w-9 place-items-center rounded-xl p-2 border-0 bg-transparent cursor-not-allowed text-white/25" aria-label="Download">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                <path d="M12 4v10" /><path d="m8 10 4 4 4-4" />
+                <path d="M4 18.5v1.25C4 20.44 4.56 21 5.25 21h13.5c.69 0 1.25-.56 1.25-1.25V18.5" />
               </svg>
-              <span className="sr-only">Download PDF</span>
             </button>
           </li>
 
         </ul>
-
-        <div className="ctrl-pill-bg" />
       </div>
     </nav>
   )
