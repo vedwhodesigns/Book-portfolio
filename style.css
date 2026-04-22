@@ -195,6 +195,7 @@ html, body {
   height: 44px;
   background: rgba(0, 0, 0, 0.1);
   border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;

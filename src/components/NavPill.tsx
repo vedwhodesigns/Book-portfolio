@@ -122,7 +122,7 @@ export function NavPill({ totalPages, page, soundOn, onPageChange, onSoundChange
   }, [page, soundOn])
 
   const btn = (id: ControlId) =>
-    `relative z-10 grid h-9 w-9 place-items-center rounded-xl p-2 border-0 bg-transparent cursor-pointer transition-all duration-300 ${
+    `relative z-10 grid h-9 w-9 place-items-center rounded-full p-2 border-0 bg-transparent cursor-pointer focus:outline-none transition-all duration-300 ${
       activeId === id
         ? 'text-white [text-shadow:rgba(255,255,255,0.5)_1px_1px_12px]'
         : 'text-white/70 hover:text-white'
@@ -268,7 +268,7 @@ export function NavPill({ totalPages, page, soundOn, onPageChange, onSoundChange
           <li className="mx-1 h-7 w-px bg-white/20 self-center" aria-hidden="true" />
 
           <li className="group relative isolate">
-            <button onMouseEnter={() => handleMouseEnter(7)} onMouseLeave={handleMouseLeave} disabled className="relative z-10 grid h-9 w-9 place-items-center rounded-xl p-2 border-0 bg-transparent cursor-not-allowed text-white/25" aria-label="Download">
+            <button onMouseEnter={() => handleMouseEnter(7)} onMouseLeave={handleMouseLeave} disabled className="relative z-10 grid h-9 w-9 place-items-center rounded-full p-2 border-0 bg-transparent focus:outline-none cursor-not-allowed text-white/25" aria-label="Download">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
                 <path d="M12 4v10" /><path d="m8 10 4 4 4-4" />
                 <path d="M4 18.5v1.25C4 20.44 4.56 21 5.25 21h13.5c.69 0 1.25-.56 1.25-1.25V18.5" />
