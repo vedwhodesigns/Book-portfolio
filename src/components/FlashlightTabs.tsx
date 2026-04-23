@@ -31,6 +31,11 @@ interface Props {
   onPageChange?: (p: number) => void
 }
 
+// Side pill: px-[18px]*2 + 20px icon = 56px wide
+const SIDE_W = 56
+// Gap between blobs — small enough for blur to bridge
+const BLOB_GAP = 8
+
 export function FlashlightTabs({ activeTab, onTabChange, onPageChange }: Props) {
   const [localActive, setLocalActive] = useState(0)
   const [mailOpen, setMailOpen] = useState(false)
@@ -47,16 +52,44 @@ export function FlashlightTabs({ activeTab, onTabChange, onPageChange }: Props) 
   }
 
   return (
-    <div className="flex items-center">
+    <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', isolation: 'isolate' }}>
+
+      {/* SVG filter — defined once, zero dimensions, not visible */}
+      <svg aria-hidden style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }}>
+        <defs>
+          <filter id="gooey-top" x="-10%" y="-50%" width="120%" height="200%" colorInterpolationFilters="sRGB">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="8" result="blur" />
+            <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -7" />
+          </filter>
+        </defs>
+      </svg>
+
+      {/* Gooey blob layer — only background shapes, never text */}
+      <div
+        aria-hidden
+        style={{
+          position: 'absolute',
+          inset: 0,
+          zIndex: -1,
+          filter: 'url(#gooey-top)',
+          pointerEvents: 'none',
+          display: 'flex',
+          alignItems: 'stretch',
+        }}
+      >
+        <div style={{ flex: 1, background: 'rgba(19,19,19,0.9)', borderRadius: 32 }} />
+        <div style={{ width: BLOB_GAP }} />
+        <div style={{ width: SIDE_W, background: 'rgba(19,19,19,0.9)', borderRadius: 9999 }} />
+      </div>
+
+      {/* Main nav — transparent bg so blob shows through */}
       <nav className="relative isolate">
-        {/* p-1.5 from reference code */}
         <ul
           className="relative flex items-center overflow-hidden rounded-[32px] p-1.5 list-none m-0"
-          style={{ background: 'rgba(19,19,19,0.9)' }}
+          style={{ background: 'transparent' }}
         >
           {tabs.map((tab, index) => (
             <li key={tab.id} className="group relative isolate">
-              {/* px-4 py-2 text-sm font-medium from reference code */}
               <button
                 onClick={() => handleTab(index)}
                 className={`relative z-10 px-4 py-2 text-sm font-medium transition-all duration-300 border-0 bg-transparent cursor-pointer whitespace-nowrap focus:outline-none ${
@@ -90,7 +123,7 @@ export function FlashlightTabs({ activeTab, onTabChange, onPageChange }: Props) 
         {/* Top gradient line */}
         <div className="absolute -top-px z-10 h-px w-full bg-linear-to-r from-transparent from-20% via-white/60 via-50% to-transparent to-80%" />
 
-        {/* Beam — w-1/4 for 4 tabs */}
+        {/* Beam */}
         <div className="absolute inset-0 -bottom-px -z-10 overflow-hidden rounded-[32px]">
           <motion.div
             className="absolute inset-0 w-1/4"
@@ -102,22 +135,17 @@ export function FlashlightTabs({ activeTab, onTabChange, onPageChange }: Props) 
         </div>
       </nav>
 
-      {/* Connector */}
-      <div className="relative self-stretch flex-shrink-0" style={{ width: 10, background: 'rgba(19,19,19,0.9)' }}>
-        <div className="absolute top-0 left-0 w-2.5 h-2.5" style={{ borderBottomRightRadius: '100%', background: '#b8b5b0' }} />
-        <div className="absolute top-0 right-0 w-2.5 h-2.5" style={{ borderBottomLeftRadius: '100%', background: '#b8b5b0' }} />
-        <div className="absolute bottom-0 left-0 w-2.5 h-2.5" style={{ borderTopRightRadius: '100%', background: '#b8b5b0' }} />
-        <div className="absolute bottom-0 right-0 w-2.5 h-2.5" style={{ borderTopLeftRadius: '100%', background: '#b8b5b0' }} />
-      </div>
+      {/* Gap spacer — matches blob gap for layout alignment */}
+      <div style={{ width: BLOB_GAP, flexShrink: 0 }} />
 
-      {/* Mail */}
+      {/* Mail button — transparent bg, crisp icons */}
       <a
         href="mailto:vedwhodesigns@gmail.com"
         aria-label="Contact"
         onMouseEnter={() => setMailOpen(true)}
         onMouseLeave={() => setMailOpen(false)}
-        className="relative flex items-center justify-center rounded-[32px] px-[18px] py-[14px] cursor-pointer text-white hover:text-white transition-colors"
-        style={{ background: 'rgba(19,19,19,0.9)' }}
+        className="relative flex items-center justify-center rounded-full px-[18px] py-[14px] cursor-pointer text-white hover:text-white transition-colors"
+        style={{ background: 'transparent' }}
       >
         <div className="relative w-5 h-5">
           <motion.svg
