@@ -111,7 +111,7 @@ export function FlashlightTabs({ activeTab, onTabChange, onPageChange }: Props) 
         </div>
       </nav>
 
-      {/* Mail button — Figma 152:105: rounded-[32px] px-3 py-2, 24px icon */}
+      {/* Mail button — Figma 152:105: rounded-[32px] px-3 py-2 outer, px-4 py-2 inner, 24px icon */}
       <a
         href="mailto:vedwhodesigns@gmail.com"
         aria-label="Contact"
@@ -120,11 +120,11 @@ export function FlashlightTabs({ activeTab, onTabChange, onPageChange }: Props) 
         className="relative flex items-center justify-center rounded-[32px] px-3 py-2 cursor-pointer text-white/80 hover:text-white transition-colors"
         style={{ background: 'rgba(19,19,19,0.9)' }}
       >
-        <div className="relative flex items-center justify-center px-4 py-2">
+        <div className="relative w-6 h-6 mx-4 my-2">
           <motion.svg
             xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
-            className="absolute h-6 w-6"
+            className="absolute inset-0 h-6 w-6"
             animate={{ opacity: mailOpen ? 0 : 1, y: mailOpen ? -4 : 0, scale: mailOpen ? 0.85 : 1 }}
             transition={{ duration: 0.22, ease: 'easeInOut' }}
           >
@@ -134,7 +134,7 @@ export function FlashlightTabs({ activeTab, onTabChange, onPageChange }: Props) 
           <motion.svg
             xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
-            className="absolute h-6 w-6"
+            className="absolute inset-0 h-6 w-6"
             animate={{ opacity: mailOpen ? 1 : 0, y: mailOpen ? 0 : 4, scale: mailOpen ? 1 : 0.85 }}
             transition={{ duration: 0.22, ease: 'easeInOut' }}
           >
@@ -142,8 +142,6 @@ export function FlashlightTabs({ activeTab, onTabChange, onPageChange }: Props) 
             <path d="M3 9.5 12 4l9 5.5" />
             <path d="M3 9.5V18a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9.5" />
           </motion.svg>
-          {/* spacer so container has correct dimensions */}
-          <svg className="h-6 w-6 opacity-0" viewBox="0 0 24 24" />
         </div>
       </a>
     </div>
