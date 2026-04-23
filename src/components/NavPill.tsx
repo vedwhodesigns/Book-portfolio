@@ -219,10 +219,10 @@ export function NavPill({ totalPages, page, soundOn, onPageChange, onSoundChange
       <button
         disabled
         aria-label="Download"
-        className="relative flex items-center justify-center rounded-[32px] cursor-not-allowed focus:outline-none text-white/30"
+        className="relative flex items-center justify-center rounded-[32px] px-[18px] py-[14px] cursor-not-allowed focus:outline-none text-white/30"
         style={{ background: 'rgba(19,19,19,0.9)' }}
       >
-        <div className="relative w-5 h-5 px-[18px] py-[14px] box-content">
+        <div className="relative w-5 h-5">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="absolute inset-0 h-5 w-5">
             <path d="M12 4v10" /><path d="m8 10 4 4 4-4" />
             <path d="M4 18.5v1.25C4 20.44 4.56 21 5.25 21h13.5c.69 0 1.25-.56 1.25-1.25V18.5" />
