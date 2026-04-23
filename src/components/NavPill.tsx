@@ -174,7 +174,7 @@ export function NavPill({ totalPages, page, soundOn, onPageChange, onSoundChange
         </div>
 
         {/* Pill */}
-        <ul className="relative flex items-center overflow-hidden rounded-full border border-white/20 bg-black/50 backdrop-blur-md px-4 py-1 list-none m-0">
+        <ul className="relative flex items-center overflow-hidden rounded-full border border-white/20 bg-black/90 backdrop-blur-md px-4 py-1 list-none m-0">
 
           {/* Top gradient line */}
           <div className="absolute -top-px left-0 z-10 h-px w-full bg-linear-to-r from-transparent from-20% via-white/60 via-50% to-transparent to-80%" />
