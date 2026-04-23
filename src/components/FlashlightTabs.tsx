@@ -108,10 +108,10 @@ export function FlashlightTabs({ activeTab, onTabChange, onPageChange }: Props) 
         aria-label="Contact"
         onMouseEnter={() => setMailOpen(true)}
         onMouseLeave={() => setMailOpen(false)}
-        className="relative flex items-center justify-center rounded-[32px] p-1.5 cursor-pointer text-white hover:text-white transition-colors"
+        className="relative flex items-center justify-center rounded-[32px] cursor-pointer text-white hover:text-white transition-colors"
         style={{ background: 'rgba(19,19,19,0.9)' }}
       >
-        <div className="relative w-5 h-5 p-2 box-content">
+        <div className="relative w-5 h-5 px-[18px] py-[14px] box-content">
           <motion.svg
             xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
