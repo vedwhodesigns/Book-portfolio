@@ -211,6 +211,14 @@ export function NavPill({ totalPages, page, soundOn, onPageChange, onSoundChange
                 )}
               </button>
 
+              {/* Download — Figma 152:181: 24px icon, disabled */}
+              <button disabled onMouseEnter={e => showTip(e, 'Download')} onMouseLeave={hideTip} className="relative cursor-not-allowed border-0 bg-transparent focus:outline-none flex items-center justify-center p-1 rounded-full text-white/25" aria-label="Download">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}>
+                  <path d="M12 4v10" /><path d="m8 10 4 4 4-4" />
+                  <path d="M4 18.5v1.25C4 20.44 4.56 21 5.25 21h13.5c.69 0 1.25-.56 1.25-1.25V18.5" />
+                </svg>
+              </button>
+
             </div>
           </div>
         </div>

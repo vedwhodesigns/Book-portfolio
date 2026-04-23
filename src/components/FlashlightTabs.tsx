@@ -61,14 +61,14 @@ export function FlashlightTabs({ activeTab, onTabChange, onPageChange }: Props) 
       <nav className="relative isolate">
         {/* Pill — matches Figma: rgba(19,19,19,0.9), px-4 py-3, rounded-[32px] */}
         <ul
-          className="relative flex items-center overflow-hidden rounded-[32px] px-4 py-3 list-none m-0"
+          className="relative flex items-center gap-6 overflow-hidden rounded-[32px] px-4 py-3 list-none m-0"
           style={{ background: 'rgba(19,19,19,0.9)' }}
         >
           {tabs.map((tab, index) => (
             <li key={tab.id} className="group relative isolate">
               <button
                 onClick={() => handleTab(index)}
-                className={`relative z-10 px-4 py-2 text-[14px] font-medium transition-all duration-300 border-0 bg-transparent cursor-pointer whitespace-nowrap focus:outline-none ${
+                className={`relative z-10 px-2 py-2 text-[14px] font-medium transition-all duration-300 border-0 bg-transparent cursor-pointer whitespace-nowrap focus:outline-none ${
                   active === index
                     ? 'text-white [text-shadow:rgba(255,255,255,0.5)_1px_1px_12px]'
                     : 'text-white/70 hover:text-white'
@@ -111,33 +111,30 @@ export function FlashlightTabs({ activeTab, onTabChange, onPageChange }: Props) 
         </div>
       </nav>
 
-      {/* Mail button — matches pill height */}
-      <div
-        className="rounded-full flex items-center justify-center"
+      {/* Mail button — Figma 152:105: rounded-[32px] px-3 py-2, 24px icon */}
+      <a
+        href="mailto:vedwhodesigns@gmail.com"
+        aria-label="Contact"
+        onMouseEnter={() => setMailOpen(true)}
+        onMouseLeave={() => setMailOpen(false)}
+        className="relative flex items-center justify-center rounded-[32px] px-3 py-2 cursor-pointer text-white/80 hover:text-white transition-colors"
         style={{ background: 'rgba(19,19,19,0.9)' }}
       >
-        <a
-          href="mailto:vedwhodesigns@gmail.com"
-          aria-label="Contact"
-          onMouseEnter={() => setMailOpen(true)}
-          onMouseLeave={() => setMailOpen(false)}
-          className="relative grid h-11 w-11 place-items-center rounded-full text-white/80 transition-colors hover:text-white cursor-pointer m-1"
-        >
+        <div className="relative flex items-center justify-center px-4 py-2">
           <motion.svg
             xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
-            className="absolute h-5 w-5"
+            className="absolute h-6 w-6"
             animate={{ opacity: mailOpen ? 0 : 1, y: mailOpen ? -4 : 0, scale: mailOpen ? 0.85 : 1 }}
             transition={{ duration: 0.22, ease: 'easeInOut' }}
           >
             <rect x="3" y="5" width="18" height="14" rx="2" />
             <path d="m3 7 9 6 9-6" />
           </motion.svg>
-
           <motion.svg
             xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
-            className="absolute h-5 w-5"
+            className="absolute h-6 w-6"
             animate={{ opacity: mailOpen ? 1 : 0, y: mailOpen ? 0 : 4, scale: mailOpen ? 1 : 0.85 }}
             transition={{ duration: 0.22, ease: 'easeInOut' }}
           >
@@ -145,8 +142,10 @@ export function FlashlightTabs({ activeTab, onTabChange, onPageChange }: Props) 
             <path d="M3 9.5 12 4l9 5.5" />
             <path d="M3 9.5V18a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9.5" />
           </motion.svg>
-        </a>
-      </div>
+          {/* spacer so container has correct dimensions */}
+          <svg className="h-6 w-6 opacity-0" viewBox="0 0 24 24" />
+        </div>
+      </a>
     </div>
   )
 }
