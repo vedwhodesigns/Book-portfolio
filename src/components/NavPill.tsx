@@ -97,7 +97,7 @@ export function NavPill({ totalPages, page, soundOn, onPageChange, onSoundChange
         zIndex: 200,
       }}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center">
       <div ref={navRef} className="relative">
 
         {/* Tooltip */}
@@ -213,6 +213,14 @@ export function NavPill({ totalPages, page, soundOn, onPageChange, onSoundChange
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Connector */}
+      <div className="relative self-stretch flex-shrink-0" style={{ width: 10, background: 'rgba(19,19,19,0.9)' }}>
+        <div className="absolute top-0 left-0 w-2.5 h-2.5" style={{ borderBottomRightRadius: '100%', background: '#b8b5b0' }} />
+        <div className="absolute top-0 right-0 w-2.5 h-2.5" style={{ borderBottomLeftRadius: '100%', background: '#b8b5b0' }} />
+        <div className="absolute bottom-0 left-0 w-2.5 h-2.5" style={{ borderTopRightRadius: '100%', background: '#b8b5b0' }} />
+        <div className="absolute bottom-0 right-0 w-2.5 h-2.5" style={{ borderTopLeftRadius: '100%', background: '#b8b5b0' }} />
       </div>
 
       {/* Download pill */}
