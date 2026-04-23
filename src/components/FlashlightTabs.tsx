@@ -19,9 +19,9 @@ function getApp(): DFApp | undefined {
 const VIBE_URL = 'https://www.instagram.com/vedwhodesigns'
 
 const tabs = [
-  { id: 'home',       label: 'HOME' },
-  { id: 'about',      label: 'ABOUT' },
-  { id: 'work',       label: 'WORK' },
+  { id: 'home',        label: 'HOME' },
+  { id: 'about',       label: 'ABOUT' },
+  { id: 'work',        label: 'WORK' },
   { id: 'i-vibe-here', label: 'I VIBED HERE' },
 ]
 
@@ -48,11 +48,8 @@ export function FlashlightTabs({ activeTab, onTabChange, onPageChange }: Props) 
       app?.start()
       onPageChange?.(1)
     } else if (index === 1) {
-      if (app?.gotoPage) {
-        app.gotoPage(5)
-      } else {
-        app?.start()
-      }
+      if (app?.gotoPage) app.gotoPage(5)
+      else app?.start()
       onPageChange?.(5)
     } else if (index === 3) {
       window.open(VIBE_URL, '_blank', 'noopener,noreferrer')
@@ -62,12 +59,16 @@ export function FlashlightTabs({ activeTab, onTabChange, onPageChange }: Props) 
   return (
     <div className="flex items-center gap-3">
       <nav className="relative isolate">
-        <ul className="relative flex overflow-hidden rounded-full border border-white/20 bg-black/90 backdrop-blur-md p-1 list-none m-0">
+        {/* Pill — matches Figma: rgba(19,19,19,0.9), px-4 py-3, rounded-[32px] */}
+        <ul
+          className="relative flex items-center overflow-hidden rounded-[32px] px-4 py-3 list-none m-0"
+          style={{ background: 'rgba(19,19,19,0.9)' }}
+        >
           {tabs.map((tab, index) => (
             <li key={tab.id} className="group relative isolate">
               <button
                 onClick={() => handleTab(index)}
-                className={`relative z-10 h-9 px-3 text-[10px] font-medium tracking-widest transition-all duration-300 border-0 bg-transparent cursor-pointer whitespace-nowrap uppercase ${
+                className={`relative z-10 px-4 py-2 text-[14px] font-medium transition-all duration-300 border-0 bg-transparent cursor-pointer whitespace-nowrap focus:outline-none ${
                   active === index
                     ? 'text-white [text-shadow:rgba(255,255,255,0.5)_1px_1px_12px]'
                     : 'text-white/70 hover:text-white'
@@ -79,7 +80,7 @@ export function FlashlightTabs({ activeTab, onTabChange, onPageChange }: Props) 
                 <Fragment>
                   <motion.div
                     layoutId="ft-pill"
-                    className="absolute inset-0 rounded-full bg-white/5 group-first-of-type:rounded-l-3xl group-first-of-type:rounded-r-md group-last-of-type:rounded-l-md group-last-of-type:rounded-r-3xl"
+                    className="absolute inset-0 rounded-full bg-white/8"
                     style={{ zIndex: -1 }}
                     transition={{ type: 'spring', duration: 0.7 }}
                   />
@@ -96,32 +97,32 @@ export function FlashlightTabs({ activeTab, onTabChange, onPageChange }: Props) 
         </ul>
 
         {/* Top gradient line */}
-        <div className="absolute -top-px z-10 h-px w-full bg-linear-to-r from-transparent from-20% via-white/60 via-50% to-transparent to-80%" />
+        <div className="absolute -top-px z-10 h-px w-full bg-linear-to-r from-transparent from-20% via-white/40 via-50% to-transparent to-80%" />
 
         {/* Beam */}
-        <div className="absolute inset-0 -bottom-px -z-10 overflow-hidden rounded-full">
+        <div className="absolute inset-0 -bottom-px -z-10 overflow-hidden rounded-[32px]">
           <motion.div
             className="absolute inset-0 w-1/4"
             animate={{ x: `${100 * active}%` }}
             transition={{ type: 'spring', duration: 0.7 }}
           >
-            <div className="h-full w-full scale-x-150 bg-linear-to-r from-transparent via-white/60 via-40% to-transparent" />
+            <div className="h-full w-full scale-x-150 bg-linear-to-r from-transparent via-white/40 via-40% to-transparent" />
           </motion.div>
         </div>
       </nav>
 
-      {/* Mail button */}
-      <div className="rounded-full border border-white/20 bg-black/90 backdrop-blur-md p-1">
+      {/* Mail button — matches pill height */}
+      <div
+        className="rounded-full flex items-center justify-center"
+        style={{ background: 'rgba(19,19,19,0.9)' }}
+      >
         <a
           href="mailto:vedwhodesigns@gmail.com"
           aria-label="Contact"
           onMouseEnter={() => setMailOpen(true)}
           onMouseLeave={() => setMailOpen(false)}
-          className="group relative grid h-9 w-9 place-items-center rounded-full text-white/90 transition-colors hover:text-white cursor-pointer"
+          className="relative grid h-11 w-11 place-items-center rounded-full text-white/80 transition-colors hover:text-white cursor-pointer m-1"
         >
-          {/* Top gradient line on mail button */}
-          <div className="absolute -top-[7px] left-0 z-10 h-px w-full bg-linear-to-r from-transparent from-20% via-white/60 via-50% to-transparent to-80%" />
-
           <motion.svg
             xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
