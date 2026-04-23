@@ -81,7 +81,7 @@ export function NavPill({ totalPages, page, soundOn, onPageChange, onSoundChange
   }
   const hideTip = () => setTooltip(null)
 
-  const iconBtn = (id: ControlId) =>
+  const iconBtn = () =>
     `relative cursor-pointer border-0 bg-transparent focus:outline-none transition-colors duration-200 flex items-center justify-center p-1 rounded-full text-white/80 hover:text-white`
 
   return (
@@ -134,13 +134,13 @@ export function NavPill({ totalPages, page, soundOn, onPageChange, onSoundChange
 
             {/* Navigation group — gap-2 */}
             <div className="flex items-center gap-2">
-              <button onClick={navFirst} onMouseEnter={e => showTip(e, 'First')} onMouseLeave={hideTip} className={iconBtn('first')} aria-label="First Page">
+              <button onClick={navFirst} onMouseEnter={e => showTip(e, 'First')} onMouseLeave={hideTip} className={iconBtn()} aria-label="First Page">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 13, height: 13 }}>
                   <path d="M18.5 18 12.5 12l6-6" /><path d="M11.5 18 5.5 12l6-6" />
                 </svg>
               </button>
 
-              <button onClick={navPrev} onMouseEnter={e => showTip(e, 'Previous')} onMouseLeave={hideTip} className={iconBtn('prev')} aria-label="Previous Page">
+              <button onClick={navPrev} onMouseEnter={e => showTip(e, 'Previous')} onMouseLeave={hideTip} className={iconBtn()} aria-label="Previous Page">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}>
                   <path d="M15.75 18 9.75 12l6-6" />
                 </svg>
@@ -150,13 +150,13 @@ export function NavPill({ totalPages, page, soundOn, onPageChange, onSoundChange
                 {page} of {totalPages}
               </span>
 
-              <button onClick={navNext} onMouseEnter={e => showTip(e, 'Next')} onMouseLeave={hideTip} className={iconBtn('next')} aria-label="Next Page">
+              <button onClick={navNext} onMouseEnter={e => showTip(e, 'Next')} onMouseLeave={hideTip} className={iconBtn()} aria-label="Next Page">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}>
                   <path d="m8.25 6 6 6-6 6" />
                 </svg>
               </button>
 
-              <button onClick={navLast} onMouseEnter={e => showTip(e, 'Last')} onMouseLeave={hideTip} className={iconBtn('last')} aria-label="Last Page">
+              <button onClick={navLast} onMouseEnter={e => showTip(e, 'Last')} onMouseLeave={hideTip} className={iconBtn()} aria-label="Last Page">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 13, height: 13 }}>
                   <path d="m5.5 6 6 6-6 6" /><path d="m12.5 6 6 6-6 6" />
                 </svg>
@@ -166,7 +166,7 @@ export function NavPill({ totalPages, page, soundOn, onPageChange, onSoundChange
             {/* Action group — gap-[18px] */}
             <div className="flex items-center gap-[18px]">
 
-              <button onClick={navCover} onMouseEnter={e => showTip(e, 'Cover')} onMouseLeave={hideTip} className={iconBtn('cover')} aria-label="Cover">
+              <button onClick={navCover} onMouseEnter={e => showTip(e, 'Cover')} onMouseLeave={hideTip} className={iconBtn()} aria-label="Cover">
                 {activeId === 'cover' && (
                   <motion.div layoutId="np-active" className="absolute inset-0 rounded-full bg-white/10" style={{ zIndex: -1 }} transition={{ type: 'spring', duration: 0.7 }} />
                 )}
@@ -175,7 +175,7 @@ export function NavPill({ totalPages, page, soundOn, onPageChange, onSoundChange
                 </svg>
               </button>
 
-              <button onClick={toggleSound} onMouseEnter={e => showTip(e, soundOn ? 'Mute' : 'Unmute')} onMouseLeave={hideTip} className={iconBtn('sound')} aria-label={soundOn ? 'Mute' : 'Unmute'}>
+              <button onClick={toggleSound} onMouseEnter={e => showTip(e, soundOn ? 'Mute' : 'Unmute')} onMouseLeave={hideTip} className={iconBtn()} aria-label={soundOn ? 'Mute' : 'Unmute'}>
                 {activeId === 'sound' && (
                   <motion.div layoutId="np-active" className="absolute inset-0 rounded-full bg-white/10" style={{ zIndex: -1 }} transition={{ type: 'spring', duration: 0.7 }} />
                 )}
@@ -192,7 +192,7 @@ export function NavPill({ totalPages, page, soundOn, onPageChange, onSoundChange
                 )}
               </button>
 
-              <button onClick={toggleFullscreen} onMouseEnter={e => showTip(e, inFs ? 'Exit Fullscreen' : 'Fullscreen')} onMouseLeave={hideTip} className={iconBtn('fullscreen')} aria-label="Full Screen">
+              <button onClick={toggleFullscreen} onMouseEnter={e => showTip(e, inFs ? 'Exit Fullscreen' : 'Fullscreen')} onMouseLeave={hideTip} className={iconBtn()} aria-label="Full Screen">
                 {activeId === 'fullscreen' && (
                   <motion.div layoutId="np-active" className="absolute inset-0 rounded-full bg-white/10" style={{ zIndex: -1 }} transition={{ type: 'spring', duration: 0.7 }} />
                 )}
