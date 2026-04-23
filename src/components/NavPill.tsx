@@ -82,9 +82,7 @@ export function NavPill({ totalPages, page, soundOn, onPageChange, onSoundChange
   const hideTip = () => setTooltip(null)
 
   const iconBtn = (id: ControlId) =>
-    `relative cursor-pointer border-0 bg-transparent focus:outline-none transition-colors duration-200 flex items-center justify-center p-1 rounded-full ${
-      activeId === id ? 'text-white' : 'text-white/60 hover:text-white'
-    }`
+    `relative cursor-pointer border-0 bg-transparent focus:outline-none transition-colors duration-200 flex items-center justify-center p-1 rounded-full text-white/80 hover:text-white`
 
   return (
     <nav
@@ -99,6 +97,7 @@ export function NavPill({ totalPages, page, soundOn, onPageChange, onSoundChange
         zIndex: 200,
       }}
     >
+      <div className="flex items-center gap-3">
       <div ref={navRef} className="relative">
 
         {/* Tooltip */}
@@ -147,7 +146,7 @@ export function NavPill({ totalPages, page, soundOn, onPageChange, onSoundChange
                 </svg>
               </button>
 
-              <span className="text-[14px] font-medium text-white/80 tabular-nums select-none px-1 whitespace-nowrap">
+              <span className="text-[14px] font-medium text-white tabular-nums select-none px-1 whitespace-nowrap">
                 {page} of {totalPages}
               </span>
 
@@ -211,17 +210,26 @@ export function NavPill({ totalPages, page, soundOn, onPageChange, onSoundChange
                 )}
               </button>
 
-              {/* Download — Figma 152:181: 24px icon, disabled */}
-              <button disabled onMouseEnter={e => showTip(e, 'Download')} onMouseLeave={hideTip} className="relative cursor-not-allowed border-0 bg-transparent focus:outline-none flex items-center justify-center p-1 rounded-full text-white/25" aria-label="Download">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}>
-                  <path d="M12 4v10" /><path d="m8 10 4 4 4-4" />
-                  <path d="M4 18.5v1.25C4 20.44 4.56 21 5.25 21h13.5c.69 0 1.25-.56 1.25-1.25V18.5" />
-                </svg>
-              </button>
-
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Download pill — Figma 152:175: standalone, rounded-[32px] px-3 py-2 outer, px-4 py-2 inner, 24px icon */}
+      <button
+        disabled
+        aria-label="Download"
+        className="relative flex items-center justify-center rounded-[32px] px-3 py-2 cursor-not-allowed focus:outline-none text-white/30"
+        style={{ background: 'rgba(19,19,19,0.9)' }}
+      >
+        <div className="w-6 h-6 mx-4 my-2">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6">
+            <path d="M12 4v10" /><path d="m8 10 4 4 4-4" />
+            <path d="M4 18.5v1.25C4 20.44 4.56 21 5.25 21h13.5c.69 0 1.25-.56 1.25-1.25V18.5" />
+          </svg>
+        </div>
+      </button>
+
       </div>
     </nav>
   )

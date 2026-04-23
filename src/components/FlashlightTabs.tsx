@@ -71,7 +71,7 @@ export function FlashlightTabs({ activeTab, onTabChange, onPageChange }: Props) 
                 className={`relative z-10 px-2 py-2 text-[14px] font-medium transition-all duration-300 border-0 bg-transparent cursor-pointer whitespace-nowrap focus:outline-none ${
                   active === index
                     ? 'text-white [text-shadow:rgba(255,255,255,0.5)_1px_1px_12px]'
-                    : 'text-white/70 hover:text-white'
+                    : 'text-white/80 hover:text-white'
                 }`}
               >
                 {tab.label}
@@ -117,7 +117,7 @@ export function FlashlightTabs({ activeTab, onTabChange, onPageChange }: Props) 
         aria-label="Contact"
         onMouseEnter={() => setMailOpen(true)}
         onMouseLeave={() => setMailOpen(false)}
-        className="relative flex items-center justify-center rounded-[32px] px-3 py-2 cursor-pointer text-white/80 hover:text-white transition-colors"
+        className="relative flex items-center justify-center rounded-[32px] px-3 py-2 cursor-pointer text-white hover:text-white transition-colors"
         style={{ background: 'rgba(19,19,19,0.9)' }}
       >
         <div className="relative w-6 h-6 mx-4 my-2">
