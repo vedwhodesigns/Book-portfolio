@@ -22,7 +22,8 @@ const tabs = [
   { id: 'home',        label: 'HOME' },
   { id: 'about',       label: 'ABOUT' },
   { id: 'work',        label: 'WORK' },
-  { id: 'i-vibe-here', label: 'I VIBED HERE' },
+  { id: 'playground',  label: 'PLAYGROUND' },
+  { id: 'resume',      label: 'RESUME' },
 ]
 
 interface Props {
@@ -49,6 +50,7 @@ export function FlashlightTabs({ activeTab, onTabChange, onPageChange }: Props) 
     if (index === 0) { app?.start(); onPageChange?.(1) }
     else if (index === 1) { if (app?.gotoPage) app.gotoPage(5); else app?.start(); onPageChange?.(5) }
     else if (index === 3) { window.open(VIBE_URL, '_blank', 'noopener,noreferrer') }
+    else if (index === 4) { /* RESUME — link TBD */ }
   }
 
   return (
@@ -126,7 +128,7 @@ export function FlashlightTabs({ activeTab, onTabChange, onPageChange }: Props) 
         {/* Beam */}
         <div className="absolute inset-0 -bottom-px -z-10 overflow-hidden rounded-[32px]">
           <motion.div
-            className="absolute inset-0 w-1/4"
+            className="absolute inset-0 w-1/5"
             animate={{ x: `${100 * active}%` }}
             transition={{ type: 'spring', duration: 0.7 }}
           >
