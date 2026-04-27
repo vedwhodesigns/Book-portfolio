@@ -50,7 +50,7 @@ export function FlashlightTabs({ activeTab, onTabChange, onPageChange }: Props) 
     if (index === 0) { app?.start(); onPageChange?.(1) }
     else if (index === 1) { if (app?.gotoPage) app.gotoPage(5); else app?.start(); onPageChange?.(5) }
     else if (index === 3) { window.open(VIBE_URL, '_blank', 'noopener,noreferrer') }
-    else if (index === 4) { /* RESUME — link TBD */ }
+    else if (index === 4) { window.open('https://github.com/vedwhodesigns', '_blank', 'noopener,noreferrer') }
   }
 
   return (
