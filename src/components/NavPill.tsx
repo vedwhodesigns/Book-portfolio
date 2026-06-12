@@ -10,6 +10,8 @@ interface DFApp {
   viewer?: { soundOn: boolean }
   start: () => void
   end: () => void
+  prev: () => void
+  next: () => void
 }
 
 interface Props {
@@ -50,8 +52,8 @@ export function NavPill({ totalPages, page, soundOn, onPageChange, onSoundChange
   const activate = (id: ControlId) => setActiveId(id)
 
   const navFirst = () => { const app = getApp(); if (!app) return; app.start(); onPageChange(1); activate('first') }
-  const navPrev  = () => { document.querySelector<HTMLElement>('.df-ui-prev')?.click(); activate('prev') }
-  const navNext  = () => { document.querySelector<HTMLElement>('.df-ui-next')?.click(); activate('next') }
+  const navPrev  = () => { const app = getApp(); if (!app) return; app.prev(); activate('prev') }
+  const navNext  = () => { const app = getApp(); if (!app) return; app.next(); activate('next') }
   const navLast  = () => { const app = getApp(); if (!app) return; app.end(); onPageChange(totalPages); activate('last') }
   const navCover = () => { const app = getApp(); if (!app) return; app.start(); onPageChange(1); activate('cover') }
 
@@ -251,11 +253,13 @@ export function NavPill({ totalPages, page, soundOn, onPageChange, onSoundChange
         {/* Gap spacer */}
         <div style={{ width: BLOB_GAP, flexShrink: 0 }} />
 
-        {/* Download button — transparent bg, crisp icon */}
+        {/* Download / Print button */}
         <button
-          disabled
-          aria-label="Download"
-          className="relative flex items-center justify-center rounded-full px-[18px] py-[14px] cursor-not-allowed focus:outline-none text-white/30"
+          onClick={() => window.print()}
+          onMouseEnter={e => showTip(e, 'Print')}
+          onMouseLeave={hideTip}
+          aria-label="Print"
+          className="relative flex items-center justify-center rounded-full px-[18px] py-[14px] cursor-pointer focus:outline-none text-white/80 hover:text-white transition-colors"
           style={{ background: 'transparent' }}
         >
           <div className="relative w-5 h-5">

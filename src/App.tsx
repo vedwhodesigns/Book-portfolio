@@ -49,8 +49,9 @@ export default function App() {
   // Keyboard nav
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft')  document.querySelector<HTMLElement>('.df-ui-prev')?.click()
-      if (e.key === 'ArrowRight') document.querySelector<HTMLElement>('.df-ui-next')?.click()
+      const app = (window as { jQuery?: (s: string) => { data: (k: string) => { prev?: () => void; next?: () => void } | undefined } }).jQuery?.('#portfolio-viewer')?.data('dfApp')
+      if (e.key === 'ArrowLeft')  app?.prev?.()
+      if (e.key === 'ArrowRight') app?.next?.()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)

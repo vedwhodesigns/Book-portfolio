@@ -4,3 +4,11 @@
 .bg-text-light-accent {
   background-color: rgba(255, 255, 255, 0.08);
 }
+
+@media print {
+  #ctrl-nav,
+  [id^="ctrl-"],
+  .stage-label,
+  .side-text,
+  .artifacts { display: none !important; }
+}

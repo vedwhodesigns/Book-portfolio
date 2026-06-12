@@ -17,6 +17,8 @@ interface DearFlipApp {
   viewer?: { soundOn: boolean; stage?: unknown }
   start: () => void
   end: () => void
+  prev: () => void
+  next: () => void
   resize?: () => void
 }
 
