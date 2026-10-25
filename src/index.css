@@ -1,14 +1,38 @@
-@import url('../style.css');
 @import "tailwindcss";
 
-.bg-text-light-accent {
-  background-color: rgba(255, 255, 255, 0.08);
+@theme {
+  --font-sans: "Inter Tight", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --font-serif: "Instrument Serif", Georgia, serif;
+  --color-ink: #121110;
+  --color-paper: #ece9e2;
 }
 
-@media print {
-  #ctrl-nav,
-  [id^="ctrl-"],
-  .stage-label,
-  .side-text,
-  .artifacts { display: none !important; }
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: var(--color-ink);
+  color: var(--color-paper);
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+}
+
+button:disabled {
+  cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

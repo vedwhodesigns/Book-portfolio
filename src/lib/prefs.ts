@@ -1,28 +1,37 @@
 const SESSION_KEY = 'bookportfolio_session'
-const PREFS_KEY   = 'bookportfolio_prefs'
+const PREFS_KEY = 'bookportfolio_prefs'
 
 interface Prefs {
-  page?: number
+  /** Id of the page the reader was on (per session). */
+  page?: string
   sound?: boolean
+  /** Whether the "how to turn" hint has been dismissed. */
+  hinted?: boolean
 }
 
-export function savePrefs(patch: Partial<Prefs>): void {
+function read(store: Storage, key: string): Prefs {
   try {
-    if (patch.page !== undefined) {
-      const s = JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? '{}') as Prefs
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify({ ...s, page: patch.page }))
-    }
-    if (patch.sound !== undefined) {
-      const p = JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as Prefs
-      localStorage.setItem(PREFS_KEY, JSON.stringify({ ...p, sound: patch.sound }))
-    }
-  } catch (_) {}
+    return JSON.parse(store.getItem(key) ?? '{}') as Prefs
+  } catch {
+    return {}
+  }
+}
+
+export function savePrefs(patch: Prefs): void {
+  try {
+    if (patch.page !== undefined) sessionStorage.setItem(SESSION_KEY, JSON.stringify({ ...read(sessionStorage, SESSION_KEY), page: patch.page }))
+    const rest = { ...patch }
+    delete rest.page
+    if (Object.keys(rest).length) localStorage.setItem(PREFS_KEY, JSON.stringify({ ...read(localStorage, PREFS_KEY), ...rest }))
+  } catch {
+    // Storage can be unavailable (private mode); preferences are a nicety.
+  }
 }
 
 export function loadPrefs(): Prefs {
   try {
-    const session = JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? '{}') as Prefs
-    const prefs   = JSON.parse(localStorage.getItem(PREFS_KEY)   ?? '{}') as Prefs
-    return { ...prefs, ...session }
-  } catch (_) { return {} }
+    return { ...read(localStorage, PREFS_KEY), ...read(sessionStorage, SESSION_KEY) }
+  } catch {
+    return {}
+  }
 }
