@@ -2,7 +2,7 @@
 // a 1000 × 1389 page (aspect 0.72) and scaled to the requested texture size.
 import type { Hotspot, PageSpec, SleeveItem } from './types'
 import {
-  applyGrain, drawImage, font, FONT_MONO, FONT_SANS, FONT_SERIF, INK, label, makeCanvas, MUTED, PAPER, paragraph, rng, tracked,
+  applyFineGrain, applyGrain, drawImage, font, FONT_MONO, FONT_SANS, FONT_SERIF, INK, label, makeCanvas, MUTED, PAPER, paragraph, rng, tracked,
 } from './art'
 
 export const PAGE_W = 1000
@@ -538,25 +538,8 @@ const DRAW: Drawers = {
     const { ctx } = f
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, PAGE_W, PAGE_H)
-    // Formation: the cloudy, uneven fibre density you see when tracing paper
-    // is held to the light. Denser patches transmit a little less.
-    const r = rng(43)
-    for (let i = 0; i < 140; i++) {
-      const x = r() * PAGE_W, y = r() * PAGE_H, rad = 30 + r() * 140
-      const g = ctx.createRadialGradient(x, y, 0, x, y, rad)
-      g.addColorStop(0, `rgba(90,88,82,${0.025 + r() * 0.045})`)
-      g.addColorStop(1, 'rgba(90,88,82,0)')
-      ctx.fillStyle = g
-      ctx.fillRect(x - rad, y - rad, rad * 2, rad * 2)
-    }
-    for (let i = 0; i < 900; i++) {
-      ctx.fillStyle = `rgba(120,116,108,${0.03 + r() * 0.05})`
-      ctx.save()
-      ctx.translate(r() * PAGE_W, r() * PAGE_H)
-      ctx.rotate(r() * Math.PI)
-      ctx.fillRect(0, 0, 4 + r() * 18, 0.8)
-      ctx.restore()
-    }
+    // Tracing paper has a very fine, even grain and nothing else.
+    applyFineGrain(ctx, PAGE_W, PAGE_H, 0.16, f.px)
     label(ctx, s.chapter, f.x0, 82, 13, 'rgba(28,27,25,0.85)')
     label(ctx, 'Interleaf', f.x1, 82, 13, 'rgba(28,27,25,0.85)', 'right')
     ctx.font = font(FONT_MONO, 13, 400)

@@ -1,5 +1,5 @@
 import {
-  BackSide, BoxGeometry, CanvasTexture, Color, DataTexture, DoubleSide, Group, HemisphereLight, Mesh, MeshBasicMaterial,
+  BackSide, BoxGeometry, CanvasTexture, Color, DataTexture, DoubleSide, FrontSide, Group, HemisphereLight, Mesh, MeshBasicMaterial,
   MeshPhysicalMaterial, MeshStandardMaterial, PCFSoftShadowMap, PerspectiveCamera, Plane, PlaneGeometry, PMREMGenerator,
   Raycaster, RGBAFormat, Scene, SpotLight, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, type MeshDepthMaterial, type Texture,
 } from 'three'
@@ -76,15 +76,15 @@ interface LeafObj {
   /** Paper, cover or sleeve contents. */
   sheet?: MeshStandardMaterial
   depth?: MeshDepthMaterial
-  /** Tracing paper. */
-  print?: MeshPhysicalMaterial
+  /** Tracing paper (front and back faces). */
+  prints?: MeshPhysicalMaterial[]
   p: number
   tween?: Tween
   /** Pointer-driven target while dragging. */
   follow?: number
   /** Random per-turn timing so no two turns are identical. */
   wobble: number
-  /** Gutter bow this leaf is easing toward. */
+  /** Gutter bow this leaf is easing toward (see updateBows). */
   restLift: number
   landedAt: number | null
   wantFront?: string
@@ -304,8 +304,10 @@ export class BookEngine {
         return x
       }
       if (kind === 'vellum') {
-        obj.print = tracingMaterial(u, this.white, s.tracingNormal, this.env)
-        mesh(obj.print)
+        // One mesh per face: a double-sided transmissive sheet would be drawn
+        // into the very buffer it samples, which shows up as stripes.
+        obj.prints = [FrontSide, BackSide].map(side => tracingMaterial(u, this.white, this.env, side))
+        obj.prints.forEach(m => mesh(m))
       } else {
         const opts = kind === 'cover' ? COVER : kind === 'sleeve' ? SLEEVE_CONTENTS : PAPER
         const blank = kind === 'sleeve' ? this.clear : this.plain
@@ -316,9 +318,11 @@ export class BookEngine {
         m.customDepthMaterial = obj.depth
         if (kind === 'sleeve') {
           // The film sits on its own contents: it must not catch their shadows.
-          const film = mesh(filmMaterial(u, s.crinkle, this.env))
-          film.receiveShadow = false
-          film.renderOrder = 1
+          for (const side of [FrontSide, BackSide]) {
+            const film = mesh(filmMaterial(u, s.crinkle, this.env, side))
+            film.receiveShadow = false
+            film.renderOrder = 1
+          }
         }
       }
       this.book.add(group)
@@ -347,12 +351,42 @@ export class BookEngine {
     const lo = this.turned - 3, hi = this.turned + 2
     for (const l of this.leaves) {
       l.group.visible = (l.index >= lo && l.index <= hi) || !!l.tween || l.follow !== undefined
-      // Gutter bow: strongest on the top page of each stack, flatter beneath
-      // so pages never cut through one another. Boards stay nearly flat.
-      const depth = l.index >= this.turned ? l.index - this.turned : this.turned - 1 - l.index
-      const stiffness = l.data.kind === 'cover' ? 0.25 : 1
-      l.restLift = (REST_LIFT * stiffness) / (1 + depth * 0.45)
     }
+  }
+
+  /**
+   * Gutter bow for each sheet. The top sheet of a stack bows most and every
+   * sheet below bows less, so nothing can rise through what lies on it. While
+   * a sheet is lifting off (or landing on) a stack, that stack lies flat until
+   * the sheet has cleared it. Returns true while anything is still easing.
+   */
+  private updateBows(dt: number, snap = false) {
+    const moving = (l: LeafObj) => !!l.tween || l.follow !== undefined
+    const movers = this.leaves.filter(moving)
+    const rightBlocked = movers.some(l => l.p < 0.5)
+    const leftBlocked = movers.some(l => l.p >= 0.5)
+    const right = this.leaves.filter(l => !moving(l) && l.p < 0.5)
+    const left = this.leaves.filter(l => !moving(l) && l.p >= 0.5).reverse()
+    for (const l of movers) l.restLift = REST_LIFT
+    right.forEach((l, d) => { l.restLift = rightBlocked ? 0 : REST_LIFT / (1 + d * 0.45) })
+    left.forEach((l, d) => { l.restLift = leftBlocked ? 0 : REST_LIFT / (1 + d * 0.45) })
+    let easing = false
+    for (const l of this.leaves) {
+      const v = l.u.uRestLift.value
+      const diff = l.restLift - v
+      if (snap || Math.abs(diff) < 1e-5) { l.u.uRestLift.value = l.restLift; continue }
+      // Flatten quickly, rise gently.
+      l.u.uRestLift.value = v + diff * (1 - Math.exp(-dt / (diff < 0 ? 0.04 : 0.15)))
+      easing = true
+    }
+    for (const stack of [right, left]) {
+      let ceiling = Infinity
+      for (const l of stack) {
+        l.u.uRestLift.value = Math.min(l.u.uRestLift.value, ceiling)
+        ceiling = l.u.uRestLift.value
+      }
+    }
+    return easing
   }
 
   /** Animate to a committed state, turning every leaf in between. */
@@ -417,7 +451,7 @@ export class BookEngine {
     const front = l.wantFront ? this.textures.get(l.wantFront) : undefined
     if (front && l.frontKey !== l.wantFront) {
       if (l.sheet) l.sheet.map = front.tex
-      if (l.print) l.print.map = front.tex
+      if (l.prints) for (const m of l.prints) m.map = front.tex
       if (l.depth && l.data.kind === 'sleeve') l.depth.map = front.tex
       l.frontKey = l.wantFront
     }
@@ -458,7 +492,7 @@ export class BookEngine {
         if (l.frontKey) {
           const blank = l.data.kind === 'sleeve' ? this.clear : l.data.kind === 'vellum' ? this.white : this.plain
           if (l.sheet) { l.sheet.map = blank; setBackMap(l.sheet, blank) }
-          if (l.print) l.print.map = blank
+          if (l.prints) for (const m of l.prints) m.map = blank
           if (l.depth && l.data.kind === 'sleeve') l.depth.map = this.clear
         }
         l.wantFront = l.wantBack = l.frontKey = l.backKey = undefined
@@ -514,13 +548,21 @@ export class BookEngine {
     if (this.disposed) return
     let best: [string, Job] | undefined
     for (const e of this.jobs) if (!best || e[1].priority < best[1].priority) best = e
-    // Keep the hand-held page smooth: only draw what is already on show.
-    if (best && this.drag?.leaf && best[1].priority > 0.5) { this.idle = window.setTimeout(this.pump, 120); return }
+    // Keep motion smooth: while a page moves, only draw what is already on show.
+    if (best && (this.drag?.leaf || this.raf) && best[1].priority > 0.5) { this.idle = window.setTimeout(this.pump, 150); return }
     if (best) {
       this.jobs.delete(best[0])
       best[1].run()
     }
     this.scheduleIdle()
+  }
+
+  /** Compile every material variant now (behind the loader), not on first use mid-flip. */
+  private precompile() {
+    const hidden = this.leaves.filter(l => !l.group.visible)
+    for (const l of hidden) l.group.visible = true
+    this.renderer.compile(this.scene, this.camera)
+    for (const l of hidden) l.group.visible = false
   }
 
   // ---------------------------------------------------------------------------
@@ -544,8 +586,9 @@ export class BookEngine {
       this.updateTexSize(w, h, mode)
       this.build(mode, turned)
       this.setVisibility()
-      for (const l of this.leaves) l.u.uRestLift.value = l.restLift
+      this.updateBows(0, true)
       this.flushUrgent()
+      this.precompile()
     } else if (this.updateTexSize(w, h, mode)) {
       this.assignTextures()
       this.flushUrgent()
@@ -900,16 +943,12 @@ export class BookEngine {
           active = true
         } else l.landedAt = null
       }
-      const lift = l.u.uRestLift.value
-      if (Math.abs(l.restLift - lift) > 1e-5) {
-        l.u.uRestLift.value = lift + (l.restLift - lift) * (1 - Math.exp(-dt / 0.15))
-        active = true
-      } else l.u.uRestLift.value = l.restLift
       const speed = Math.abs(l.p - before) / dt
       if (speed > loudest) { loudest = speed; loudKind = l.data.kind }
       if (l.p !== before || flex !== l.u.uFlex.value) this.applyLeaf(l, flex)
     }
     if (settled) this.setVisibility()
+    if (this.updateBows(dt)) active = true
     if (loudest > 0.05) this.opts.sound.move(loudest, loudKind)
     else this.opts.sound.quiet()
 

@@ -73,6 +73,39 @@ export function applyGrain(ctx: CanvasRenderingContext2D, w: number, h: number, 
   ctx.restore()
 }
 
+let fineTile: HTMLCanvasElement | undefined
+
+/**
+ * Even, very fine luminance grain (no fibres, no clouds), multiplied over the
+ * surface. One tile pixel maps to one texture pixel when `px` is the inverse
+ * of the canvas scale. `amount` is the darkest a grain can get (0..1).
+ */
+export function applyFineGrain(ctx: CanvasRenderingContext2D, w: number, h: number, amount: number, px: number) {
+  if (!fineTile) {
+    const size = 256
+    const [c, g] = makeCanvas(size, size)
+    const img = g.createImageData(size, size)
+    const r = rng(97)
+    for (let i = 0; i < size * size; i++) {
+      // Two uniforms averaged: soft, film-like distribution.
+      const n = (r() + r()) / 2
+      const v = 255 * (1 - n)
+      img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = v
+      img.data[i * 4 + 3] = 255
+    }
+    g.putImageData(img, 0, 0)
+    fineTile = c
+  }
+  ctx.save()
+  ctx.globalCompositeOperation = 'multiply'
+  ctx.globalAlpha = amount
+  const pat = ctx.createPattern(fineTile, 'repeat')!
+  pat.setTransform(new DOMMatrix().scale(px))
+  ctx.fillStyle = pat
+  ctx.fillRect(0, 0, w, h)
+  ctx.restore()
+}
+
 // ---------------------------------------------------------------------------
 // Placeholder imagery: soft, blurred, photographic-feeling fields of light.
 

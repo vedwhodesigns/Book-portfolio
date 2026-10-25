@@ -15,8 +15,8 @@
 //            glass-clear with a few percent haze; crinkles bend reflections.
 
 import {
-  DoubleSide, MeshDepthMaterial, MeshPhysicalMaterial, MeshStandardMaterial, RGBADepthPacking, ShaderChunk, Vector2,
-  type IUniform, type Texture, type WebGLProgramParametersWithUniforms,
+  DoubleSide, FrontSide, MeshDepthMaterial, MeshPhysicalMaterial, MeshStandardMaterial, RGBADepthPacking, ShaderChunk, Vector2,
+  type IUniform, type Side, type Texture, type WebGLProgramParametersWithUniforms,
 } from 'three'
 
 export interface SheetUniforms {
@@ -63,6 +63,12 @@ float restLift(float x) {
   return uRestLift * rise * (1.0 - 0.55 * smoothstep(0.4, 1.0, x));
 }
 
+// The bow a resting sheet shares with the stack under it (fades while turning).
+float sheetRest(vec2 st) {
+  float atRest = 1.0 - smoothstep(0.0, 0.22, min(uProgress, 1.0 - uProgress));
+  return restLift(st.x) * atRest;
+}
+
 vec3 sheetPoint(vec2 st) {
   const float PI = 3.141592653589793;
   float lift = sin(PI * uProgress);
@@ -75,8 +81,7 @@ vec3 sheetPoint(vec2 st) {
   vec2 xz = abs(k) < 1e-5
     ? u * vec2(cos(ts), sin(ts))
     : vec2(sin(ts + k * u) - sin(ts), cos(ts) - cos(ts + k * u)) / k;
-  float atRest = 1.0 - smoothstep(0.0, 0.22, min(uProgress, 1.0 - uProgress));
-  return vec3(xz.x, (st.y - 0.5) * uSheet.y, xz.y + restLift(st.x) * atRest);
+  return vec3(xz.x, (st.y - 0.5) * uSheet.y, xz.y + sheetRest(st));
 }
 `
 
@@ -94,7 +99,7 @@ function bendVertex(shader: WebGLProgramParametersWithUniforms, uniforms: SheetU
   Object.assign(shader.uniforms, uniforms)
   shader.vertexShader = BEND_GLSL + shader.vertexShader
     .replace('#include <beginnormal_vertex>', BEND_NORMAL)
-    .replace('#include <begin_vertex>', 'vec3 transformed = sheetP;\nvLift = sheetP.z;')
+    .replace('#include <begin_vertex>', 'vec3 transformed = sheetP;\nvLift = sheetP.z - sheetRest(uv);')
 }
 
 // ---------------------------------------------------------------------------
@@ -232,32 +237,34 @@ function blurByLift(m: MeshPhysicalMaterial, u: SheetUniforms, o: ClearOptions, 
 }
 
 /**
- * Tracing ("butter") paper. Most light passes through but is scattered, so
- * the page underneath reads blurred and washed out; ink on the sheet itself
- * stays crisp because it sits on the surface.
+ * Tracing ("butter") paper, matched to the reference footage. Measured there:
+ * a page's white seen through the sheet reads ≈#cfcfcb and its black ≈#757575,
+ * i.e. ≈59% of light passes and ≈16% scatters back as a milky veil. Solving
+ * color·transmission = 0.59 and color·(1 − transmission) ≈ 0.16 gives the
+ * values below. Lying flat it only softens detail by a pixel or two; as it
+ * lifts away the page beneath dissolves quickly. Ink on the sheet stays crisp.
+ * One material per face (FrontSide / BackSide).
  */
-export function tracingMaterial(u: SheetUniforms, print: Texture, grainNormal: Texture, env: Texture) {
+export function tracingMaterial(u: SheetUniforms, print: Texture, env: Texture, side: Side = FrontSide) {
   const m = new MeshPhysicalMaterial({
     map: print,
-    color: 0xffffff,
-    roughness: 0.34,
+    color: 0xe1e1de,
+    roughness: 0.42,
     metalness: 0,
     ior: 1.53,
-    transmission: 0.85,
+    transmission: 0.79,
     thickness: 0.0005,
-    specularIntensity: 0.9,
-    normalMap: grainNormal,
-    normalScale: new Vector2(0.12, 0.12),
+    specularIntensity: 0.8,
     envMap: env,
-    envMapIntensity: 0.6,
-    side: DoubleSide,
+    envMapIntensity: 0.5,
+    side,
   })
-  blurByLift(m, u, { blurBase: 0.28, blurPerUnitLift: 5 }, 'sheet-tracing')
+  blurByLift(m, u, { blurBase: 0.16, blurPerUnitLift: 9 }, `sheet-tracing-${side}`)
   return m
 }
 
 /** Clear polypropylene film of a sheet protector, drawn over its contents. */
-export function filmMaterial(u: SheetUniforms, crinkle: Texture, env: Texture) {
+export function filmMaterial(u: SheetUniforms, crinkle: Texture, env: Texture, side: Side = FrontSide) {
   const m = new MeshPhysicalMaterial({
     color: 0xffffff,
     roughness: 0.05,
@@ -271,11 +278,11 @@ export function filmMaterial(u: SheetUniforms, crinkle: Texture, env: Texture) {
     normalScale: new Vector2(0.22, 0.22),
     envMap: env,
     envMapIntensity: 1,
-    side: DoubleSide,
+    side,
     polygonOffset: true,
     polygonOffsetFactor: -1,
     polygonOffsetUnits: -1,
   })
-  blurByLift(m, u, { blurBase: 0.015, blurPerUnitLift: 0.25 }, 'sheet-film')
+  blurByLift(m, u, { blurBase: 0.015, blurPerUnitLift: 0.25 }, `sheet-film-${side}`)
   return m
 }

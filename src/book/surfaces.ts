@@ -89,8 +89,6 @@ export interface Surfaces {
   fibreNormal: DataTexture
   /** Roughness variation, green channel (tiled). */
   grainRoughness: DataTexture
-  /** Smoother, finer relief for calendered tracing paper. */
-  tracingNormal: DataTexture
   /** Plastic sleeve crinkles across the whole sheet (normal map). */
   crinkle: DataTexture
   /** The desk under the book. */
@@ -113,8 +111,6 @@ export function createSurfaces(): Surfaces {
   }
   const grainRoughness = dataTexture(rough, S, 9, 12)
 
-  const tracingFibres = fibreHeight(S, 23, 160, 0.18)
-  const tracingNormal = dataTexture(normalsFromHeight(tracingFibres, S, 1.2), S, 9, 12)
 
   // Crinkles: soft undulation everywhere, sharper creases toward the edges.
   const C = 512
@@ -160,5 +156,5 @@ export function createSurfaces(): Surfaces {
   table.wrapS = table.wrapT = RepeatWrapping
   table.repeat.set(6, 6)
 
-  return { fibreNormal, grainRoughness, tracingNormal, crinkle, table }
+  return { fibreNormal, grainRoughness, crinkle, table }
 }
