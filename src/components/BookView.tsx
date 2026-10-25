@@ -27,6 +27,7 @@ export function BookView({ engineRef, sound, chrome, startPage, onState }: Props
       onState: s => onStateRef.current(s),
     })
     engineRef.current = engine
+    if (import.meta.env.DEV) (window as { __book?: BookEngine }).__book = engine
     return () => {
       engine.destroy()
       engineRef.current = null

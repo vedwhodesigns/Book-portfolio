@@ -1,38 +1,40 @@
 import {
-  AdditiveBlending, AmbientLight, BackSide, CanvasTexture, Color, DirectionalLight, DoubleSide, FrontSide, Group, Mesh,
-  MeshDepthMaterial, MeshPhysicalMaterial, MeshStandardMaterial, PCFSoftShadowMap, PerspectiveCamera, Plane, PlaneGeometry,
-  PMREMGenerator, Raycaster, RGBADepthPacking, Scene, SRGBColorSpace, Vector2, Vector3, WebGLRenderer,
-  type BufferGeometry, type Texture,
+  BackSide, BoxGeometry, CanvasTexture, Color, DataTexture, DoubleSide, Group, HemisphereLight, Mesh, MeshBasicMaterial,
+  MeshPhysicalMaterial, MeshStandardMaterial, PCFSoftShadowMap, PerspectiveCamera, Plane, PlaneGeometry, PMREMGenerator,
+  Raycaster, RGBAFormat, Scene, SpotLight, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, type MeshDepthMaterial, type Texture,
 } from 'three'
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
-import { bendLeaf, createLeafGeometry } from './bend'
-import { renderBackground } from './background'
 import {
   anchorPage, buildLeaves, chooseMode, isOverlay, maxTurned, stateForPage, visibleFaces,
   type Face, type Leaf, type LeafKind, type Mode,
 } from './layout'
-import { PAGE_ASPECT, PAGE_H, PAGE_W, renderPage, renderPlain, renderShowThrough } from './pageArt'
+import {
+  COVER, PAPER, SLEEVE_CONTENTS, filmMaterial, paperMaterial, setBackMap, sheetDepthMaterial, sheetUniforms, tracingMaterial,
+  type SheetUniforms,
+} from './materials'
+import { PAGE_ASPECT, PAGE_H, PAGE_W, renderPage, renderPlain } from './pageArt'
 import type { PaperSound } from './paperSound'
-import { renderCrinkleNormals } from './plastic'
+import { createSurfaces, type Surfaces } from './surfaces'
 import type { BookSpec, Hotspot } from './types'
 
 const W = 1
 const H = 1 / PAGE_ASPECT
-const EPS = 0.0022
+/** Leaf spacing in the stacks: ≈0.19 mm on a 210 mm page. */
+const GAP = 0.0009
 const PEEK = 0.05
 const DRAG_START_PX = 6
+/** How tightly a dragged page follows the pointer (seconds). */
+const FOLLOW = 0.045
 
 /**
- * Material physics per sheet type.
- * curl: how far the sheet bows while turning (radians).
- * zeta: damping ratio of the turn spring (<1 overshoots a little).
- * flexHz/flexZeta/kick: the springy edge bounce when the sheet lands.
+ * Motion per sheet type. curl: bow while turning (radians). flip: seconds for
+ * a full turn from a tap or key. fall: seconds to settle after a release.
+ * bounce: edge lift (radians) when the sheet lands, then decays.
  */
-const PHYSICS: Record<LeafKind, { curl: number; zeta: number; flexHz: number; flexZeta: number; kick: number }> = {
-  paper: { curl: 1.15, zeta: 0.92, flexHz: 3.2, flexZeta: 0.55, kick: 0.35 },
-  cover: { curl: 0.32, zeta: 1, flexHz: 4, flexZeta: 1, kick: 0 },
-  vellum: { curl: 1.5, zeta: 0.85, flexHz: 2.6, flexZeta: 0.4, kick: 0.6 },
-  sleeve: { curl: 0.78, zeta: 0.72, flexHz: 5.5, flexZeta: 0.16, kick: 1.1 },
+const MOTION: Record<LeafKind, { curl: number; flip: number; fall: number; bounce: number }> = {
+  paper: { curl: 1.15, flip: 0.6, fall: 0.48, bounce: 0.035 },
+  cover: { curl: 0.3, flip: 0.78, fall: 0.6, bounce: 0 },
+  vellum: { curl: 1.5, flip: 0.7, fall: 0.56, bounce: 0.09 },
+  sleeve: { curl: 0.95, flip: 0.64, fall: 0.5, bounce: 0.12 },
 }
 
 export interface EngineState {
@@ -57,29 +59,36 @@ export interface EngineOptions {
   onState: (s: EngineState) => void
 }
 
+interface Tween {
+  from: number
+  to: number
+  start: number
+  dur: number
+  /** Initial slope for releases (Hermite); undefined uses the eased curve. */
+  launch?: number
+}
+
 interface LeafObj {
   data: Leaf
   index: number
   group: Group
-  geom: BufferGeometry
-  front: Mesh<BufferGeometry, MeshStandardMaterial>
-  back?: Mesh<BufferGeometry, MeshStandardMaterial>
-  /** Clear film layer of a plastic sleeve (reflections only). */
-  gloss?: Mesh<BufferGeometry, MeshPhysicalMaterial>
+  u: SheetUniforms
+  /** Paper, cover or sleeve contents. */
+  sheet?: MeshStandardMaterial
+  depth?: MeshDepthMaterial
+  /** Tracing paper. */
+  print?: MeshPhysicalMaterial
   p: number
-  v: number
-  target: number
-  dir: 1 | -1
-  grabY: number
-  curl: number
-  /** Edge bounce (radians) and its velocity. */
-  flex: number
-  flexV: number
-  dragging: boolean
-  /** Seconds to wait before animating (staggered chapter jumps). */
-  delay: number
-  landed: boolean
-  dirty: boolean
+  tween?: Tween
+  /** Pointer-driven target while dragging. */
+  follow?: number
+  /** Random per-turn timing so no two turns are identical. */
+  wobble: number
+  /** Gutter bow this leaf is easing toward. */
+  restLift: number
+  landedAt: number | null
+  wantFront?: string
+  wantBack?: string
   frontKey?: string
   backKey?: string
 }
@@ -93,10 +102,49 @@ interface Drag {
   wx: number
   wy: number
   leaf?: LeafObj
+  forward: boolean
   p0: number
   radius: number
   samples: { t: number; p: number }[]
   moved: boolean
+}
+
+interface Job { priority: number; run: () => void }
+
+/** Height of the gutter bow on the top page of each stack (fraction of page width). */
+const REST_LIFT = 0.03
+
+/**
+ * What glossy surfaces reflect: a dim room with one large softbox, placed
+ * along the key light so highlights and shadows agree.
+ */
+function studio(): Scene {
+  const scene = new Scene()
+  scene.add(new Mesh(new BoxGeometry(12, 12, 12), new MeshBasicMaterial({ color: 0x24221f, side: BackSide })))
+  const panel = (w: number, h: number, at: [number, number, number], intensity: number, roll: number) => {
+    const m = new Mesh(new PlaneGeometry(w, h), new MeshBasicMaterial({ color: new Color(1, 1, 1).multiplyScalar(intensity), side: DoubleSide }))
+    m.position.set(...at)
+    m.lookAt(0, 0, 0)
+    m.rotateZ(roll)
+    scene.add(m)
+  }
+  panel(1.4, 4.4, [1.7, 2.3, 3.6], 3.6, 0.5)
+  panel(0.8, 3.2, [-3.6, -1.4, 3.2], 1.1, 0)
+  return scene
+}
+
+const ease = (r: number) => 0.5 * (1 - Math.cos((1 - Math.pow(1 - r, 0.8)) * Math.PI))
+const hermite = (r: number, launch: number) => {
+  const r2 = r * r, r3 = r2 * r
+  return (r3 - 2 * r2 + r) * launch + (3 * r2 - 2 * r3)
+}
+const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v)
+
+function solidTexture(rgba: [number, number, number, number]) {
+  const t = new DataTexture(new Uint8Array(rgba), 1, 1, RGBAFormat)
+  t.colorSpace = SRGBColorSpace
+  t.needsUpdate = true
+  return t
 }
 
 export class BookEngine {
@@ -104,22 +152,25 @@ export class BookEngine {
   private scene = new Scene()
   private camera = new PerspectiveCamera(24, 1, 0.1, 60)
   private book = new Group()
-  private light: DirectionalLight
+  private geometry = new PlaneGeometry(1, 1, 48, 14)
+  private surfaces: Surfaces
+  private env: Texture
   private leaves: LeafObj[] = []
   private mode: Mode = 'spread'
   private turned = 0
-  private pose: Pose = { tx: 0, ty: 0, dist: 6, polar: 0.12, azim: 0 }
+  private pose: Pose = { tx: 0, ty: 0, dist: 6, polar: 0.1, azim: 0 }
   private goal: Pose = { ...this.pose }
-  private textures = new Map<string, { tex: CanvasTexture; hot: Hotspot[]; canvas: HTMLCanvasElement }>()
-  private plain?: CanvasTexture
-  private env: Texture
-  private crinkle: CanvasTexture
-  private queue: (() => void)[] = []
+  private textures = new Map<string, { tex: Texture; hot: Hotspot[] }>()
+  private jobs = new Map<string, Job>()
+  private idle = 0
+  private plain: CanvasTexture
+  private white = solidTexture([255, 255, 255, 255])
+  private clear = solidTexture([0, 0, 0, 0])
   private texW = 1024
   private raf = 0
   private lastFrame = 0
   private drag?: Drag
-  private hoverPeek?: LeafObj
+  private peeked?: LeafObj
   private wheelAcc = 0
   private wheelLock = 0
   private width = 1
@@ -129,42 +180,49 @@ export class BookEngine {
   private disposed = false
 
   constructor(private container: HTMLElement, private opts: EngineOptions) {
-    this.renderer = new WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' })
+    const coarse = window.matchMedia('(pointer: coarse)').matches
+    this.renderer = new WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
     this.renderer.outputColorSpace = SRGBColorSpace
     this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = PCFSoftShadowMap
-    this.renderer.setClearColor(new Color('#121110'))
+    this.renderer.shadowMap.autoUpdate = false
+    this.renderer.transmissionResolutionScale = coarse ? 0.75 : 1
+    this.renderer.setClearColor(new Color('#151412'))
     const canvas = this.renderer.domElement
     canvas.style.touchAction = 'none'
     canvas.style.display = 'block'
+    canvas.style.setProperty('-webkit-touch-callout', 'none')
+    canvas.style.userSelect = 'none'
     canvas.setAttribute('aria-hidden', 'true')
     container.appendChild(canvas)
 
-    this.scene.add(new AmbientLight(0xffffff, 1.25))
-    this.light = new DirectionalLight(0xfff6ea, 2.35)
-    this.light.position.set(-2.4, 2.8, 6.5)
-    this.light.castShadow = true
-    const coarse = window.matchMedia('(pointer: coarse)').matches
-    this.light.shadow.mapSize.set(coarse ? 1024 : 2048, coarse ? 1024 : 2048)
-    const sc = this.light.shadow.camera
-    sc.left = -2.6; sc.right = 2.6; sc.top = 2.2; sc.bottom = -2.2; sc.near = 1; sc.far = 16
-    this.light.shadow.bias = -0.0004
-    this.light.shadow.normalBias = 0.012
-    this.scene.add(this.light)
+    // Soft sky/ground fill plus one key light pooling over the book, as a
+    // room with a window would give. Shadows stay soft and never go black.
+    this.scene.add(new HemisphereLight(0xffffff, 0x8e9698, 1.45))
+    const key = new SpotLight(0xffffff, 2.3, 0, 0.62, 0.95, 0)
+    key.position.set(1.05, -1.75, 3.3)
+    key.target.position.set(0, 0, 0)
+    key.castShadow = true
+    key.shadow.intensity = 0.5
+    key.shadow.mapSize.set(coarse ? 1536 : 2048, coarse ? 1536 : 2048)
+    key.shadow.camera.near = 1.5
+    key.shadow.camera.far = 7
+    key.shadow.bias = -0.0005
+    key.shadow.normalBias = 0.004
+    this.scene.add(key, key.target)
 
-    // Studio reflections, used only by the plastic film so paper stays matte.
+    this.surfaces = createSurfaces()
     const pmrem = new PMREMGenerator(this.renderer)
-    this.env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
+    this.env = pmrem.fromScene(studio(), 0.02).texture
     pmrem.dispose()
-    this.crinkle = new CanvasTexture(renderCrinkleNormals(1024))
+    this.plain = new CanvasTexture(renderPlain(256))
+    this.plain.colorSpace = SRGBColorSpace
 
-    const bgTex = new CanvasTexture(renderBackground(2048))
-    bgTex.colorSpace = SRGBColorSpace
-    const bg = new Mesh(new PlaneGeometry(7, 7), new MeshStandardMaterial({ map: bgTex, roughness: 0.95, color: 0x8c8a86 }))
-    bg.position.z = -0.03
-    bg.receiveShadow = true
-    this.scene.add(bg)
+    const table = new Mesh(new PlaneGeometry(8, 8), new MeshStandardMaterial({ map: this.surfaces.table, roughness: 0.92 }))
+    table.position.z = -0.004
+    table.receiveShadow = true
+    this.scene.add(table)
     this.scene.add(this.book)
 
     this.bindInput(canvas)
@@ -179,10 +237,10 @@ export class BookEngine {
   next() { this.turnTo(this.turned + 1) }
   prev() { this.turnTo(this.turned - 1) }
   first() { this.turnTo(0) }
-  last() { this.turnTo(maxTurned(this.leaves.map(l => l.data), this.mode)) }
+  last() { this.turnTo(this.max()) }
 
   goToPage(pageId: string) {
-    this.turnTo(stateForPage(this.leaves.map(l => l.data), this.mode, pageId))
+    this.turnTo(stateForPage(this.leafData(), this.mode, pageId))
   }
 
   setChrome(chrome: { top: number; bottom: number }) {
@@ -193,13 +251,17 @@ export class BookEngine {
   destroy() {
     this.disposed = true
     cancelAnimationFrame(this.raf)
+    this.cancelIdle()
     this.ro.disconnect()
     window.removeEventListener('keydown', this.onKey)
     for (const t of this.textures.values()) t.tex.dispose()
-    this.plain?.dispose()
-    this.env.dispose()
-    this.crinkle.dispose()
     this.clearLeaves()
+    this.geometry.dispose()
+    for (const t of Object.values(this.surfaces)) (t as Texture).dispose()
+    this.env.dispose()
+    this.plain.dispose()
+    this.white.dispose()
+    this.clear.dispose()
     this.renderer.dispose()
     this.renderer.domElement.remove()
   }
@@ -207,13 +269,15 @@ export class BookEngine {
   // ---------------------------------------------------------------------------
   // Leaves
 
+  private leafData() { return this.leaves.map(l => l.data) }
+  private max() { return maxTurned(this.leafData(), this.mode) }
+
   private clearLeaves() {
     for (const l of this.leaves) {
-      l.geom.dispose()
-      l.front.material.dispose()
-      l.front.customDepthMaterial?.dispose()
-      l.back?.material.dispose()
-      l.gloss?.material.dispose()
+      l.group.traverse(o => {
+        if (o instanceof Mesh) (o.material as MeshStandardMaterial).dispose()
+      })
+      l.depth?.dispose()
       this.book.remove(l.group)
     }
     this.leaves = []
@@ -221,113 +285,103 @@ export class BookEngine {
 
   private build(mode: Mode, turned: number) {
     this.clearLeaves()
-    // Pending artwork jobs belong to the old leaves.
-    this.queue = []
+    this.jobs.clear()
     this.mode = mode
     const data = buildLeaves(this.opts.book, mode)
     this.turned = Math.max(0, Math.min(turned, maxTurned(data, mode)))
+    const s = this.surfaces
     this.leaves = data.map((leaf, index) => {
       const kind = leaf.kind
-      const vellum = kind === 'vellum'
-      const sleeve = kind === 'sleeve'
-      const geom = createLeafGeometry(W, H, kind === 'cover' ? 24 : 44, sleeve ? 14 : 10)
-      const roughness = kind === 'cover' ? 0.55 : sleeve ? 0.6 : 0.88
-      const front = new Mesh(
-        geom,
-        new MeshStandardMaterial({
-          roughness,
-          metalness: 0,
-          side: vellum ? DoubleSide : FrontSide,
-          transparent: vellum || sleeve,
-          depthWrite: !vellum,
-        }),
-      )
-      front.material.shadowSide = DoubleSide
-      front.castShadow = !vellum
-      front.receiveShadow = true
-      front.renderOrder = 1
-      if (sleeve) {
-        // Shadows follow the items inside the pocket, not the clear film.
-        front.customDepthMaterial = new MeshDepthMaterial({ depthPacking: RGBADepthPacking, alphaTest: 0.5, side: DoubleSide })
-      }
+      const p = index < this.turned ? 1 : 0
+      const u = sheetUniforms(W, H, MOTION[kind].curl * (this.opts.reducedMotion ? 0.5 : 1), p)
       const group = new Group()
-      group.add(front)
-      let back: Mesh<BufferGeometry, MeshStandardMaterial> | undefined
-      if (!vellum) {
-        back = new Mesh(geom, new MeshStandardMaterial({ roughness, metalness: 0, side: BackSide, transparent: sleeve }))
-        back.receiveShadow = true
-        back.renderOrder = 1
-        group.add(back)
+      const obj: LeafObj = { data: leaf, index, group, u, p, wobble: 1, restLift: 0, landedAt: null }
+      const mesh = (m: MeshStandardMaterial | MeshPhysicalMaterial) => {
+        const x = new Mesh(this.geometry, m)
+        x.frustumCulled = false
+        x.receiveShadow = true
+        group.add(x)
+        return x
       }
-      let gloss: LeafObj['gloss']
-      if (sleeve) {
-        // The film adds light (reflections, crinkle highlights) and never darkens.
-        gloss = new Mesh(
-          geom,
-          new MeshPhysicalMaterial({
-            color: 0x000000,
-            roughness: 0.1,
-            metalness: 0,
-            normalMap: this.crinkle,
-            envMap: this.env,
-            envMapIntensity: 0.85,
-            side: DoubleSide,
-            transparent: true,
-            blending: AdditiveBlending,
-            depthWrite: false,
-          }),
-        )
-        gloss.material.normalScale.set(0.3, 0.3)
-        gloss.renderOrder = 2
-        group.add(gloss)
+      if (kind === 'vellum') {
+        obj.print = tracingMaterial(u, this.white, s.tracingNormal, this.env)
+        mesh(obj.print)
+      } else {
+        const opts = kind === 'cover' ? COVER : kind === 'sleeve' ? SLEEVE_CONTENTS : PAPER
+        const blank = kind === 'sleeve' ? this.clear : this.plain
+        obj.sheet = paperMaterial(u, { ...opts, grainNormal: s.fibreNormal, grainRoughness: s.grainRoughness }, blank, blank)
+        obj.depth = sheetDepthMaterial(u, kind === 'sleeve' ? this.clear : undefined)
+        const m = mesh(obj.sheet)
+        m.castShadow = true
+        m.customDepthMaterial = obj.depth
+        if (kind === 'sleeve') {
+          // The film sits on its own contents: it must not catch their shadows.
+          const film = mesh(filmMaterial(u, s.crinkle, this.env))
+          film.receiveShadow = false
+          film.renderOrder = 1
+        }
       }
       this.book.add(group)
-      const p = index < this.turned ? 1 : 0
-      const obj: LeafObj = {
-        data: leaf, index, group, geom, front, back, gloss,
-        p, v: 0, target: p, dir: 1, grabY: 0.5, curl: PHYSICS[kind].curl * (this.opts.reducedMotion ? 0.5 : 1),
-        flex: 0, flexV: 0, dragging: false, delay: 0, landed: true, dirty: true,
-      }
       return obj
     })
-    for (const l of this.leaves) this.applyBend(l)
+    for (const l of this.leaves) this.applyLeaf(l, 0)
     this.assignTextures()
     this.emit()
   }
 
   private baseZ(l: LeafObj) {
     const n = this.leaves.length
-    const zRight = (n - l.index) * EPS
-    const zLeft = (l.index + 1) * EPS
-    return zRight + (zLeft - zRight) * Math.min(1, Math.max(0, l.p)) + Math.sin(Math.PI * Math.min(1, Math.max(0, l.p))) * EPS * 6
+    const p = clamp01(l.p)
+    const right = (n - l.index) * GAP
+    const left = (l.index + 1) * GAP
+    return right + (left - right) * p + Math.sin(Math.PI * p) * GAP * 4
   }
 
-  private applyBend(l: LeafObj) {
-    bendLeaf(l.geom, { p: Math.min(1, Math.max(0, l.p)), dir: l.dir, grabY: l.grabY, curl: l.curl, flex: l.flex })
+  private applyLeaf(l: LeafObj, flex: number) {
+    l.u.uProgress.value = clamp01(l.p)
+    l.u.uFlex.value = flex
     l.group.position.z = this.baseZ(l)
-    l.dirty = false
   }
 
-  /** Start animating toward a committed state, flipping every leaf in between. */
+  private setVisibility() {
+    const lo = this.turned - 3, hi = this.turned + 2
+    for (const l of this.leaves) {
+      l.group.visible = (l.index >= lo && l.index <= hi) || !!l.tween || l.follow !== undefined
+      // Gutter bow: strongest on the top page of each stack, flatter beneath
+      // so pages never cut through one another. Boards stay nearly flat.
+      const depth = l.index >= this.turned ? l.index - this.turned : this.turned - 1 - l.index
+      const stiffness = l.data.kind === 'cover' ? 0.25 : 1
+      l.restLift = (REST_LIFT * stiffness) / (1 + depth * 0.45)
+    }
+  }
+
+  /** Animate to a committed state, turning every leaf in between. */
   private turnTo(target: number) {
-    const max = maxTurned(this.leaves.map(l => l.data), this.mode)
-    target = Math.max(0, Math.min(max, target))
+    target = Math.max(0, Math.min(this.max(), target))
     if (target === this.turned || this.drag?.leaf) return
     const forward = target > this.turned
-    const span = Math.abs(target - this.turned)
-    const order = forward
-      ? this.leaves.slice(this.turned, target)
-      : this.leaves.slice(target, this.turned).reverse()
+    const order = forward ? this.leaves.slice(this.turned, target) : this.leaves.slice(target, this.turned).reverse()
+    const jump = order.length > 1
+    const now = performance.now() / 1000
     order.forEach((l, i) => {
-      l.target = forward ? 1 : 0
-      l.dir = forward ? 1 : -1
-      l.grabY = 0.3 + Math.random() * 0.15
-      l.delay = span > 1 ? i * 0.07 : 0
-      l.landed = false
+      const to = forward ? 1 : 0
+      l.wobble = 0.94 + Math.random() * 0.14
+      l.u.uDir.value = forward ? 1 : -1
+      l.u.uGrabY.value = 0.28 + Math.random() * 0.2
+      l.follow = undefined
+      l.tween = {
+        from: l.p, to, start: now + (jump ? i * 0.055 : 0),
+        dur: MOTION[l.data.kind].flip * l.wobble * Math.max(0.2, Math.abs(to - l.p)) * (jump ? 0.72 : 1),
+      }
     })
     this.opts.sound.grab(order[0].data.kind)
     this.turned = target
-    this.hoverPeek = undefined
+    this.peeked = undefined
+    this.afterStateChange()
+  }
+
+  private afterStateChange() {
+    this.setVisibility()
     this.assignTextures()
     this.updateGoal()
     this.emit()
@@ -335,109 +389,138 @@ export class BookEngine {
   }
 
   // ---------------------------------------------------------------------------
-  // Textures: only leaves near the open spread get real artwork.
+  // Artwork. Pages near the open spread get real textures, drawn and uploaded
+  // to the GPU in idle time so a turn never waits on them.
 
-  private faceKey(face: Face, flipped: boolean) {
-    return `${face.spec.id}|${face.side}|${flipped ? 'b' : 'f'}`
+  private faceKey(face: Face) { return `${face.spec.id}|${face.side}` }
+
+  private requestFace(key: string, face: Face, priority: number) {
+    if (this.textures.has(key)) return
+    const job = this.jobs.get(key)
+    if (job) { job.priority = Math.min(job.priority, priority); return }
+    this.jobs.set(key, {
+      priority,
+      run: () => {
+        const r = renderPage(face.spec, face.side, face.folio, this.texW)
+        const tex = new CanvasTexture(r.canvas)
+        tex.colorSpace = SRGBColorSpace
+        tex.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy())
+        this.renderer.initTexture(tex)
+        this.textures.set(key, { tex, hot: r.hotspots })
+        for (const l of this.leaves) this.applyTextures(l)
+        this.wake()
+      },
+    })
   }
 
-  private makeTexture(key: string, canvas: HTMLCanvasElement, hot: Hotspot[], flipped: boolean) {
-    const tex = new CanvasTexture(canvas)
-    tex.colorSpace = SRGBColorSpace
-    tex.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy())
-    if (flipped) {
-      tex.repeat.set(-1, 1)
-      tex.offset.set(1, 0)
+  private applyTextures(l: LeafObj) {
+    const front = l.wantFront ? this.textures.get(l.wantFront) : undefined
+    if (front && l.frontKey !== l.wantFront) {
+      if (l.sheet) l.sheet.map = front.tex
+      if (l.print) l.print.map = front.tex
+      if (l.depth && l.data.kind === 'sleeve') l.depth.map = front.tex
+      l.frontKey = l.wantFront
     }
-    const entry = { tex, hot, canvas }
-    this.textures.set(key, entry)
-    return entry
-  }
-
-  private faceTexture(face: Face, flipped: boolean) {
-    const key = this.faceKey(face, flipped)
-    const hit = this.textures.get(key)
-    if (hit) return hit
-    const r = renderPage(face.spec, face.side, face.folio, this.texW)
-    return this.makeTexture(key, r.canvas, r.hotspots, flipped)
-  }
-
-  private showThroughTexture(front: Face) {
-    const key = `${front.spec.id}|show`
-    const hit = this.textures.get(key)
-    if (hit) return hit
-    const src = this.faceTexture(front, false)
-    return this.makeTexture(key, renderShowThrough(src.canvas, this.texW), [], true)
-  }
-
-  private plainTexture() {
-    if (!this.plain) {
-      this.plain = new CanvasTexture(renderPlain(512))
-      this.plain.colorSpace = SRGBColorSpace
+    if (!l.sheet) return
+    if (l.wantBack === 'plain') {
+      if (l.backKey !== 'plain') { setBackMap(l.sheet, l.data.kind === 'sleeve' ? this.clear : this.plain); l.backKey = 'plain' }
+      return
     }
-    return this.plain
+    const back = l.wantBack ? this.textures.get(l.wantBack) : undefined
+    if (back && l.backKey !== l.wantBack) {
+      setBackMap(l.sheet, back.tex)
+      l.backKey = l.wantBack
+    }
   }
 
   private assignTextures() {
-    const needed = new Set<string>()
     const lo = this.turned - 3, hi = this.turned + 2
-    const urgent = (l: LeafObj) => l.index >= this.turned - 1 && l.index <= this.turned
+    const keep = new Set<string>()
+    // Pages on show right now, including those seen through vellum or a sleeve.
+    const onShow = new Set<number>()
+    for (let k = this.turned; k < this.leaves.length; k++) {
+      onShow.add(k)
+      if (!isOverlay(this.leaves[k].data.kind)) break
+    }
+    for (let k = this.turned - 1; k >= 0; k--) {
+      onShow.add(k)
+      if (!isOverlay(this.leaves[k].data.kind)) break
+    }
     for (const l of this.leaves) {
       const inWindow = l.index >= lo && l.index <= hi
-      const { front, back } = l.data
-      // See-through sheets can't stand in with plain stock; hide them instead.
-      const clear = isOverlay(l.data.kind)
-      // Pages flying past during a chapter jump keep their artwork if they have it.
-      if (!inWindow && l.target !== l.p && l.frontKey) {
-        if (l.frontKey) needed.add(l.frontKey)
-        if (l.backKey) needed.add(l.backKey)
-        continue
-      }
       if (!inWindow) {
-        l.front.material.map = this.plainTexture()
-        l.front.material.needsUpdate = true
-        if (l.back) { l.back.material.map = this.plainTexture(); l.back.material.needsUpdate = true }
-        l.frontKey = l.backKey = undefined
-        l.group.visible = !clear
+        // Pages flying past keep what they have; buried pages let it go.
+        if ((l.tween || l.follow !== undefined) && l.frontKey) {
+          keep.add(l.frontKey)
+          if (l.backKey) keep.add(l.backKey)
+          continue
+        }
+        if (l.frontKey) {
+          const blank = l.data.kind === 'sleeve' ? this.clear : l.data.kind === 'vellum' ? this.white : this.plain
+          if (l.sheet) { l.sheet.map = blank; setBackMap(l.sheet, blank) }
+          if (l.print) l.print.map = blank
+          if (l.depth && l.data.kind === 'sleeve') l.depth.map = this.clear
+        }
+        l.wantFront = l.wantBack = l.frontKey = l.backKey = undefined
         continue
       }
-      l.group.visible = true
-      const fk = this.faceKey(front, false)
-      const bk = back ? this.faceKey(back, true) : `${front.spec.id}|show`
-      needed.add(fk)
-      if (l.back) needed.add(bk)
-      const setFront = () => {
-        if (this.disposed || l.frontKey === fk) return
-        const tex = this.faceTexture(front, false).tex
-        l.front.material.map = tex
-        l.front.material.needsUpdate = true
-        const depth = l.front.customDepthMaterial as MeshDepthMaterial | undefined
-        if (depth) { depth.map = tex; depth.needsUpdate = true }
-        l.frontKey = fk
-        this.wake()
+      const priority = onShow.has(l.index) ? 0 : 1 + Math.abs(l.index - this.turned + 0.5)
+      const { front, back } = l.data
+      l.wantFront = this.faceKey(front)
+      keep.add(l.wantFront)
+      this.requestFace(l.wantFront, front, priority)
+      if (back && l.data.kind !== 'vellum') {
+        l.wantBack = this.faceKey(back)
+        keep.add(l.wantBack)
+        this.requestFace(l.wantBack, back, priority + 0.25)
+      } else {
+        l.wantBack = 'plain'
       }
-      const setBack = () => {
-        if (this.disposed || !l.back || l.backKey === bk) return
-        l.back.material.map = (back ? this.faceTexture(back, true) : this.showThroughTexture(front)).tex
-        l.back.material.needsUpdate = true
-        l.backKey = bk
-        this.wake()
-      }
-      if (urgent(l) || clear || this.textures.has(fk)) setFront()
-      else this.queue.push(setFront)
-      if (urgent(l) || clear || this.textures.has(bk)) setBack()
-      else this.queue.push(setBack)
-      if (!l.frontKey) { l.front.material.map = this.plainTexture(); l.front.material.needsUpdate = true }
-      if (l.back && !l.backKey) { l.back.material.map = this.plainTexture(); l.back.material.needsUpdate = true }
+      this.applyTextures(l)
     }
     for (const [key, t] of this.textures) {
-      if (needed.has(key)) continue
-      // Show-through pages are derived from fronts; keep those fronts alive.
-      if ([...needed].some(n => n.endsWith('|show') && key.startsWith(n.split('|')[0] + '|'))) continue
+      if (keep.has(key)) continue
       t.tex.dispose()
       this.textures.delete(key)
     }
-    this.wake()
+    for (const key of this.jobs.keys()) if (!keep.has(key)) this.jobs.delete(key)
+    this.scheduleIdle()
+  }
+
+  /** Draw the open spread's pages right away (first paint, after a resize). */
+  private flushUrgent() {
+    for (const [key, job] of [...this.jobs].sort((a, b) => a[1].priority - b[1].priority)) {
+      if (job.priority > 0.5) break
+      this.jobs.delete(key)
+      job.run()
+    }
+  }
+
+  private scheduleIdle() {
+    if (this.idle || !this.jobs.size || this.disposed) return
+    const ric = (window as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback
+    this.idle = ric ? ric(this.pump, { timeout: 300 }) : window.setTimeout(this.pump, 40)
+  }
+
+  private cancelIdle() {
+    if (!this.idle) return
+    const cic = (window as { cancelIdleCallback?: (h: number) => void }).cancelIdleCallback
+    if (cic) cic(this.idle); else clearTimeout(this.idle)
+    this.idle = 0
+  }
+
+  private pump = () => {
+    this.idle = 0
+    if (this.disposed) return
+    let best: [string, Job] | undefined
+    for (const e of this.jobs) if (!best || e[1].priority < best[1].priority) best = e
+    // Keep the hand-held page smooth: only draw what is already on show.
+    if (best && this.drag?.leaf && best[1].priority > 0.5) { this.idle = window.setTimeout(this.pump, 120); return }
+    if (best) {
+      this.jobs.delete(best[0])
+      best[1].run()
+    }
+    this.scheduleIdle()
   }
 
   // ---------------------------------------------------------------------------
@@ -453,17 +536,19 @@ export class BookEngine {
     this.renderer.domElement.style.height = `${h}px`
     this.camera.aspect = w / h
     this.camera.updateProjectionMatrix()
-    const chromeY = this.opts.chrome.top + this.opts.chrome.bottom
-    const mode = chooseMode(w, h, chromeY)
+    const mode = chooseMode(w, h, this.opts.chrome.top + this.opts.chrome.bottom)
     if (initial || mode !== this.mode) {
-      const anchor = initial ? undefined : anchorPage(this.leaves.map(l => l.data), this.mode, this.turned)
-      const nextLeaves = buildLeaves(this.opts.book, mode)
+      const anchor = initial ? undefined : anchorPage(this.leafData(), this.mode, this.turned)
       const page = anchor ?? this.opts.startPage
-      const turned = page ? stateForPage(nextLeaves, mode, page) : this.turned
+      const turned = page ? stateForPage(buildLeaves(this.opts.book, mode), mode, page) : this.turned
       this.updateTexSize(w, h, mode)
       this.build(mode, turned)
+      this.setVisibility()
+      for (const l of this.leaves) l.u.uRestLift.value = l.restLift
+      this.flushUrgent()
     } else if (this.updateTexSize(w, h, mode)) {
       this.assignTextures()
+      this.flushUrgent()
     }
     this.updateGoal()
     if (initial) this.pose = { ...this.goal }
@@ -482,18 +567,16 @@ export class BookEngine {
     this.texW = texW
     for (const t of this.textures.values()) t.tex.dispose()
     this.textures.clear()
+    this.jobs.clear()
     for (const l of this.leaves) l.frontKey = l.backKey = undefined
     return true
   }
 
   private updateGoal() {
-    const max = maxTurned(this.leaves.map(l => l.data), this.mode)
+    const max = this.max()
     const spread = this.mode === 'spread'
     const cx = spread ? (this.turned === 0 ? W / 2 : this.turned === max ? -W / 2 : 0) : W / 2
-    const span = spread ? 2 * W : W
-    const polar = spread ? 0.1 : 0.3
-    const azim = spread ? 0 : 0.42
-    this.goal = this.fit(cx, span, polar, azim)
+    this.goal = this.fit(cx, spread ? 2 * W : W, spread ? 0.1 : 0.3, spread ? 0 : 0.42)
   }
 
   private placeCamera(cam: PerspectiveCamera, p: Pose) {
@@ -515,29 +598,28 @@ export class BookEngine {
     const corners: Vector3[] = []
     for (const x of [cx - span / 2, cx + span / 2]) for (const y of [-H / 2, H / 2]) for (const z of [0, 0.06]) corners.push(new Vector3(x, y, z))
     const pose: Pose = { tx: cx, ty: 0, dist: 4, polar, azim }
+    const v = new Vector3()
     const bounds = () => {
       this.placeCamera(cam, pose)
       let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity
       for (const c of corners) {
-        const v = c.clone().project(cam)
+        v.copy(c).project(cam)
         x0 = Math.min(x0, v.x); x1 = Math.max(x1, v.x); y0 = Math.min(y0, v.y); y1 = Math.max(y1, v.y)
       }
       return { x0, x1, y0, y1 }
     }
     for (let pass = 0; pass < 3; pass++) {
       let lo = 0.5, hi = 40
-      for (let i = 0; i < 28; i++) {
+      for (let i = 0; i < 26; i++) {
         pose.dist = (lo + hi) / 2
         const b = bounds()
-        const fits = b.x0 >= -1 + mx && b.x1 <= 1 - mx && b.y0 >= -1 + mBot && b.y1 <= 1 - mTop
-        if (fits) hi = pose.dist; else lo = pose.dist
+        if (b.x0 >= -1 + mx && b.x1 <= 1 - mx && b.y0 >= -1 + mBot && b.y1 <= 1 - mTop) hi = pose.dist
+        else lo = pose.dist
       }
       pose.dist = hi
-      // Recentre the projected box inside the available area.
       const b = bounds()
-      const wantX = 0, wantY = (mBot - mTop) / 2
-      const dx = (b.x0 + b.x1) / 2 - wantX
-      const dy = (b.y0 + b.y1) / 2 - wantY
+      const dx = (b.x0 + b.x1) / 2
+      const dy = (b.y0 + b.y1) / 2 - (mBot - mTop) / 2
       const visH = 2 * pose.dist * Math.tan((cam.fov * Math.PI) / 360)
       const right = new Vector3().setFromMatrixColumn(cam.matrixWorld, 0)
       const up = new Vector3().setFromMatrixColumn(cam.matrixWorld, 1)
@@ -560,14 +642,11 @@ export class BookEngine {
     window.addEventListener('keydown', this.onKey)
   }
 
-  private ndc(e: PointerEvent | MouseEvent) {
-    const r = this.renderer.domElement.getBoundingClientRect()
-    return new Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1)
-  }
-
   /** Pointer position on the table plane, in book units (spine at x = 0). */
   private planePoint(e: PointerEvent | MouseEvent) {
-    this.raycaster.setFromCamera(this.ndc(e), this.camera)
+    const r = this.renderer.domElement.getBoundingClientRect()
+    const ndc = new Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1)
+    this.raycaster.setFromCamera(ndc, this.camera)
     const hit = new Vector3()
     return this.raycaster.ray.intersectPlane(new Plane(new Vector3(0, 0, 1), 0), hit) ? hit : undefined
   }
@@ -578,7 +657,7 @@ export class BookEngine {
     const pt = this.planePoint(e)
     if (!pt || this.drag) return
     this.renderer.domElement.setPointerCapture(e.pointerId)
-    this.drag = { id: e.pointerId, sx: e.clientX, sy: e.clientY, wx: pt.x, wy: pt.y, p0: 0, radius: W, samples: [], moved: false }
+    this.drag = { id: e.pointerId, sx: e.clientX, sy: e.clientY, wx: pt.x, wy: pt.y, forward: true, p0: 0, radius: W, samples: [], moved: false }
   }
 
   private onMove = (e: PointerEvent) => {
@@ -602,42 +681,42 @@ export class BookEngine {
       const q = (x: number) => Math.acos(Math.max(-1, Math.min(1, x / d.radius))) / Math.PI
       p = d.p0 + q(pt.x) - q(d.wx)
     } else {
-      p = d.p0 - (pt.x - d.wx) / (W * 1.1)
+      p = d.p0 - (pt.x - d.wx) / (W * 1.05)
     }
-    l.p = Math.max(0, Math.min(1, p))
-    l.dirty = true
+    l.follow = clamp01(p)
+    l.u.uGrabY.value = clamp01(pt.y / H + 0.5)
     const now = performance.now() / 1000
-    d.samples.push({ t: now, p: l.p })
+    d.samples.push({ t: now, p: l.follow })
     while (d.samples.length > 2 && now - d.samples[0].t > 0.1) d.samples.shift()
     this.renderer.domElement.style.cursor = 'grabbing'
     this.wake()
   }
 
   private startDrag(d: Drag, dxPx: number) {
-    const max = maxTurned(this.leaves.map(l => l.data), this.mode)
+    const max = this.max()
     let leaf: LeafObj | undefined
-    let dir: 1 | -1 = 1
+    let forward = true
     if (this.mode === 'spread') {
       if (Math.abs(d.wy) > H / 2 + 0.05) return
       if (d.wx > 0 && this.turned < max) leaf = this.leaves[this.turned]
-      else if (d.wx < 0 && this.turned > 0) { leaf = this.leaves[this.turned - 1]; dir = -1 }
+      else if (d.wx < 0 && this.turned > 0) { leaf = this.leaves[this.turned - 1]; forward = false }
     } else {
       if (dxPx < 0 && this.turned < max) leaf = this.leaves[this.turned]
-      else if (dxPx > 0 && this.turned > 0) { leaf = this.leaves[this.turned - 1]; dir = -1 }
+      else if (dxPx > 0 && this.turned > 0) { leaf = this.leaves[this.turned - 1]; forward = false }
     }
     if (!leaf) return
-    this.hoverPeek = undefined
-    leaf.dragging = true
-    leaf.dir = dir
-    leaf.grabY = Math.max(0, Math.min(1, d.wy / H + 0.5))
-    leaf.delay = 0
-    leaf.landed = false
+    this.peeked = undefined
+    leaf.tween = undefined
+    leaf.follow = leaf.p
+    leaf.landedAt = null
+    leaf.wobble = 0.94 + Math.random() * 0.14
+    leaf.u.uDir.value = forward ? 1 : -1
     d.leaf = leaf
+    d.forward = forward
     d.p0 = leaf.p
     d.radius = Math.max(0.45 * W, Math.min(W, Math.abs(d.wx)))
     this.opts.sound.grab(leaf.data.kind)
-    // Make sure the page underneath has its artwork before it is revealed.
-    this.assignTextures()
+    this.setVisibility()
   }
 
   private onUp = (e: PointerEvent) => {
@@ -645,28 +724,29 @@ export class BookEngine {
     if (!d || e.pointerId !== d.id) return
     this.drag = undefined
     const l = d.leaf
-    if (l) {
-      l.dragging = false
-      const s = d.samples
-      const v = s.length > 1 ? (s[s.length - 1].p - s[0].p) / Math.max(0.016, s[s.length - 1].t - s[0].t) : 0
-      l.v = v
-      const done = v > 1.3 ? true : v < -1.3 ? false : l.p > 0.5
-      l.target = done ? 1 : 0
-      l.dir = l.target > l.p ? 1 : -1
-      const max = maxTurned(this.leaves.map(x => x.data), this.mode)
-      this.turned = Math.max(0, Math.min(max, done ? l.index + 1 : l.index))
-      this.renderer.domElement.style.cursor = ''
-      this.assignTextures()
-      this.updateGoal()
-      this.emit()
-      this.wake()
+    if (!l) {
+      if (!d.moved && e.type === 'pointerup') this.tap(e, d)
       return
     }
-    if (!d.moved && e.type === 'pointerup') this.tap(e, d)
+    const s = d.samples
+    const v = s.length > 1 ? (s[s.length - 1].p - s[0].p) / Math.max(0.016, s[s.length - 1].t - s[0].t) : 0
+    const moved = d.forward ? l.p - d.p0 : d.p0 - l.p
+    const toward = d.forward ? v : -v
+    const commit = e.type === 'pointerup' && (toward > 1.1 || (moved > 0.15 && toward > -0.6))
+    const to = d.forward === commit ? 1 : 0
+    const dist = Math.max(0.02, Math.abs(to - l.p))
+    const dur = MOTION[l.data.kind].fall * l.wobble * Math.sqrt(dist)
+    const vel = to > l.p ? v : -v
+    l.follow = undefined
+    l.u.uDir.value = to > l.p ? 1 : -1
+    l.tween = { from: l.p, to, start: performance.now() / 1000, dur, launch: Math.max(0, Math.min(2, (vel * dur) / dist)) }
+    if (commit) this.turned = d.forward ? l.index + 1 : l.index
+    this.renderer.domElement.style.cursor = ''
+    this.afterStateChange()
   }
 
   private onLeave = () => {
-    if (this.hoverPeek && !this.drag) this.unpeek()
+    if (this.peeked && !this.drag) this.unpeek()
   }
 
   private tap(e: PointerEvent, d: Drag) {
@@ -679,65 +759,63 @@ export class BookEngine {
     if (this.mode === 'spread') {
       if (Math.abs(d.wy) > H / 2 + 0.05 || Math.abs(d.wx) > W + 0.05) return
       if (d.wx >= 0) this.next(); else this.prev()
-    } else {
-      if (e.clientX > this.width * 0.3) this.next(); else this.prev()
-    }
+    } else if (e.clientX > this.width * 0.3) this.next()
+    else this.prev()
   }
 
+  /** Links printed on the open pages. Loose sheets on top don't block them. */
   private hotspotAt(e: PointerEvent | MouseEvent): string | undefined {
-    this.raycaster.setFromCamera(this.ndc(e), this.camera)
-    const meshes: Mesh[] = []
-    for (const l of this.leaves) {
-      if (Math.abs(l.index - this.turned) > 3) continue
-      meshes.push(l.front)
-      if (l.back) meshes.push(l.back)
-    }
-    for (const hit of this.raycaster.intersectObjects(meshes, false)) {
-      const l = this.leaves.find(x => x.front === hit.object || x.back === hit.object)
-      if (!l || isOverlay(l.data.kind) || !hit.uv) continue
-      const isBack = hit.object === l.back
-      const key = isBack ? l.backKey : l.frontKey
-      const hot = key ? this.textures.get(key)?.hot : undefined
-      const x = (isBack ? 1 - hit.uv.x : hit.uv.x) * PAGE_W
-      const y = (1 - hit.uv.y) * PAGE_H
-      return hot?.find(h => x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h)?.href
-    }
-    return undefined
+    const pt = this.planePoint(e)
+    if (!pt || Math.abs(pt.y) > H / 2) return undefined
+    let key: string | undefined
+    let u: number
+    if (pt.x >= 0 && pt.x <= W) {
+      let k = this.turned
+      while (this.leaves[k] && isOverlay(this.leaves[k].data.kind)) k++
+      key = this.leaves[k]?.frontKey
+      u = pt.x / W
+    } else if (pt.x < 0 && pt.x >= -W && this.mode === 'spread') {
+      let k = this.turned - 1
+      while (this.leaves[k] && isOverlay(this.leaves[k].data.kind)) k--
+      key = this.leaves[k]?.backKey
+      u = (pt.x + W) / W
+    } else return undefined
+    const hot = key ? this.textures.get(key)?.hot : undefined
+    const x = u * PAGE_W, y = (0.5 - pt.y / H) * PAGE_H
+    return hot?.find(h => x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h)?.href
   }
 
   /** Desktop: lift the corner a touch when the mouse nears a page edge. */
   private hover(e: PointerEvent, pt: Vector3) {
     const canvas = this.renderer.domElement
-    const overHot = !!this.hotspotAt(e)
-    const max = maxTurned(this.leaves.map(l => l.data), this.mode)
+    const overLink = !!this.hotspotAt(e)
+    const max = this.max()
     const onPage = Math.abs(pt.y) < H / 2 && Math.abs(pt.x) < W
     let leaf: LeafObj | undefined
-    if (this.mode === 'spread' && onPage && !overHot) {
-      if (pt.x > W * 0.72 && this.turned < max) leaf = this.leaves[this.turned]
-      else if (pt.x < -W * 0.72 && this.turned > 0) leaf = this.leaves[this.turned - 1]
+    if (this.mode === 'spread' && onPage && !overLink) {
+      if (pt.x > W * 0.74 && this.turned < max) leaf = this.leaves[this.turned]
+      else if (pt.x < -W * 0.74 && this.turned > 0) leaf = this.leaves[this.turned - 1]
     }
-    canvas.style.cursor = overHot ? 'pointer' : onPage ? 'grab' : ''
-    if (leaf !== this.hoverPeek) {
-      this.unpeek()
-      if (leaf && leaf.p === leaf.target) {
-        const fwd = leaf.index === this.turned
-        leaf.target = fwd ? PEEK : 1 - PEEK
-        leaf.dir = fwd ? 1 : -1
-        leaf.grabY = Math.max(0, Math.min(1, pt.y / H + 0.5))
-        this.hoverPeek = leaf
-        this.assignTextures()
-        this.wake()
-      }
-    }
+    canvas.style.cursor = overLink ? 'pointer' : onPage ? 'grab' : ''
+    if (leaf === this.peeked) return
+    this.unpeek()
+    if (!leaf || leaf.tween || leaf.follow !== undefined) return
+    const fwd = leaf.index === this.turned
+    leaf.u.uDir.value = fwd ? 1 : -1
+    leaf.u.uGrabY.value = clamp01(pt.y / H + 0.5)
+    leaf.tween = { from: leaf.p, to: fwd ? PEEK : 1 - PEEK, start: performance.now() / 1000, dur: 0.28 }
+    this.peeked = leaf
+    this.setVisibility()
+    this.wake()
   }
 
   private unpeek() {
-    const l = this.hoverPeek
-    this.hoverPeek = undefined
-    if (!l || l.dragging) return
-    if (l.target === PEEK) l.target = 0
-    else if (l.target === 1 - PEEK) l.target = 1
-    l.landed = true
+    const l = this.peeked
+    this.peeked = undefined
+    if (!l || l.follow !== undefined) return
+    const to = l.index < this.turned ? 1 : 0
+    if (l.p === to) return
+    l.tween = { from: l.p, to, start: performance.now() / 1000, dur: 0.24 }
     this.wake()
   }
 
@@ -750,7 +828,7 @@ export class BookEngine {
       this.opts.sound.unlock()
       if (this.wheelAcc > 0) this.next(); else this.prev()
       this.wheelAcc = 0
-      this.wheelLock = now + 420
+      this.wheelLock = now + 380
     }
   }
 
@@ -770,7 +848,8 @@ export class BookEngine {
   }
 
   // ---------------------------------------------------------------------------
-  // Frame loop (runs only while something moves)
+  // Frame loop: runs only while something moves. Motion is time-based, so a
+  // slow device drops frames rather than playing in slow motion.
 
   private wake() {
     if (this.raf || this.disposed) return
@@ -778,84 +857,83 @@ export class BookEngine {
     this.raf = requestAnimationFrame(this.frame)
   }
 
-  private frame = (now: number) => {
+  private frame = (nowMs: number) => {
     this.raf = 0
-    const dt = Math.min(0.05, Math.max(0, now - this.lastFrame) / 1000)
-    this.lastFrame = now
+    const now = nowMs / 1000
+    const dt = Math.min(0.1, Math.max(0.001, (nowMs - this.lastFrame) / 1000))
+    this.lastFrame = nowMs
     let active = false
     let loudest = 0
-    let loudKind: Leaf['kind'] = 'paper'
-    const k = this.opts.reducedMotion ? 260 : 75
+    let loudKind: LeafKind = 'paper'
+    let settled = false
     for (const l of this.leaves) {
-      const phys = PHYSICS[l.data.kind]
-      // Secondary motion: the free edge springs and settles after landing.
-      if (l.flex !== 0 || l.flexV !== 0) {
-        const kf = (2 * Math.PI * phys.flexHz) ** 2
-        l.flexV += (-kf * l.flex - 2 * phys.flexZeta * Math.sqrt(kf) * l.flexV) * dt
-        l.flex += l.flexV * dt
-        if (Math.abs(l.flex) < 1e-4 && Math.abs(l.flexV) < 1e-3) { l.flex = 0; l.flexV = 0 }
-        l.dirty = true
+      const before = l.p
+      if (l.follow !== undefined) {
+        l.p += (l.follow - l.p) * (1 - Math.exp(-dt / FOLLOW))
+        if (Math.abs(l.follow - l.p) > 1e-4) active = true
+      } else if (l.tween) {
+        const tw = l.tween
+        const r = (now - tw.start) / tw.dur
+        if (r < 0) {
+          active = true
+        } else {
+          const e = r >= 1 ? 1 : tw.launch === undefined ? ease(r) : hermite(r, tw.launch)
+          l.p = tw.from + (tw.to - tw.from) * e
+          active = true
+          if (r >= 1) {
+            l.p = tw.to
+            l.tween = undefined
+            settled = true
+            if ((tw.to === 0 || tw.to === 1) && Math.abs(tw.to - tw.from) > 0.2) {
+              this.opts.sound.land(l.data.kind, Math.min(1, Math.abs(tw.to - tw.from)))
+              if (MOTION[l.data.kind].bounce > 0 && !this.opts.reducedMotion) l.landedAt = now
+              if (l.data.kind === 'cover' || l.data.kind === 'sleeve') navigator.vibrate?.(8)
+            }
+          }
+        }
+      }
+      let flex = 0
+      if (l.landedAt !== null) {
+        const s = now - l.landedAt
+        if (s < 0.9) {
+          flex = MOTION[l.data.kind].bounce * Math.exp(-s / 0.16) * Math.sin(2 * Math.PI * 3.4 * s)
+          active = true
+        } else l.landedAt = null
+      }
+      const lift = l.u.uRestLift.value
+      if (Math.abs(l.restLift - lift) > 1e-5) {
+        l.u.uRestLift.value = lift + (l.restLift - lift) * (1 - Math.exp(-dt / 0.15))
         active = true
-      }
-      if (l.dragging) {
-        if (l.dirty) this.applyBend(l)
-        active = true
-        const s = this.drag?.samples ?? []
-        const speed = s.length > 1 ? (s[s.length - 1].p - s[0].p) / Math.max(0.016, s[s.length - 1].t - s[0].t) : 0
-        if (Math.abs(speed) > loudest) { loudest = Math.abs(speed); loudKind = l.data.kind }
-        continue
-      }
-      if (l.delay > 0) { l.delay -= dt; active = true; continue }
-      if (l.p === l.target && l.v === 0) {
-        if (l.dirty) this.applyBend(l)
-        continue
-      }
-      const stiff = l.data.kind === 'cover' ? k * 0.7 : k
-      const a = stiff * (l.target - l.p) - 2 * phys.zeta * Math.sqrt(stiff) * l.v
-      l.v += a * dt
-      l.p += l.v * dt
-      if (Math.abs(l.target - l.p) < 0.0008 && Math.abs(l.v) < 0.02) { l.p = l.target; l.v = 0 }
-      if (!l.landed && (l.target === 0 || l.target === 1) && Math.abs(l.target - l.p) < 0.035) {
-        l.landed = true
-        this.opts.sound.land(l.data.kind, Math.abs(l.v) / 4)
-        // The edge keeps travelling when the spine stops: kick the bounce.
-        l.flexV += phys.kick * Math.min(1.6, Math.abs(l.v)) * (this.opts.reducedMotion ? 0 : 1)
-        if (l.data.kind === 'cover' || l.data.kind === 'sleeve') navigator.vibrate?.(8)
-      }
-      if (Math.abs(l.v) > loudest) { loudest = Math.abs(l.v); loudKind = l.data.kind }
-      this.applyBend(l)
-      active = true
+      } else l.u.uRestLift.value = l.restLift
+      const speed = Math.abs(l.p - before) / dt
+      if (speed > loudest) { loudest = speed; loudKind = l.data.kind }
+      if (l.p !== before || flex !== l.u.uFlex.value) this.applyLeaf(l, flex)
     }
+    if (settled) this.setVisibility()
     if (loudest > 0.05) this.opts.sound.move(loudest, loudKind)
     else this.opts.sound.quiet()
 
-    // Ease the camera toward its goal pose.
-    const e = 1 - Math.exp(-dt * 5)
+    const e = 1 - Math.exp(-dt * 6)
     let camMoving = false
     for (const key of ['tx', 'ty', 'dist', 'polar', 'azim'] as const) {
       const diff = this.goal[key] - this.pose[key]
       if (Math.abs(diff) > 1e-4) { this.pose[key] += diff * e; camMoving = true } else this.pose[key] = this.goal[key]
     }
     this.placeCamera(this.camera, this.pose)
-
-    if (this.queue.length) {
-      this.queue.shift()!()
-      active = true
-    }
+    this.renderer.shadowMap.needsUpdate = true
     this.renderer.render(this.scene, this.camera)
     if (active || camMoving || this.drag?.leaf) this.raf = requestAnimationFrame(this.frame)
-    else this.opts.sound.quiet()
   }
 
   private emit() {
-    const data = this.leaves.map(l => l.data)
+    const data = this.leafData()
     const { left, right } = visibleFaces(data, this.mode, this.turned)
     const top = data[this.turned]
     const overlay = top && isOverlay(top.kind) ? top : undefined
     this.opts.onState({
       mode: this.mode,
       turned: this.turned,
-      max: maxTurned(data, this.mode),
+      max: this.max(),
       left,
       right,
       overlay: overlay?.kind ?? null,

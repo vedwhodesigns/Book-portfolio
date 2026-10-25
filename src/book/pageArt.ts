@@ -47,28 +47,7 @@ export function renderPage(spec: PageSpec, side: Side, folio: number | null, tex
   return { canvas, hotspots: f.hot }
 }
 
-/**
- * The blank reverse of a single-sided page: plain stock with the front's
- * print faintly showing through, mirrored, as it does on real paper.
- */
-export function renderShowThrough(front: HTMLCanvasElement, texW: number): HTMLCanvasElement {
-  const texH = Math.round(texW / PAGE_ASPECT)
-  const [canvas, ctx] = makeCanvas(texW, texH)
-  const k = texW / PAGE_W
-  ctx.scale(k, k)
-  const f: Frame = { ctx, side: 'verso', folio: null, hot: [], px: 1 / k, x0: 0, x1: PAGE_W }
-  paperBase(f, 31)
-  ctx.save()
-  ctx.globalAlpha = 0.07
-  ctx.translate(PAGE_W, 0)
-  ctx.scale(-1, 1)
-  ctx.drawImage(front, 0, 0, PAGE_W, PAGE_H)
-  ctx.restore()
-  gutterShade(f, false)
-  return canvas
-}
-
-/** Plain stock for leaves buried in the stacks. */
+/** Plain stock: the reverse of single-sided pages and a stand-in while artwork loads. */
 export function renderPlain(texW: number): HTMLCanvasElement {
   const texH = Math.round(texW / PAGE_ASPECT)
   const [canvas, ctx] = makeCanvas(texW, texH)
@@ -94,7 +73,8 @@ function paperBase(f: Frame, seed: number) {
     ctx.fillStyle = g
     ctx.fillRect(0, 0, PAGE_W, PAGE_H)
   }
-  applyGrain(ctx, PAGE_W, PAGE_H, 0.16, f.px * 1.3)
+  // Just enough noise to dither the gradients; the real grain is in the material.
+  applyGrain(ctx, PAGE_W, PAGE_H, 0.05, f.px)
 }
 
 function darkBase(f: Frame, light: [number, number]) {
@@ -194,7 +174,7 @@ function itemHeight(it: SleeveItem) {
 }
 
 /** Draws one item centred on its position. `back` draws the reverse side. */
-function sleeveItem(f: Frame, it: SleeveItem, back: boolean, onBlack: boolean) {
+function sleeveItem(f: Frame, it: SleeveItem, back: boolean, onBlack: boolean, painted: boolean) {
   const { ctx } = f
   const k = 1 / f.px
   const w = it.w, h = itemHeight(it)
@@ -202,6 +182,7 @@ function sleeveItem(f: Frame, it: SleeveItem, back: boolean, onBlack: boolean) {
   ctx.translate(it.x, it.y)
   ctx.rotate((it.rot * Math.PI) / 180)
   const shadow = () => {
+    if (!painted) return
     ctx.shadowColor = onBlack ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.32)'
     ctx.shadowBlur = 22 * k
     ctx.shadowOffsetX = 4 * k
@@ -279,9 +260,7 @@ function drawSleeve(f: Frame, s: Extract<PageSpec, { kind: 'sleeve' }>) {
   const spine = front ? 0 : PAGE_W
   const dir = front ? 1 : -1
   const STRIP = 66
-  // The film itself: barely there.
-  ctx.fillStyle = 'rgba(248,248,246,0.07)'
-  ctx.fillRect(0, 0, PAGE_W, PAGE_H)
+  // Clear areas stay fully transparent: the film is a real material drawn on top.
   // Backing card inside the pocket.
   const bx0 = front ? STRIP + 18 : 24, bx1 = front ? PAGE_W - 24 : PAGE_W - STRIP - 18
   if (s.backing !== 'clear') {
@@ -298,19 +277,18 @@ function drawSleeve(f: Frame, s: Extract<PageSpec, { kind: 'sleeve' }>) {
   const mirrored = s.backing === 'clear' ? s.items.map(it => ({ ...it, x: PAGE_W - it.x, rot: -it.rot })) : []
   const items = front ? s.items : s.backItems ?? mirrored
   const derivedBack = !front && !s.backItems
-  for (const it of items) sleeveItem(f, it, derivedBack, s.backing === 'black')
+  // Items in a clear sleeve get real shadows from the scene; on a card they're painted.
+  for (const it of items) sleeveItem(f, it, derivedBack, s.backing === 'black', s.backing !== 'clear')
 
   // Welded seams: serrated along the bottom and beside the strip.
-  ctx.fillStyle = 'rgba(255,255,255,0.32)'
-  for (let x = 0; x < PAGE_W; x += 7) ctx.fillRect(x, PAGE_H - 9, 3.5, 5)
+  ctx.fillStyle = 'rgba(232,232,228,1)'
+  for (let x = 0; x < PAGE_W; x += 7) ctx.fillRect(x, PAGE_H - 9, 3.5, 4)
   const sx = spine + dir * STRIP
-  for (let y = 0; y < PAGE_H; y += 7) ctx.fillRect(sx - (front ? 0 : 5), y, 5, 3.5)
-  ctx.fillStyle = 'rgba(255,255,255,0.22)'
-  ctx.fillRect(front ? PAGE_W - 3 : 0, 0, 3, PAGE_H)
+  for (let y = 0; y < PAGE_H; y += 7) ctx.fillRect(sx - (front ? 0 : 4), y, 4, 3.5)
 
   // Reinforced binding strip with punched holes.
   const stripX = front ? 0 : PAGE_W - STRIP
-  ctx.fillStyle = 'rgba(246,246,243,0.93)'
+  ctx.fillStyle = '#f1f1ee'
   ctx.fillRect(stripX, 0, STRIP, PAGE_H)
   ctx.fillStyle = 'rgba(0,0,0,0.05)'
   for (let x = stripX + 4; x < stripX + STRIP; x += 5) ctx.fillRect(x, 0, 0.8, PAGE_H)
@@ -555,25 +533,40 @@ const DRAW: Drawers = {
   sleeve: drawSleeve,
 
   vellum(f, s) {
-    // Translucent: the canvas alpha becomes the sheet's opacity. Frosted
-    // enough to wash out the page below, clear enough to read it.
+    // Ink on white. The material makes the sheet translucent and blurs
+    // whatever lies beneath; the print itself stays crisp on the surface.
     const { ctx } = f
-    ctx.fillStyle = 'rgba(236,237,234,0.62)'
+    ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, PAGE_W, PAGE_H)
-    const r = rng(41)
-    for (let i = 0; i < 1400; i++) {
-      ctx.fillStyle = `rgba(255,255,255,${0.05 + r() * 0.1})`
-      ctx.fillRect(r() * PAGE_W, r() * PAGE_H, 1 + r() * 46, 0.8 + r() * 1.6)
+    // Formation: the cloudy, uneven fibre density you see when tracing paper
+    // is held to the light. Denser patches transmit a little less.
+    const r = rng(43)
+    for (let i = 0; i < 140; i++) {
+      const x = r() * PAGE_W, y = r() * PAGE_H, rad = 30 + r() * 140
+      const g = ctx.createRadialGradient(x, y, 0, x, y, rad)
+      g.addColorStop(0, `rgba(90,88,82,${0.025 + r() * 0.045})`)
+      g.addColorStop(1, 'rgba(90,88,82,0)')
+      ctx.fillStyle = g
+      ctx.fillRect(x - rad, y - rad, rad * 2, rad * 2)
     }
-    label(ctx, s.chapter, f.x0, 82, 13, 'rgba(28,27,25,0.8)')
-    label(ctx, 'Interleaf', f.x1, 82, 13, 'rgba(28,27,25,0.8)', 'right')
+    for (let i = 0; i < 900; i++) {
+      ctx.fillStyle = `rgba(120,116,108,${0.03 + r() * 0.05})`
+      ctx.save()
+      ctx.translate(r() * PAGE_W, r() * PAGE_H)
+      ctx.rotate(r() * Math.PI)
+      ctx.fillRect(0, 0, 4 + r() * 18, 0.8)
+      ctx.restore()
+    }
+    label(ctx, s.chapter, f.x0, 82, 13, 'rgba(28,27,25,0.85)')
+    label(ctx, 'Interleaf', f.x1, 82, 13, 'rgba(28,27,25,0.85)', 'right')
     ctx.font = font(FONT_MONO, 13, 400)
-    ctx.fillStyle = 'rgba(28,27,25,0.7)'
+    ctx.fillStyle = 'rgba(28,27,25,0.75)'
     paragraph(ctx, s.note.toUpperCase(), f.x0, 140, (f.x1 - f.x0) * 0.5, 20)
     ctx.font = font(FONT_SERIF, 150, 400)
-    ctx.fillStyle = 'rgba(24,23,21,0.9)'
+    ctx.fillStyle = '#1a1917'
     ctx.textAlign = 'right'
     s.titleLines.forEach((line, i, all) => ctx.fillText(line, f.x1, PAGE_H - 110 - (all.length - 1 - i) * 138))
     ctx.textAlign = 'left'
   },
+
 }
