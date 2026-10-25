@@ -39,5 +39,22 @@ export function BookView({ engineRef, sound, chrome, startPage, onState }: Props
     engineRef.current?.setChrome(chrome)
   }, [chrome.top, chrome.bottom]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  return <div ref={el} className="fixed inset-0" />
+  return (
+    <>
+      <div ref={el} className="fixed inset-0" />
+      {/* Lens falloff, as in a photograph of the desk, and a little shade
+          under the header and footer so their text reads over the mat. */}
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-0"
+        style={{
+          background: [
+            'linear-gradient(to bottom, rgba(10,10,9,0.55), transparent 110px)',
+            'linear-gradient(to top, rgba(10,10,9,0.55), transparent 110px)',
+            'radial-gradient(ellipse 75% 70% at 50% 46%, transparent 55%, rgba(0,0,0,0.42) 100%)',
+          ].join(', '),
+        }}
+      />
+    </>
+  )
 }

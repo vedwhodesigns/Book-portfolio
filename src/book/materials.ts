@@ -4,7 +4,7 @@
 // uniforms, so a turning page costs a few numbers per frame instead of a
 // geometry upload. The same bend runs in the shadow (depth) pass.
 //
-// Physical reference values. Sizes are relative to a 210 mm page width = 1 unit.
+// Physical reference values. 1 unit = one page width; the book is A5, so 148 mm.
 //   Paper    cellulose fibres, n ≈ 1.47–1.55; opaque and white only because of
 //            the air between fibres. 120 g/m² ≈ 0.12 mm. Opacity ≈ 92%, so the
 //            reverse print shows through faintly, more when lit from behind.
@@ -18,6 +18,63 @@ import {
   DoubleSide, FrontSide, MeshDepthMaterial, MeshPhysicalMaterial, MeshStandardMaterial, RGBADepthPacking, ShaderChunk, Vector2,
   type IUniform, type Side, type Texture, type WebGLProgramParametersWithUniforms,
 } from 'three'
+
+// ---------------------------------------------------------------------------
+// Soft shadows from a large light (percentage-closer soft shadows). The book is
+// lit as if by a softbox: where paper rests on paper the shadow is crisp, and it
+// spreads and fades as a page lifts away. Replaces three.js's fixed 3×3 soft
+// filter for every material (the key light is the only shadow caster).
+// Light size is in shadow-map UV at the book; NEAR/FAR match the key light's
+// shadow camera.
+
+const PCSS_GLSL = /* glsl */ `
+#define PCSS_SAMPLES 20
+#define PCSS_LIGHT 0.16
+#define PCSS_NEAR 1.5
+#define PCSS_FAR 7.0
+float pcssViewZ(float d) { return (PCSS_NEAR * PCSS_FAR) / (PCSS_FAR - d * (PCSS_FAR - PCSS_NEAR)); }
+// Golden-angle spiral over the unit disc, turned per pixel so 20 taps read
+// as fine grain rather than banding.
+vec2 pcssTap(int i, float turn) {
+  float r = sqrt((float(i) + 0.5) / float(PCSS_SAMPLES));
+  float a = float(i) * 2.39996323 + turn;
+  return r * vec2(cos(a), sin(a));
+}
+float pcssShadow(sampler2D map, vec2 mapSize, vec4 c) {
+  float turn = 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+  float zr = pcssViewZ(c.z);
+  // Average distance to whatever blocks the light near this point.
+  float search = min(PCSS_LIGHT * (zr - PCSS_NEAR) / zr, 0.016);
+  float sum = 0.0;
+  float n = 0.0;
+  for (int i = 0; i < PCSS_SAMPLES; i++) {
+    float d = unpackRGBAToDepth(texture2D(map, c.xy + pcssTap(i, turn) * search));
+    if (d < c.z) { sum += pcssViewZ(d); n += 1.0; }
+  }
+  if (n == 0.0) return 1.0;
+  float zb = sum / n;
+  // The penumbra widens with the gap between blocker and receiver.
+  float radius = clamp(PCSS_LIGHT * (zr - zb) / zb, 1.2 / mapSize.x, 0.014);
+  float lit = 0.0;
+  for (int i = 0; i < PCSS_SAMPLES; i++) lit += texture2DCompare(map, c.xy + pcssTap(i, turn + 1.3) * radius, c.z);
+  return lit / float(PCSS_SAMPLES);
+}
+`
+{
+  const chunk = ShaderChunk.shadowmap_pars_fragment
+  const start = chunk.indexOf('#elif defined( SHADOWMAP_TYPE_PCF_SOFT )')
+  const end = chunk.indexOf('#elif defined( SHADOWMAP_TYPE_VSM )', start)
+  if (start > 0 && end > start) {
+    ShaderChunk.shadowmap_pars_fragment =
+      chunk.slice(0, start) +
+      '#elif defined( SHADOWMAP_TYPE_PCF_SOFT )\n\n\t\t\tshadow = pcssShadow( shadowMap, shadowMapSize, shadowCoord );\n\n\t\t' +
+      chunk.slice(end)
+    ShaderChunk.shadowmap_pars_fragment = ShaderChunk.shadowmap_pars_fragment.replace(
+      'float getShadow( sampler2D shadowMap,',
+      PCSS_GLSL + '\n\tfloat getShadow( sampler2D shadowMap,',
+    )
+  }
+}
 
 export interface SheetUniforms {
   [name: string]: IUniform

@@ -14,6 +14,7 @@ import {
 import { PAGE_ASPECT, PAGE_H, PAGE_W, renderPage, renderPlain } from './pageArt'
 import { PageRenderer, type PageJob, type RenderedPage } from './pageRenderer'
 import type { PaperSound } from './paperSound'
+import { BookEdges, Desk, THICKNESS, type StackSheet } from './desk'
 import { createSurfaces, type Surfaces } from './surfaces'
 import type { BookSpec, Hotspot } from './types'
 
@@ -195,7 +196,11 @@ export class BookEngine {
   private leaves: LeafObj[] = []
   private mode: Mode = 'spread'
   private turned = 0
-  private table!: Mesh
+  private desk!: Desk
+  private edges?: BookEdges
+  /** Surface height of each sheet when it lies in the right / left stack. */
+  private rightZ: number[] = []
+  private leftZ: number[] = []
   private key!: SpotLight
   /** Where the current motion started; its spread stays drawn until all is still. */
   private turnedFrom?: number
@@ -242,12 +247,15 @@ export class BookEngine {
 
     // Soft sky/ground fill plus one key light pooling over the book, as a
     // room with a window would give. Shadows stay soft and never go black.
-    this.scene.add(new HemisphereLight(0xffffff, 0x8e9698, 1.45))
-    const key = new SpotLight(0xffffff, 2.3, 0, 0.62, 0.95, 0)
+    // One big soft key light and a much weaker fill (roughly 3:1, as in a
+    // product shot), so pages have shape and the mat falls off toward its
+    // edges. The fill's ground colour is light bounced off the green mat.
+    this.scene.add(new HemisphereLight(0xfffdf8, 0x6b8278, 0.8))
+    const key = new SpotLight(0xfffaf2, 2.9, 0, 0.6, 0.9, 0)
     key.position.set(1.05, -1.75, 3.3)
     key.target.position.set(0, 0, 0)
     key.castShadow = true
-    key.shadow.intensity = 0.5
+    key.shadow.intensity = 0.62
     key.shadow.mapSize.set(coarse ? 1536 : 2048, coarse ? 1536 : 2048)
     key.shadow.camera.near = 1.5
     key.shadow.camera.far = 7
@@ -268,11 +276,9 @@ export class BookEngine {
     this.orient(this.clear)
     this.pages = new PageRenderer(this.onPageDrawn, () => this.dispatch())
 
-    const table = new Mesh(new PlaneGeometry(8, 8), new MeshStandardMaterial({ map: this.surfaces.table, roughness: 0.92 }))
-    table.position.z = -0.004
-    table.receiveShadow = true
-    this.scene.add(table)
-    this.table = table
+    const aniso = Math.min(8, this.renderer.capabilities.getMaxAnisotropy())
+    this.desk = new Desk(this.surfaces.table, this.env, aniso, () => this.wake(), W, H)
+    this.scene.add(this.desk.group)
     this.scene.add(this.book)
 
     this.bindInput(canvas)
@@ -349,7 +355,7 @@ export class BookEngine {
     // Folded back, the magazine is held up off the desk and seen from just
     // above its top edge, so the light moves round to the top-left to keep
     // its glare out of view.
-    this.table.position.z = mode === 'single' ? -0.6 : -0.004
+    this.desk.layout(mode === 'single')
     if (mode === 'single') this.key.position.set(-0.9, 1.7, 3.3)
     else this.key.position.set(1.05, -1.75, 3.3)
     const s = this.surfaces
@@ -395,18 +401,25 @@ export class BookEngine {
       this.book.add(group)
       return obj
     })
+    // Each sheet's surface height in either stack: everything beneath it plus
+    // its own thickness (a sheet's turn carries it from one to the other).
+    const t = data.map(d => (d.kind === 'paper' && mode === 'single' ? THICKNESS.paper / 2 : THICKNESS[d.kind]))
+    this.rightZ = t.map((_, i) => t.slice(i).reduce((a, b) => a + b, 0))
+    this.leftZ = t.map((_, i) => t.slice(0, i + 1).reduce((a, b) => a + b, 0))
+    if (this.edges) { this.book.remove(this.edges.mesh); this.edges.mesh.geometry.dispose(); this.edges.mesh.material.dispose() }
+    this.edges = new BookEdges(this.leaves.length, W, H)
+    this.book.add(this.edges.mesh)
     for (const l of this.leaves) this.applyLeaf(l, 0)
     this.assignTextures()
     this.emit()
   }
 
   private baseZ(l: LeafObj) {
-    const n = this.leaves.length
     const p = clamp01(l.p)
-    const right = (n - l.index) * GAP
+    const right = this.rightZ[l.index]
     // Folded back, a sheet hangs from the spine below the open stack, its roll
     // centred with the others'.
-    const left = this.mode === 'single' ? FOLD_CENTRE + FOLD.radius(l.fold) : (l.index + 1) * GAP
+    const left = this.mode === 'single' ? FOLD_CENTRE + FOLD.radius(l.fold) : this.leftZ[l.index]
     return right + (left - right) * p + Math.sin(Math.PI * p) * GAP * 4
   }
 
@@ -435,16 +448,34 @@ export class BookEngine {
   private seen(p: number) { return this.mode === 'single' ? pToSeen(p) : p }
 
   /**
-   * Sheets near the open spread are drawn, and so are those near where the
-   * current motion started (the page being left stays until something covers
-   * it), plus everything in motion except the inside of a bundle.
+   * Every sheet of the book is drawn, so the block has its real height.
+   * Loose overlays (tracing paper, sleeves) are costly to draw, so only those
+   * near the open pages, or near where the current motion started, are shown;
+   * buried ones still count in the stack heights and page edges. Folded back
+   * (single mode), only the outer few sheets behind the page are drawn. The
+   * inside of a bundle in flight is hidden.
    */
   private setVisibility() {
     const near = (i: number, t?: number) => t !== undefined && i >= t - 3 && i <= t + 2
     for (const l of this.leaves) {
-      const shown = near(l.index, this.turned) || near(l.index, this.turnedFrom) || this.moving(l)
+      const close = near(l.index, this.turned) || near(l.index, this.turnedFrom) || this.moving(l)
+      const buriedBehind = this.mode === 'single' && l.index < this.turned - 4 && !this.moving(l)
+      const shown = (isOverlay(l.data.kind) ? close : !buriedBehind) || this.moving(l)
       l.group.visible = shown && !l.tween?.inner
     }
+  }
+
+  /** Page edges for the resting stacks, and the contact shadow under them. */
+  private updateBlock(dt: number) {
+    const rest = this.leaves.filter(l => !this.moving(l))
+    const sheet = (l: LeafObj): StackSheet => ({ z: l.group.position.z, bow: l.u.uRestLift.value, kind: l.data.kind })
+    const right = rest.filter(l => l.p < 0.5).map(sheet)
+    const left = rest.filter(l => l.p >= 0.5).reverse().map(sheet)
+    const single = this.mode === 'single'
+    this.edges?.update(single ? [{ side: 1, sheets: right }] : [{ side: 1, sheets: right }, { side: -1, sheets: left }])
+    const onRight = this.leaves.some(l => l.p < 0.5)
+    const onLeft = this.leaves.some(l => l.p >= 0.5)
+    return this.desk.update({ right: onRight || single ? 1 : 0, left: onLeft && !single ? 1 : 0 }, dt, single)
   }
 
   /**
@@ -775,6 +806,7 @@ export class BookEngine {
       this.build(mode, turned)
       this.setVisibility()
       this.updateBows(0, true)
+      this.updateBlock(1)
       this.flushUrgent()
       this.precompile()
     } else if (this.updateTexSize(w, h, mode)) {
@@ -813,7 +845,8 @@ export class BookEngine {
     const max = this.max()
     const spread = this.mode === 'spread'
     const cx = spread ? (this.turned === 0 ? W / 2 : this.turned === max ? -W / 2 : 0) : W / 2
-    this.goal = this.fit(cx, spread ? 2 * W : W, spread ? 0.1 : 0.32, spread ? 0 : Math.PI + 0.16)
+    // Tilted enough to see the block's edges and the mat in perspective.
+    this.goal = this.fit(cx, spread ? 2 * W : W, spread ? 0.26 : 0.32, spread ? 0 : Math.PI + 0.16)
   }
 
   private placeCamera(cam: PerspectiveCamera, p: Pose) {
@@ -1152,6 +1185,7 @@ export class BookEngine {
       this.setVisibility()
     }
     if (this.updateBows(dt)) active = true
+    if (this.updateBlock(dt)) active = true
     if (this.uploadOne() || this.uploads.length) active = true
     if (loudest > 0.05) this.opts.sound.move(loudest, loudKind)
     else this.opts.sound.quiet()
