@@ -1,6 +1,6 @@
 // Procedural surface detail, generated once at start-up. Everything tiles so
 // it can repeat at a fine scale and stay sharp however close the camera is.
-import { CanvasTexture, DataTexture, LinearFilter, LinearMipmapLinearFilter, RepeatWrapping, RGBAFormat, SRGBColorSpace } from 'three'
+import { CanvasTexture, DataTexture, LinearFilter, LinearMipmapLinearFilter, NearestFilter, RepeatWrapping, RGBAFormat, SRGBColorSpace } from 'three'
 import { makeCanvas, rng } from './art'
 
 /** Tileable value-noise fBm in [0, 1]. */
@@ -93,6 +93,8 @@ export interface Surfaces {
   crinkle: DataTexture
   /** The desk under the book. */
   table: CanvasTexture
+  /** Fine random mask for partial (translucent) shadow casting; green channel. */
+  shadowDither: DataTexture
 }
 
 export function createSurfaces(): Surfaces {
@@ -156,5 +158,19 @@ export function createSurfaces(): Surfaces {
   table.wrapS = table.wrapT = RepeatWrapping
   table.repeat.set(6, 6)
 
-  return { fibreNormal, grainRoughness, crinkle, table }
+  // ~40% of points cast: tracing paper's shadow is a fraction of paper's.
+  const D = 64
+  const dr = rng(53)
+  const dither = new Uint8Array(D * D * 4)
+  for (let i = 0; i < D * D; i++) {
+    const v = dr() < 0.4 ? 255 : 0
+    dither[i * 4] = dither[i * 4 + 1] = dither[i * 4 + 2] = v
+    dither[i * 4 + 3] = 255
+  }
+  const shadowDither = dataTexture(dither, D, 12, 16)
+  shadowDither.magFilter = NearestFilter
+  shadowDither.minFilter = NearestFilter
+  shadowDither.generateMipmaps = false
+
+  return { fibreNormal, grainRoughness, crinkle, table, shadowDither }
 }

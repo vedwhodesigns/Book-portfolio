@@ -1,7 +1,7 @@
 import {
-  BackSide, BoxGeometry, CanvasTexture, Color, DataTexture, DoubleSide, FrontSide, Group, HemisphereLight, Mesh, MeshBasicMaterial,
+  BackSide, BoxGeometry, CanvasTexture, Color, DataTexture, DoubleSide, FrontSide, Group, Texture, HemisphereLight, Mesh, MeshBasicMaterial,
   MeshPhysicalMaterial, MeshStandardMaterial, PCFSoftShadowMap, PerspectiveCamera, Plane, PlaneGeometry, PMREMGenerator,
-  Raycaster, RGBAFormat, Scene, SpotLight, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, type MeshDepthMaterial, type Texture,
+  Raycaster, RGBAFormat, Scene, SpotLight, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, type MeshDepthMaterial,
 } from 'three'
 import {
   anchorPage, buildLeaves, chooseMode, isOverlay, maxTurned, stateForPage, visibleFaces,
@@ -12,6 +12,7 @@ import {
   type SheetUniforms,
 } from './materials'
 import { PAGE_ASPECT, PAGE_H, PAGE_W, renderPage, renderPlain } from './pageArt'
+import { PageRenderer, type PageJob, type RenderedPage } from './pageRenderer'
 import type { PaperSound } from './paperSound'
 import { createSurfaces, type Surfaces } from './surfaces'
 import type { BookSpec, Hotspot } from './types'
@@ -109,7 +110,7 @@ interface Drag {
   moved: boolean
 }
 
-interface Job { priority: number; run: () => void }
+interface Job { priority: number; page: PageJob }
 
 /** Height of the gutter bow on the top page of each stack (fraction of page width). */
 const REST_LIFT = 0.03
@@ -147,6 +148,11 @@ function solidTexture(rgba: [number, number, number, number]) {
   return t
 }
 
+/** Frees a drawn page's pixels now rather than whenever the GC gets to them. */
+function closeImage(img: unknown) {
+  if (typeof ImageBitmap !== 'undefined' && img instanceof ImageBitmap) img.close()
+}
+
 export class BookEngine {
   private renderer: WebGLRenderer
   private scene = new Scene()
@@ -162,6 +168,8 @@ export class BookEngine {
   private goal: Pose = { ...this.pose }
   private textures = new Map<string, { tex: Texture; hot: Hotspot[] }>()
   private jobs = new Map<string, Job>()
+  private uploads: { key: string; page: RenderedPage }[] = []
+  private pages: PageRenderer
   private idle = 0
   private plain: CanvasTexture
   private white = solidTexture([255, 255, 255, 255])
@@ -208,16 +216,21 @@ export class BookEngine {
     key.shadow.mapSize.set(coarse ? 1536 : 2048, coarse ? 1536 : 2048)
     key.shadow.camera.near = 1.5
     key.shadow.camera.far = 7
-    key.shadow.bias = -0.0005
-    key.shadow.normalBias = 0.004
+    // A bowed or curling page shadows itself in bands parallel to the spine
+    // unless the lookup is pushed off the surface along its normal (~3 mm).
+    key.shadow.bias = -0.0003
+    key.shadow.normalBias = 0.015
     this.scene.add(key, key.target)
 
     this.surfaces = createSurfaces()
     const pmrem = new PMREMGenerator(this.renderer)
     this.env = pmrem.fromScene(studio(), 0.02).texture
     pmrem.dispose()
-    this.plain = new CanvasTexture(renderPlain(256))
+    this.plain = this.orient(new CanvasTexture(renderPlain(256)))
     this.plain.colorSpace = SRGBColorSpace
+    this.orient(this.white)
+    this.orient(this.clear)
+    this.pages = new PageRenderer(this.onPageDrawn, () => this.dispatch())
 
     const table = new Mesh(new PlaneGeometry(8, 8), new MeshStandardMaterial({ map: this.surfaces.table, roughness: 0.92 }))
     table.position.z = -0.004
@@ -254,7 +267,9 @@ export class BookEngine {
     this.cancelIdle()
     this.ro.disconnect()
     window.removeEventListener('keydown', this.onKey)
-    for (const t of this.textures.values()) t.tex.dispose()
+    this.pages.dispose()
+    for (const t of this.textures.values()) this.disposeTexture(t.tex)
+    for (const u of this.uploads) closeImage(u.page.image)
     this.clearLeaves()
     this.geometry.dispose()
     for (const t of Object.values(this.surfaces)) (t as Texture).dispose()
@@ -307,7 +322,11 @@ export class BookEngine {
         // One mesh per face: a double-sided transmissive sheet would be drawn
         // into the very buffer it samples, which shows up as stripes.
         obj.prints = [FrontSide, BackSide].map(side => tracingMaterial(u, this.white, this.env, side))
-        obj.prints.forEach(m => mesh(m))
+        const [front] = obj.prints.map(m => mesh(m))
+        // A faint shadow: tracing paper lets most light through.
+        obj.depth = sheetDepthMaterial(u, undefined, s.shadowDither)
+        front.castShadow = true
+        front.customDepthMaterial = obj.depth
       } else {
         const opts = kind === 'cover' ? COVER : kind === 'sleeve' ? SLEEVE_CONTENTS : PAPER
         const blank = kind === 'sleeve' ? this.clear : this.plain
@@ -423,28 +442,63 @@ export class BookEngine {
   }
 
   // ---------------------------------------------------------------------------
-  // Artwork. Pages near the open spread get real textures, drawn and uploaded
-  // to the GPU in idle time so a turn never waits on them.
+  // Artwork. Pages near the open spread get real textures. They are drawn in a
+  // worker (or in idle time where a worker can't draw text) and moved to the
+  // GPU one per frame, so a turn never waits on them.
 
-  private faceKey(face: Face) { return `${face.spec.id}|${face.side}` }
+  private faceKey(face: Face) { return `${face.spec.id}|${face.side}|${this.texW}` }
+
+  /**
+   * Page textures are stored top row first (ImageBitmaps can't be flipped on
+   * upload), so every texture used as a page map flips in UV instead. All of
+   * them must agree because the reverse side is sampled with the front's UVs.
+   */
+  private orient<T extends Texture>(tex: T): T {
+    tex.flipY = false
+    tex.repeat.set(1, -1)
+    tex.offset.set(0, 1)
+    return tex
+  }
+
+  private disposeTexture(tex: Texture) {
+    closeImage(tex.image)
+    tex.dispose()
+  }
 
   private requestFace(key: string, face: Face, priority: number) {
-    if (this.textures.has(key)) return
+    if (this.textures.has(key) || this.pages.isDrawing(key) || this.uploads.some(u => u.key === key)) return
     const job = this.jobs.get(key)
     if (job) { job.priority = Math.min(job.priority, priority); return }
-    this.jobs.set(key, {
-      priority,
-      run: () => {
-        const r = renderPage(face.spec, face.side, face.folio, this.texW)
-        const tex = new CanvasTexture(r.canvas)
-        tex.colorSpace = SRGBColorSpace
-        tex.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy())
-        this.renderer.initTexture(tex)
-        this.textures.set(key, { tex, hot: r.hotspots })
-        for (const l of this.leaves) this.applyTextures(l)
-        this.wake()
-      },
-    })
+    this.jobs.set(key, { priority, page: { key, spec: face.spec, side: face.side, folio: face.folio, texW: this.texW } })
+  }
+
+  /** A finished page: queue it for upload on the next frame. */
+  private onPageDrawn = (key: string, page: RenderedPage) => {
+    // Drawn for a texture size that has since changed (or after teardown).
+    if (this.disposed || !key.endsWith(`|${this.texW}`)) {
+      closeImage(page.image)
+      return
+    }
+    this.uploads.push({ key, page })
+    this.wake()
+    this.dispatch()
+  }
+
+  /** Moves one drawn page to the GPU and onto its sheet. */
+  private uploadOne() {
+    const u = this.uploads.shift()
+    if (!u) return false
+    const img = u.page.image
+    const tex = this.orient(typeof ImageBitmap !== 'undefined' && img instanceof ImageBitmap ? new Texture(img) : new CanvasTexture(img))
+    tex.colorSpace = SRGBColorSpace
+    tex.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy())
+    tex.needsUpdate = true
+    this.renderer.initTexture(tex)
+    const old = this.textures.get(u.key)
+    if (old) this.disposeTexture(old.tex)
+    this.textures.set(u.key, { tex, hot: u.page.hotspots })
+    for (const l of this.leaves) this.applyTextures(l)
+    return true
   }
 
   private applyTextures(l: LeafObj) {
@@ -468,7 +522,7 @@ export class BookEngine {
   }
 
   private assignTextures() {
-    const lo = this.turned - 3, hi = this.turned + 2
+    const lo = this.turned - 3, hi = this.turned + 3
     const keep = new Set<string>()
     // Pages on show right now, including those seen through vellum or a sleeve.
     const onShow = new Set<number>()
@@ -514,19 +568,39 @@ export class BookEngine {
     }
     for (const [key, t] of this.textures) {
       if (keep.has(key)) continue
-      t.tex.dispose()
+      this.disposeTexture(t.tex)
       this.textures.delete(key)
     }
     for (const key of this.jobs.keys()) if (!keep.has(key)) this.jobs.delete(key)
-    this.scheduleIdle()
+    this.dispatch()
   }
 
-  /** Draw the open spread's pages right away (first paint, after a resize). */
+  /** Draw the open spread's pages right away, on this thread (first paint, resize). */
   private flushUrgent() {
     for (const [key, job] of [...this.jobs].sort((a, b) => a[1].priority - b[1].priority)) {
       if (job.priority > 0.5) break
       this.jobs.delete(key)
-      job.run()
+      const r = renderPage(job.page.spec, job.page.side, job.page.folio, job.page.texW)
+      this.uploads.push({ key, page: { image: r.canvas, hotspots: r.hotspots } })
+    }
+    while (this.uploadOne()) { /* first paint: upload all at once */ }
+  }
+
+  private nextJob() {
+    let best: [string, Job] | undefined
+    for (const e of this.jobs) if (!best || e[1].priority < best[1].priority) best = e
+    return best
+  }
+
+  /** Hands waiting pages to the drawer: the worker can run any time; drawing on this thread waits for stillness. */
+  private dispatch() {
+    if (this.disposed || !this.pages.ready) return
+    if (!this.pages.offThread) { this.scheduleIdle(); return }
+    while (!this.pages.busy) {
+      const best = this.nextJob()
+      if (!best) break
+      this.jobs.delete(best[0])
+      this.pages.start(best[1].page)
     }
   }
 
@@ -543,16 +617,16 @@ export class BookEngine {
     this.idle = 0
   }
 
+  /** Fallback drawing on the main thread (browsers whose workers can't draw text). */
   private pump = () => {
     this.idle = 0
-    if (this.disposed) return
-    let best: [string, Job] | undefined
-    for (const e of this.jobs) if (!best || e[1].priority < best[1].priority) best = e
+    if (this.disposed || this.pages.offThread) return
+    const best = this.nextJob()
     // Keep motion smooth: while a page moves, only draw what is already on show.
     if (best && (this.drag?.leaf || this.raf) && best[1].priority > 0.5) { this.idle = window.setTimeout(this.pump, 150); return }
     if (best) {
       this.jobs.delete(best[0])
-      best[1].run()
+      this.pages.start(best[1].page)
     }
     this.scheduleIdle()
   }
@@ -595,6 +669,10 @@ export class BookEngine {
     }
     this.updateGoal()
     if (initial) this.pose = { ...this.goal }
+    // Resizing clears the canvas; draw now so no blank frame reaches the screen.
+    this.placeCamera(this.camera, this.pose)
+    this.renderer.shadowMap.needsUpdate = true
+    this.renderer.render(this.scene, this.camera)
     this.wake()
   }
 
@@ -608,9 +686,11 @@ export class BookEngine {
     const texW = Math.round((texH * PAGE_ASPECT) / 8) * 8
     if (texW === this.texW || (texW < this.texW && texW > this.texW * 0.7)) return false
     this.texW = texW
-    for (const t of this.textures.values()) t.tex.dispose()
+    for (const t of this.textures.values()) this.disposeTexture(t.tex)
     this.textures.clear()
     this.jobs.clear()
+    for (const u of this.uploads) closeImage(u.page.image)
+    this.uploads = []
     for (const l of this.leaves) l.frontKey = l.backKey = undefined
     return true
   }
@@ -949,6 +1029,7 @@ export class BookEngine {
     }
     if (settled) this.setVisibility()
     if (this.updateBows(dt)) active = true
+    if (this.uploadOne() || this.uploads.length) active = true
     if (loudest > 0.05) this.opts.sound.move(loudest, loudKind)
     else this.opts.sound.quiet()
 

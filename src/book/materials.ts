@@ -78,9 +78,17 @@ vec3 sheetPoint(vec2 st) {
   float te = clamp(PI * pr + 0.5 * bend, 0.0, PI);
   float k = (te - ts) / uSheet.x;
   float u = st.x * uSheet.x;
-  vec2 xz = abs(k) < 1e-5
-    ? u * vec2(cos(ts), sin(ts))
-    : vec2(sin(ts + k * u) - sin(ts), cos(ts) - cos(ts + k * u)) / k;
+  // The arc from the spine to u, written as its chord: length u*sinc(h), at
+  // the mid angle ts + h. Subtracting sin/cos of nearby angles and dividing by
+  // a small k instead loses all precision as a sheet settles (k -> 0), which
+  // jitters vertices by more than the gap between sheets: the stripes seen
+  // while a landed page's flex dies away.
+  float h = 0.5 * k * u;
+  float h2 = h * h;
+  float sinc = abs(h) < 0.5
+    ? 1.0 - h2 / 6.0 * (1.0 - h2 / 20.0 * (1.0 - h2 / 42.0))
+    : sin(h) / h;
+  vec2 xz = u * sinc * vec2(cos(ts + h), sin(ts + h));
   return vec3(xz.x, (st.y - 0.5) * uSheet.y, xz.y + sheetRest(st));
 }
 `
@@ -93,6 +101,29 @@ vec3 objectNormal = normalize(cross(sheetDx, sheetDy));
 #ifdef USE_TANGENT
   vec3 objectTangent = normalize(sheetDx);
 #endif
+`
+
+/**
+ * Light reaching the back of a sheet from the key light (a spotlight) and a
+ * little sky fill: what makes paper and tracing paper glow when lifted toward
+ * the light. Evaluated after the standard lighting (needs geometryPosition).
+ */
+const BACKLIGHT_GLSL = /* glsl */ `
+vec3 sheetBacklight(vec3 n, vec3 pos) {
+  vec3 light = vec3(0.0);
+  #if NUM_SPOT_LIGHTS > 0
+    for (int i = 0; i < NUM_SPOT_LIGHTS; i++) {
+      vec3 L = normalize(spotLights[i].position - pos);
+      light += spotLights[i].color * max(dot(-n, L), 0.0);
+    }
+  #endif
+  #if NUM_DIR_LIGHTS > 0
+    for (int i = 0; i < NUM_DIR_LIGHTS; i++) {
+      light += directionalLights[i].color * max(dot(-n, directionalLights[i].direction), 0.0);
+    }
+  #endif
+  return light;
+}
 `
 
 function bendVertex(shader: WebGLProgramParametersWithUniforms, uniforms: SheetUniforms) {
@@ -162,7 +193,7 @@ uniform float uShowThrough;
 uniform float uTranslucency;
 uniform float uInkGloss;
 float inkAmount = 0.0;
-` + shader.fragmentShader
+` + shader.fragmentShader.replace('#include <lights_pars_begin>', '#include <lights_pars_begin>\n' + BACKLIGHT_GLSL)
       .replace('#include <map_fragment>', /* glsl */ `
 #ifdef USE_MAP
   vec4 frontTex = texture2D(map, vMapUv);
@@ -181,13 +212,8 @@ roughnessFactor = clamp(roughnessFactor * (1.0 - inkAmount * uInkGloss), 0.05, 1
 `)
       .replace('#include <lights_fragment_end>', /* glsl */ `
 #include <lights_fragment_end>
-#if NUM_DIR_LIGHTS > 0
-  // Diffuse transmission: a page lifted toward the light glows through.
-  for (int i = 0; i < NUM_DIR_LIGHTS; i++) {
-    float through = max(dot(-normal, directionalLights[i].direction), 0.0);
-    reflectedLight.directDiffuse += directionalLights[i].color * through * uTranslucency * diffuseColor.rgb * RECIPROCAL_PI;
-  }
-#endif
+// Diffuse transmission: a page lifted toward the light glows through.
+reflectedLight.directDiffuse += sheetBacklight(normal, geometryPosition) * uTranslucency * diffuseColor.rgb * RECIPROCAL_PI;
 `)
   }
   m.customProgramCacheKey = () => 'sheet-paper'
@@ -198,14 +224,25 @@ export function setBackMap(m: MeshStandardMaterial, tex: Texture) {
   ;(m.userData.extra as { uBackMap: IUniform<Texture> }).uBackMap.value = tex
 }
 
-/** Shadow caster that bends like the sheet it belongs to. */
-export function sheetDepthMaterial(u: SheetUniforms, cutout?: Texture) {
-  const m = new MeshDepthMaterial({ depthPacking: RGBADepthPacking, side: DoubleSide, map: cutout ?? null, alphaTest: cutout ? 0.5 : 0 })
+/**
+ * Shadow caster that bends like the sheet it belongs to. `cutout` casts only
+ * where the artwork is opaque (sleeve contents). `dither` casts from a share of
+ * points only, which the soft shadow filter turns into a lighter shadow: how a
+ * translucent sheet like tracing paper casts.
+ */
+export function sheetDepthMaterial(u: SheetUniforms, cutout?: Texture, dither?: Texture) {
+  const m = new MeshDepthMaterial({
+    depthPacking: RGBADepthPacking,
+    side: DoubleSide,
+    map: cutout ?? null,
+    alphaMap: dither ?? null,
+    alphaTest: cutout || dither ? 0.5 : 0,
+  })
   m.onBeforeCompile = shader => {
     Object.assign(shader.uniforms, u)
     shader.vertexShader = BEND_GLSL + shader.vertexShader.replace('#include <begin_vertex>', 'vec3 transformed = sheetPoint(uv);')
   }
-  m.customProgramCacheKey = () => `sheet-depth-${cutout ? 'cut' : 'solid'}`
+  m.customProgramCacheKey = () => `sheet-depth-${cutout ? 'cut' : dither ? 'dither' : 'solid'}`
   return m
 }
 
@@ -217,21 +254,35 @@ export function sheetDepthMaterial(u: SheetUniforms, cutout?: Texture) {
 interface ClearOptions {
   blurBase: number
   blurPerUnitLift: number
+  /**
+   * Blur ceiling. The buffer's mip level is log2(width) × roughness, so at 1
+   * the whole screen is averaged and a sheet over a white page turns the grey
+   * of the room. 0.55 keeps the blur near 3% of the screen width.
+   */
+  blurMax?: number
+  /** Share of light from behind that comes through as a diffuse glow. */
+  glow?: number
 }
 
 function blurByLift(m: MeshPhysicalMaterial, u: SheetUniforms, o: ClearOptions, key: string) {
-  const extra = { uBlurBase: { value: o.blurBase }, uBlurLift: { value: o.blurPerUnitLift } }
+  const extra = { uBlurBase: { value: o.blurBase }, uBlurLift: { value: o.blurPerUnitLift }, uBlurMax: { value: o.blurMax ?? 1 } }
   m.onBeforeCompile = shader => {
     bendVertex(shader, u)
     Object.assign(shader.uniforms, extra)
-    shader.fragmentShader = 'uniform float uBlurBase;\nuniform float uBlurLift;\nvarying float vLift;\n' + shader.fragmentShader
+    shader.fragmentShader = 'uniform float uBlurBase;\nuniform float uBlurLift;\nuniform float uBlurMax;\nvarying float vLift;\n' + shader.fragmentShader
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <transmission_fragment>',
       ShaderChunk.transmission_fragment.replace(
         'n, v, material.roughness, material.diffuseColor',
-        'n, v, clamp(uBlurBase + abs(vLift) * uBlurLift, 0.0, 1.0), material.diffuseColor',
-      ),
+        'n, v, min(uBlurBase + abs(vLift) * uBlurLift, uBlurMax), material.diffuseColor',
+      ) + (o.glow ? `\ntotalDiffuse += sheetGlow;` : ''),
     )
+    if (o.glow) {
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <lights_pars_begin>', '#include <lights_pars_begin>\n' + BACKLIGHT_GLSL)
+        .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+vec3 sheetGlow = sheetBacklight(normal, geometryPosition) * ${o.glow.toFixed(3)} * diffuseColor.rgb * RECIPROCAL_PI;`)
+    }
   }
   m.customProgramCacheKey = () => key
 }
@@ -259,7 +310,8 @@ export function tracingMaterial(u: SheetUniforms, print: Texture, env: Texture, 
     envMapIntensity: 0.5,
     side,
   })
-  blurByLift(m, u, { blurBase: 0.16, blurPerUnitLift: 9 }, `sheet-tracing-${side}`)
+  // Even a few millimetres of air under the sheet blurs the page heavily.
+  blurByLift(m, u, { blurBase: 0.16, blurPerUnitLift: 16, blurMax: 0.55, glow: 0.55 }, `sheet-tracing-${side}`)
   return m
 }
 

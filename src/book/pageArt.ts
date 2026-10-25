@@ -2,7 +2,7 @@
 // a 1000 × 1389 page (aspect 0.72) and scaled to the requested texture size.
 import type { Hotspot, PageSpec, SleeveItem } from './types'
 import {
-  applyFineGrain, applyGrain, drawImage, font, FONT_MONO, FONT_SANS, FONT_SERIF, INK, label, makeCanvas, MUTED, PAPER, paragraph, rng, tracked,
+  type AnyCanvas, applyFineGrain, applyGrain, drawImage, font, FONT_MONO, FONT_SANS, FONT_SERIF, INK, label, makeCanvas, MUTED, PAPER, paragraph, rng, tracked,
 } from './art'
 
 export const PAGE_W = 1000
@@ -12,7 +12,7 @@ export const PAGE_ASPECT = PAGE_W / PAGE_H
 export type Side = 'recto' | 'verso'
 
 export interface PageRender {
-  canvas: HTMLCanvasElement
+  canvas: AnyCanvas
   hotspots: Hotspot[]
 }
 
@@ -48,7 +48,7 @@ export function renderPage(spec: PageSpec, side: Side, folio: number | null, tex
 }
 
 /** Plain stock: the reverse of single-sided pages and a stand-in while artwork loads. */
-export function renderPlain(texW: number): HTMLCanvasElement {
+export function renderPlain(texW: number): AnyCanvas {
   const texH = Math.round(texW / PAGE_ASPECT)
   const [canvas, ctx] = makeCanvas(texW, texH)
   const k = texW / PAGE_W

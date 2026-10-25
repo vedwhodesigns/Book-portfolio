@@ -21,7 +21,15 @@ export function rng(seed: number): () => number {
   }
 }
 
-export function makeCanvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
+/** A page canvas, or an OffscreenCanvas when drawing inside the page worker. */
+export type AnyCanvas = HTMLCanvasElement | OffscreenCanvas
+
+export function makeCanvas(w: number, h: number): [AnyCanvas, CanvasRenderingContext2D] {
+  if (typeof document === 'undefined') {
+    const oc = new OffscreenCanvas(w, h)
+    // The 2D APIs used here are shared by both context types.
+    return [oc, oc.getContext('2d') as unknown as CanvasRenderingContext2D]
+  }
   const c = document.createElement('canvas')
   c.width = w
   c.height = h
@@ -31,10 +39,10 @@ export function makeCanvas(w: number, h: number): [HTMLCanvasElement, CanvasRend
 // ---------------------------------------------------------------------------
 // Grain
 
-let grainTile: HTMLCanvasElement | undefined
+let grainTile: AnyCanvas | undefined
 
 /** 256px tile of fine luminance noise plus a few paper fibres. */
-function getGrainTile(): HTMLCanvasElement {
+function getGrainTile(): AnyCanvas {
   if (grainTile) return grainTile
   const size = 256
   const [c, ctx] = makeCanvas(size, size)
@@ -73,7 +81,7 @@ export function applyGrain(ctx: CanvasRenderingContext2D, w: number, h: number, 
   ctx.restore()
 }
 
-let fineTile: HTMLCanvasElement | undefined
+let fineTile: AnyCanvas | undefined
 
 /**
  * Even, very fine luminance grain (no fibres, no clouds), multiplied over the
@@ -116,23 +124,21 @@ const PALETTES: Record<Tone, { base: string; blobs: string[] }> = {
   stone: { base: '#bdb8b0', blobs: ['#ece8e1', '#8f8a82', '#d4cfc6', '#5e5a55', '#faf8f4'] },
 }
 
-const imageCache = new Map<string, HTMLImageElement>()
+const imageCache = new Map<string, ImageBitmap>()
 
 /** Preloads real images referenced by the book so page drawing can stay synchronous. */
-export function preloadImages(srcs: string[]): Promise<void> {
-  return Promise.all(
-    srcs.map(
-      src =>
-        new Promise<void>(resolve => {
-          if (imageCache.has(src)) return resolve()
-          const img = new Image()
-          img.crossOrigin = 'anonymous'
-          img.onload = () => { imageCache.set(src, img); resolve() }
-          img.onerror = () => resolve()
-          img.src = src
-        }),
-    ),
-  ).then(() => undefined)
+export async function preloadImages(srcs: string[]): Promise<void> {
+  await Promise.all(
+    srcs.map(async src => {
+      if (imageCache.has(src)) return
+      try {
+        const blob = await (await fetch(src)).blob()
+        imageCache.set(src, await createImageBitmap(blob))
+      } catch {
+        // A missing image falls back to the generated placeholder.
+      }
+    }),
+  )
 }
 
 /** Draws an image (real or generated) covering the rect. */
