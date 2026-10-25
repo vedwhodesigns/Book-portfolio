@@ -37,6 +37,28 @@ const MOTION: Record<LeafKind, { curl: number; flip: number; fall: number; bounc
   vellum: { curl: 1.5, flip: 0.7, fall: 0.56, bounce: 0.09 },
   sleeve: { curl: 0.95, flip: 0.64, fall: 0.5, bounce: 0.12 },
 }
+/** A chunk of pages taken in one go (jumping to a chapter): stiffer and a little slower than one sheet. */
+const BUNDLE = { curl: 0.55, flip: 0.78 }
+/**
+ * Single-page mode is a magazine folded back on itself. Turned sheets wrap
+ * round the spine into a roll and lie behind the open page, fanning slightly
+ * open: the last one turned is outermost (widest roll, most open), each one
+ * further in sits a little tighter. `depth` 0 is the outermost.
+ */
+const FOLD = {
+  radius: (depth: number) => Math.max(0.02, 0.05 - depth * 0.005),
+  open: (depth: number) => 0.12 + 0.24 * Math.pow(0.45, depth),
+}
+/** Centre height of the roll at the fold: all rolls share it, so they nest. */
+const FOLD_CENTRE = -0.052
+/**
+ * Folded back, a turning sheet is out of sight behind the page once it is
+ * past p ≈ 0.45. Motion and swipes run in "seen" progress s, where that hidden
+ * stretch takes only the last 15%, so neither a turn nor a finger waits on it.
+ */
+const SEEN_P = 0.45, SEEN_S = 0.85
+const seenToP = (v: number) => (v < SEEN_S ? (v * SEEN_P) / SEEN_S : SEEN_P + ((v - SEEN_S) * (1 - SEEN_P)) / (1 - SEEN_S))
+const pToSeen = (p: number) => (p < SEEN_P ? (p * SEEN_S) / SEEN_P : SEEN_S + ((p - SEEN_P) * (1 - SEEN_S)) / (1 - SEEN_P))
 
 export interface EngineState {
   mode: Mode
@@ -60,6 +82,7 @@ export interface EngineOptions {
   onState: (s: EngineState) => void
 }
 
+/** Progress over time, in seen progress (equal to p in a flat book). */
 interface Tween {
   from: number
   to: number
@@ -67,6 +90,12 @@ interface Tween {
   dur: number
   /** Initial slope for releases (Hermite); undefined uses the eased curve. */
   launch?: number
+  /** Part of a bundle (a jump): stiffer curl, restored on landing. */
+  bundle?: boolean
+  /** Sandwiched inside a bundle: not drawn while it moves. */
+  inner?: boolean
+  /** Lands without sound or bounce (all but the last sheet of a bundle). */
+  quiet?: boolean
 }
 
 interface LeafObj {
@@ -87,6 +116,8 @@ interface LeafObj {
   wobble: number
   /** Gutter bow this leaf is easing toward (see updateBows). */
   restLift: number
+  /** Eased depth in the folded-back stack (single mode); see FOLD. */
+  fold: number
   landedAt: number | null
   wantFront?: string
   wantBack?: string
@@ -164,6 +195,10 @@ export class BookEngine {
   private leaves: LeafObj[] = []
   private mode: Mode = 'spread'
   private turned = 0
+  private table!: Mesh
+  private key!: SpotLight
+  /** Where the current motion started; its spread stays drawn until all is still. */
+  private turnedFrom?: number
   private pose: Pose = { tx: 0, ty: 0, dist: 6, polar: 0.1, azim: 0 }
   private goal: Pose = { ...this.pose }
   private textures = new Map<string, { tex: Texture; hot: Hotspot[] }>()
@@ -221,6 +256,7 @@ export class BookEngine {
     key.shadow.bias = -0.0003
     key.shadow.normalBias = 0.015
     this.scene.add(key, key.target)
+    this.key = key
 
     this.surfaces = createSurfaces()
     const pmrem = new PMREMGenerator(this.renderer)
@@ -236,6 +272,7 @@ export class BookEngine {
     table.position.z = -0.004
     table.receiveShadow = true
     this.scene.add(table)
+    this.table = table
     this.scene.add(this.book)
 
     this.bindInput(canvas)
@@ -298,19 +335,30 @@ export class BookEngine {
     this.leaves = []
   }
 
+  private curlOf(kind: LeafKind) {
+    return MOTION[kind].curl * (this.opts.reducedMotion ? 0.5 : 1)
+  }
+
   private build(mode: Mode, turned: number) {
     this.clearLeaves()
     this.jobs.clear()
     this.mode = mode
     const data = buildLeaves(this.opts.book, mode)
     this.turned = Math.max(0, Math.min(turned, maxTurned(data, mode)))
+    this.turnedFrom = undefined
+    // Folded back, the magazine is held up off the desk and seen from just
+    // above its top edge, so the light moves round to the top-left to keep
+    // its glare out of view.
+    this.table.position.z = mode === 'single' ? -0.6 : -0.004
+    if (mode === 'single') this.key.position.set(-0.9, 1.7, 3.3)
+    else this.key.position.set(1.05, -1.75, 3.3)
     const s = this.surfaces
     this.leaves = data.map((leaf, index) => {
       const kind = leaf.kind
       const p = index < this.turned ? 1 : 0
-      const u = sheetUniforms(W, H, MOTION[kind].curl * (this.opts.reducedMotion ? 0.5 : 1), p)
+      const u = sheetUniforms(W, H, this.curlOf(kind), p)
       const group = new Group()
-      const obj: LeafObj = { data: leaf, index, group, u, p, wobble: 1, restLift: 0, landedAt: null }
+      const obj: LeafObj = { data: leaf, index, group, u, p, wobble: 1, restLift: 0, fold: Math.max(0, this.turned - 1 - index), landedAt: null }
       const mesh = (m: MeshStandardMaterial | MeshPhysicalMaterial) => {
         const x = new Mesh(this.geometry, m)
         x.frustumCulled = false
@@ -356,20 +404,46 @@ export class BookEngine {
     const n = this.leaves.length
     const p = clamp01(l.p)
     const right = (n - l.index) * GAP
-    const left = (l.index + 1) * GAP
+    // Folded back, a sheet hangs from the spine below the open stack, its roll
+    // centred with the others'.
+    const left = this.mode === 'single' ? FOLD_CENTRE + FOLD.radius(l.fold) : (l.index + 1) * GAP
     return right + (left - right) * p + Math.sin(Math.PI * p) * GAP * 4
+  }
+
+  private applyFold(l: LeafObj) {
+    if (this.mode !== 'single') {
+      l.u.uWrap.value = 0
+      l.u.uWrapLen.value = W
+      return
+    }
+    const wrap = Math.PI - FOLD.open(l.fold)
+    l.u.uWrap.value = wrap
+    l.u.uWrapLen.value = FOLD.radius(l.fold) * wrap
   }
 
   private applyLeaf(l: LeafObj, flex: number) {
     l.u.uProgress.value = clamp01(l.p)
     l.u.uFlex.value = flex
+    this.applyFold(l)
     l.group.position.z = this.baseZ(l)
   }
 
+  private moving(l: LeafObj) { return !!l.tween || l.follow !== undefined }
+
+  /** Sheet progress ↔ seen progress (see SEEN_P); the identity in spread mode. */
+  private toP(v: number) { return this.mode === 'single' ? seenToP(v) : v }
+  private seen(p: number) { return this.mode === 'single' ? pToSeen(p) : p }
+
+  /**
+   * Sheets near the open spread are drawn, and so are those near where the
+   * current motion started (the page being left stays until something covers
+   * it), plus everything in motion except the inside of a bundle.
+   */
   private setVisibility() {
-    const lo = this.turned - 3, hi = this.turned + 2
+    const near = (i: number, t?: number) => t !== undefined && i >= t - 3 && i <= t + 2
     for (const l of this.leaves) {
-      l.group.visible = (l.index >= lo && l.index <= hi) || !!l.tween || l.follow !== undefined
+      const shown = near(l.index, this.turned) || near(l.index, this.turnedFrom) || this.moving(l)
+      l.group.visible = shown && !l.tween?.inner
     }
   }
 
@@ -388,7 +462,8 @@ export class BookEngine {
     const left = this.leaves.filter(l => !moving(l) && l.p >= 0.5).reverse()
     for (const l of movers) l.restLift = REST_LIFT
     right.forEach((l, d) => { l.restLift = rightBlocked ? 0 : REST_LIFT / (1 + d * 0.45) })
-    left.forEach((l, d) => { l.restLift = leftBlocked ? 0 : REST_LIFT / (1 + d * 0.45) })
+    // Folded back (single mode) the turned sheets hang free: no gutter bow.
+    left.forEach((l, d) => { l.restLift = leftBlocked || this.mode === 'single' ? 0 : REST_LIFT / (1 + d * 0.45) })
     let easing = false
     for (const l of this.leaves) {
       const v = l.u.uRestLift.value
@@ -405,6 +480,21 @@ export class BookEngine {
         ceiling = l.u.uRestLift.value
       }
     }
+    if (this.mode === 'single') {
+      // Each newly turned sheet becomes the outer one; those inside tighten
+      // quickly to make room, and loosen gently when it comes back.
+      for (const l of this.leaves) {
+        const target = Math.max(0, this.turned - 1 - l.index)
+        const diff = target - l.fold
+        if (snap || Math.abs(diff) < 1e-3) l.fold = target
+        else {
+          l.fold += diff * (1 - Math.exp(-dt / (diff > 0 ? 0.1 : 0.3)))
+          easing = true
+        }
+        this.applyFold(l)
+        l.group.position.z = this.baseZ(l)
+      }
+    }
     return easing
   }
 
@@ -414,20 +504,41 @@ export class BookEngine {
     if (target === this.turned || this.drag?.leaf) return
     const forward = target > this.turned
     const order = forward ? this.leaves.slice(this.turned, target) : this.leaves.slice(target, this.turned).reverse()
-    const jump = order.length > 1
+    const n = order.length
     const now = performance.now() / 1000
-    order.forEach((l, i) => {
-      const to = forward ? 1 : 0
+    const to = forward ? 1 : 0
+    if (this.turnedFrom === undefined || !this.leaves.some(l => this.moving(l))) this.turnedFrom = this.turned
+    if (n === 1) {
+      const l = order[0]
       l.wobble = 0.94 + Math.random() * 0.14
       l.u.uDir.value = forward ? 1 : -1
       l.u.uGrabY.value = 0.28 + Math.random() * 0.2
+      l.u.uCurl.value = this.curlOf(l.data.kind)
       l.follow = undefined
-      l.tween = {
-        from: l.p, to, start: now + (jump ? i * 0.055 : 0),
-        dur: MOTION[l.data.kind].flip * l.wobble * Math.max(0.2, Math.abs(to - l.p)) * (jump ? 0.72 : 1),
-      }
-    })
-    this.opts.sound.grab(order[0].data.kind)
+      const from = this.seen(l.p)
+      l.tween = { from, to, start: now, dur: MOTION[l.data.kind].flip * l.wobble * Math.max(0.2, Math.abs(to - from)) }
+    } else {
+      // A jump takes every sheet in between as one chunk, the way a thumb
+      // lifts a wad of pages: same shape, starts a few ms apart so they stay
+      // stacked, and only the outer two sheets on each side are drawn.
+      const grabY = 0.32 + Math.random() * 0.12
+      const gap = Math.min(0.012, 0.06 / (n - 1))
+      const dur = BUNDLE.flip * (0.96 + Math.random() * 0.08)
+      const curl = BUNDLE.curl * (this.opts.reducedMotion ? 0.5 : 1)
+      order.forEach((l, i) => {
+        l.wobble = 1
+        l.u.uDir.value = forward ? 1 : -1
+        l.u.uGrabY.value = grabY
+        l.u.uCurl.value = curl
+        l.follow = undefined
+        const from = this.seen(l.p)
+        l.tween = {
+          from, to, start: now + i * gap, dur: dur * Math.max(0.2, Math.abs(to - from)),
+          bundle: true, inner: i >= 2 && i < n - 2, quiet: i < n - 1,
+        }
+      })
+    }
+    this.opts.sound.grab(n > 1 ? 'cover' : order[0].data.kind)
     this.turned = target
     this.peeked = undefined
     this.afterStateChange()
@@ -534,11 +645,14 @@ export class BookEngine {
       onShow.add(k)
       if (!isOverlay(this.leaves[k].data.kind)) break
     }
+    const from = this.turnedFrom
     for (const l of this.leaves) {
       const inWindow = l.index >= lo && l.index <= hi
       if (!inWindow) {
-        // Pages flying past keep what they have; buried pages let it go.
-        if ((l.tween || l.follow !== undefined) && l.frontKey) {
+        // Pages flying past, or still showing where the motion began, keep
+        // what they have; buried pages let it go.
+        const leaving = from !== undefined && l.index >= from - 3 && l.index <= from + 3
+        if ((this.moving(l) || leaving) && l.frontKey) {
           keep.add(l.frontKey)
           if (l.backKey) keep.add(l.backKey)
           continue
@@ -699,7 +813,7 @@ export class BookEngine {
     const max = this.max()
     const spread = this.mode === 'spread'
     const cx = spread ? (this.turned === 0 ? W / 2 : this.turned === max ? -W / 2 : 0) : W / 2
-    this.goal = this.fit(cx, spread ? 2 * W : W, spread ? 0.1 : 0.3, spread ? 0 : 0.42)
+    this.goal = this.fit(cx, spread ? 2 * W : W, spread ? 0.1 : 0.32, spread ? 0 : Math.PI + 0.16)
   }
 
   private placeCamera(cam: PerspectiveCamera, p: Pose) {
@@ -804,12 +918,12 @@ export class BookEngine {
       const q = (x: number) => Math.acos(Math.max(-1, Math.min(1, x / d.radius))) / Math.PI
       p = d.p0 + q(pt.x) - q(d.wx)
     } else {
-      p = d.p0 - (pt.x - d.wx) / (W * 1.05)
+      p = seenToP(clamp01(pToSeen(d.p0) - (pt.x - d.wx) / (W * 1.05)))
     }
     l.follow = clamp01(p)
     l.u.uGrabY.value = clamp01(pt.y / H + 0.5)
     const now = performance.now() / 1000
-    d.samples.push({ t: now, p: l.follow })
+    d.samples.push({ t: now, p: this.seen(l.follow) })
     while (d.samples.length > 2 && now - d.samples[0].t > 0.1) d.samples.shift()
     this.renderer.domElement.style.cursor = 'grabbing'
     this.wake()
@@ -853,16 +967,17 @@ export class BookEngine {
     }
     const s = d.samples
     const v = s.length > 1 ? (s[s.length - 1].p - s[0].p) / Math.max(0.016, s[s.length - 1].t - s[0].t) : 0
-    const moved = d.forward ? l.p - d.p0 : d.p0 - l.p
+    const at = this.seen(l.p)
+    const moved = d.forward ? at - this.seen(d.p0) : this.seen(d.p0) - at
     const toward = d.forward ? v : -v
     const commit = e.type === 'pointerup' && (toward > 1.1 || (moved > 0.15 && toward > -0.6))
     const to = d.forward === commit ? 1 : 0
-    const dist = Math.max(0.02, Math.abs(to - l.p))
+    const dist = Math.max(0.02, Math.abs(to - at))
     const dur = MOTION[l.data.kind].fall * l.wobble * Math.sqrt(dist)
-    const vel = to > l.p ? v : -v
+    const vel = to > at ? v : -v
     l.follow = undefined
-    l.u.uDir.value = to > l.p ? 1 : -1
-    l.tween = { from: l.p, to, start: performance.now() / 1000, dur, launch: Math.max(0, Math.min(2, (vel * dur) / dist)) }
+    l.u.uDir.value = to > at ? 1 : -1
+    l.tween = { from: at, to, start: performance.now() / 1000, dur, launch: Math.max(0, Math.min(2, (vel * dur) / dist)) }
     if (commit) this.turned = d.forward ? l.index + 1 : l.index
     this.renderer.domElement.style.cursor = ''
     this.afterStateChange()
@@ -926,7 +1041,7 @@ export class BookEngine {
     const fwd = leaf.index === this.turned
     leaf.u.uDir.value = fwd ? 1 : -1
     leaf.u.uGrabY.value = clamp01(pt.y / H + 0.5)
-    leaf.tween = { from: leaf.p, to: fwd ? PEEK : 1 - PEEK, start: performance.now() / 1000, dur: 0.28 }
+    leaf.tween = { from: this.seen(leaf.p), to: fwd ? PEEK : 1 - PEEK, start: performance.now() / 1000, dur: 0.28 }
     this.peeked = leaf
     this.setVisibility()
     this.wake()
@@ -938,7 +1053,7 @@ export class BookEngine {
     if (!l || l.follow !== undefined) return
     const to = l.index < this.turned ? 1 : 0
     if (l.p === to) return
-    l.tween = { from: l.p, to, start: performance.now() / 1000, dur: 0.24 }
+    l.tween = { from: this.seen(l.p), to, start: performance.now() / 1000, dur: 0.24 }
     this.wake()
   }
 
@@ -1001,14 +1116,15 @@ export class BookEngine {
           active = true
         } else {
           const e = r >= 1 ? 1 : tw.launch === undefined ? ease(r) : hermite(r, tw.launch)
-          l.p = tw.from + (tw.to - tw.from) * e
+          l.p = this.toP(tw.from + (tw.to - tw.from) * e)
           active = true
           if (r >= 1) {
-            l.p = tw.to
+            l.p = this.toP(tw.to)
             l.tween = undefined
             settled = true
-            if ((tw.to === 0 || tw.to === 1) && Math.abs(tw.to - tw.from) > 0.2) {
-              this.opts.sound.land(l.data.kind, Math.min(1, Math.abs(tw.to - tw.from)))
+            if (tw.bundle) l.u.uCurl.value = this.curlOf(l.data.kind)
+            if ((tw.to === 0 || tw.to === 1) && Math.abs(tw.to - tw.from) > 0.2 && !tw.quiet) {
+              this.opts.sound.land(tw.bundle ? 'cover' : l.data.kind, Math.min(1, Math.abs(tw.to - tw.from)))
               if (MOTION[l.data.kind].bounce > 0 && !this.opts.reducedMotion) l.landedAt = now
               if (l.data.kind === 'cover' || l.data.kind === 'sleeve') navigator.vibrate?.(8)
             }
@@ -1027,7 +1143,14 @@ export class BookEngine {
       if (speed > loudest) { loudest = speed; loudKind = l.data.kind }
       if (l.p !== before || flex !== l.u.uFlex.value) this.applyLeaf(l, flex)
     }
-    if (settled) this.setVisibility()
+    if (settled) {
+      // Once everything is still, the page that was left can go.
+      if (!this.leaves.some(l => this.moving(l))) {
+        this.turnedFrom = undefined
+        this.assignTextures()
+      }
+      this.setVisibility()
+    }
     if (this.updateBows(dt)) active = true
     if (this.uploadOne() || this.uploads.length) active = true
     if (loudest > 0.05) this.opts.sound.move(loudest, loudKind)

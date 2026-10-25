@@ -28,6 +28,10 @@ export interface SheetUniforms {
   uFlex: IUniform<number>
   uSheet: IUniform<Vector2>
   uRestLift: IUniform<number>
+  /** Folded-magazine mode: extra turn past π at the end (0 in a flat book). */
+  uWrap: IUniform<number>
+  /** Length of sheet that carries the curve once fully wrapped (the roll at the fold). */
+  uWrapLen: IUniform<number>
 }
 
 export function sheetUniforms(w: number, h: number, curl: number, progress: number): SheetUniforms {
@@ -39,12 +43,17 @@ export function sheetUniforms(w: number, h: number, curl: number, progress: numb
     uFlex: { value: 0 },
     uSheet: { value: new Vector2(w, h) },
     uRestLift: { value: 0 },
+    uWrap: { value: 0 },
+    uWrapLen: { value: w },
   }
 }
 
 // Spine at x = 0. The sheet turns about the y axis from 0 (lying right) to π
 // (lying left) and curls as an arc of constant curvature, so it never
-// stretches. Rows near the grabbed corner lead, the far corner lags.
+// stretches. Rows near the grabbed corner lead, the far corner lags. A folded
+// magazine keeps going: past halfway the free end wraps on round the spine
+// (uWrap) while the curve gathers into a short roll at the fold (uWrapLen),
+// so the sheet ends tucked behind the open page.
 const BEND_GLSL = /* glsl */ `
 uniform float uProgress;
 uniform float uDir;
@@ -53,6 +62,8 @@ uniform float uCurl;
 uniform float uFlex;
 uniform vec2 uSheet;
 uniform float uRestLift;
+uniform float uWrap;
+uniform float uWrapLen;
 varying float vLift;
 
 // An open book's pages rise out of the gutter, peak about 40% across, then
@@ -75,9 +86,12 @@ vec3 sheetPoint(vec2 st) {
   float pr = clamp(uProgress - uDir * 0.22 * (st.y - uGrabY) * lift, 0.0, 1.0);
   float bend = uDir * uCurl * sin(PI * pr) + uFlex * (pr < 0.5 ? 1.0 : -1.0);
   float ts = clamp(PI * pr - 0.5 * bend, 0.0, PI);
-  float te = clamp(PI * pr + 0.5 * bend, 0.0, PI);
-  float k = (te - ts) / uSheet.x;
-  float u = st.x * uSheet.x;
+  float wrap = smoothstep(0.5, 1.0, pr);
+  float te = clamp(PI * pr + 0.5 * bend, 0.0, PI) + uWrap * wrap;
+  // Curved length; beyond it the sheet runs straight on at angle te.
+  float len = mix(uSheet.x, uWrapLen, wrap);
+  float k = (te - ts) / len;
+  float u = min(st.x * uSheet.x, len);
   // The arc from the spine to u, written as its chord: length u*sinc(h), at
   // the mid angle ts + h. Subtracting sin/cos of nearby angles and dividing by
   // a small k instead loses all precision as a sheet settles (k -> 0), which
@@ -88,7 +102,7 @@ vec3 sheetPoint(vec2 st) {
   float sinc = abs(h) < 0.5
     ? 1.0 - h2 / 6.0 * (1.0 - h2 / 20.0 * (1.0 - h2 / 42.0))
     : sin(h) / h;
-  vec2 xz = u * sinc * vec2(cos(ts + h), sin(ts + h));
+  vec2 xz = u * sinc * vec2(cos(ts + h), sin(ts + h)) + max(st.x * uSheet.x - len, 0.0) * vec2(cos(te), sin(te));
   return vec3(xz.x, (st.y - 0.5) * uSheet.y, xz.y + sheetRest(st));
 }
 `
