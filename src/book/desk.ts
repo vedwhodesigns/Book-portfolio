@@ -68,7 +68,8 @@ export class Desk {
   private mat: Mesh
 
   constructor(tableMap: Texture, env: Texture, anisotropy: number, onReady: () => void, pageW: number, pageH: number) {
-    const table = new Mesh(new PlaneGeometry(8, 8), new MeshStandardMaterial({ map: tableMap, roughness: 0.92 }))
+    // Oiled wood: satin, so the sun leaves a soft sheen on it.
+    const table = new Mesh(new PlaneGeometry(8, 8), new MeshStandardMaterial({ map: tableMap, roughness: 0.58, envMap: env, envMapIntensity: 0.25 }))
     table.position.z = -MAT_T - 0.006
     table.receiveShadow = true
 
@@ -89,14 +90,14 @@ export class Desk {
       tex.colorSpace = SRGBColorSpace
       tex.anisotropy = anisotropy
       surface.map = tex
-      // The photo is a flat, bright scan; this sits it in the room's light.
-      surface.color.set(0xcfcfcf)
+      surface.color.set(0xffffff)
       surface.needsUpdate = true
       onReady()
     })
 
-    // Contact shadow: the block shuts out the sky right where it meets the mat.
-    const margin = 0.14
+    // Contact shadow: only a thin line where the block meets the mat, where
+    // the sky can't reach; the sun's own shadow does the rest.
+    const margin = 0.045
     const alpha = contactShadowTexture(pageW, pageH, margin)
     for (const side of [-1, 1]) {
       const m = new Mesh(
@@ -127,7 +128,7 @@ export class Desk {
    */
   update(target: Footprint, dt: number, lifted: boolean): boolean {
     let easing = false
-    const strength = lifted ? 0.35 : 0.72
+    const strength = lifted ? 0.18 : 0.3
     for (const [i, side] of [[0, target.left], [1, target.right]] as const) {
       const m = this.shadows[i].material
       const goal = side * strength
@@ -135,7 +136,7 @@ export class Desk {
       if (Math.abs(diff) < 0.002) m.opacity = goal
       else { m.opacity += diff * (1 - Math.exp(-dt / 0.12)); easing = true }
       // Held up (folded magazine) the shadow is wider and softer.
-      this.shadows[i].scale.setScalar(lifted ? 1.35 : 1)
+      this.shadows[i].scale.setScalar(lifted ? 1.15 : 1)
     }
     return easing
   }

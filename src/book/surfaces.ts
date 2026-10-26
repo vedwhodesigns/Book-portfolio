@@ -91,8 +91,10 @@ export interface Surfaces {
   grainRoughness: DataTexture
   /** Plastic sleeve crinkles across the whole sheet (normal map). */
   crinkle: DataTexture
-  /** The desk under the book. */
+  /** The desk under the mat: varnished wood planks. */
   table: CanvasTexture
+  /** Sunlight through a window: frame bars and leaves, projected by the key light. */
+  gobo: CanvasTexture
   /** Fine random mask for partial (translucent) shadow casting; green channel. */
   shadowDither: DataTexture
 }
@@ -139,24 +141,70 @@ export function createSurfaces(): Surfaces {
   for (let i = 0; i < crinkleH.length; i++) crinkleH[i] = und[i] * 0.85 + (lines[i * 4] / 255) * 0.15
   const crinkle = dataTexture(normalsFromHeight(crinkleH, C, 6), C, 1, 1)
 
-  // Desk: dark, slightly warm, with fine tooth.
+  // Desk: oiled wood planks, grain running along x, each plank a little
+  // different in tone.
   const T = 512
   const [tc, tctx] = makeCanvas(T, T)
-  const tn = fbm(T, 37, 64, 3)
-  const tl = fbm(T, 41, 4, 3)
+  const warp = fbm(T, 37, 8, 4)
+  const fleck = fbm(T, 41, 64, 2)
   const img = tctx.createImageData(T, T)
-  for (let i = 0; i < T * T; i++) {
-    const v = 0.11 + (tn[i] - 0.5) * 0.05 + (tl[i] - 0.5) * 0.04
-    img.data[i * 4] = v * 255 * 1.06
-    img.data[i * 4 + 1] = v * 255
-    img.data[i * 4 + 2] = v * 255 * 0.92
-    img.data[i * 4 + 3] = 255
+  const PLANKS = 4
+  const pr = rng(43)
+  const plank = Array.from({ length: PLANKS }, () => ({ tone: 0.88 + pr() * 0.24, phase: pr() * 100, ring: 0.6 + pr() * 0.8 }))
+  const dark = [74, 46, 25], light = [168, 116, 68]
+  for (let y = 0; y < T; y++) {
+    const k = Math.floor((y / T) * PLANKS)
+    const pk = plank[k]
+    const inPlank = (y / T) * PLANKS - k
+    for (let x = 0; x < T; x++) {
+      // Grain: fine lines bent by slow noise stretched along the board.
+      const w = warp[y * T + (x >> 3)] * 26 + warp[((y >> 2) * T + x) % (T * T)] * 6
+      const fine = 0.5 + 0.5 * Math.sin((y + w + pk.phase) * 1.15)
+      const rings = 0.5 + 0.5 * Math.sin((y * 0.08 + w * 0.12 + pk.phase) * pk.ring)
+      let t = 0.35 + 0.3 * rings + 0.22 * Math.pow(fine, 3) + (fleck[y * T + x] - 0.5) * 0.25
+      t = Math.min(1, Math.max(0, t)) * pk.tone
+      // Seams between boards.
+      const seam = inPlank < 0.012 || inPlank > 0.988 ? 0.45 : 1
+      const i = (y * T + x) * 4
+      for (let c = 0; c < 3; c++) img.data[i + c] = Math.min(255, (dark[c] + (light[c] - dark[c]) * t) * seam)
+      img.data[i + 3] = 255
+    }
   }
   tctx.putImageData(img, 0, 0)
-  const table = new CanvasTexture(tc)
+  const table = new CanvasTexture(tc as HTMLCanvasElement)
   table.colorSpace = SRGBColorSpace
   table.wrapS = table.wrapT = RepeatWrapping
-  table.repeat.set(6, 6)
+  table.repeat.set(3, 3)
+
+  // Window light: drawn tiny and scaled up, so every edge comes out soft.
+  const G = 64
+  const [small, sctx] = makeCanvas(G, G)
+  sctx.fillStyle = '#fff'
+  sctx.fillRect(0, 0, G, G)
+  const gr = rng(61)
+  // Window frame: a mullion and a transom, out of focus.
+  sctx.fillStyle = 'rgba(70,64,58,0.45)'
+  sctx.save()
+  sctx.translate(G / 2, G / 2)
+  sctx.rotate(-0.5)
+  sctx.fillRect(-G, -G * 0.22, G * 2, 3)
+  sctx.fillRect(G * 0.18, -G, 3, G * 2)
+  sctx.restore()
+  // Leaves outside.
+  for (let i = 0; i < 18; i++) {
+    const cx = gr() * G, cy = gr() < 0.75 ? gr() * G * 0.4 : gr() * G
+    sctx.fillStyle = `rgba(60,58,50,${0.1 + gr() * 0.18})`
+    sctx.beginPath()
+    sctx.ellipse(cx, cy, 1.5 + gr() * 4, 1 + gr() * 2.5, gr() * Math.PI, 0, Math.PI * 2)
+    sctx.fill()
+  }
+  const GO = 256
+  const [goboCanvas, gctx] = makeCanvas(GO, GO)
+  gctx.imageSmoothingEnabled = true
+  gctx.imageSmoothingQuality = 'high'
+  gctx.drawImage(small as HTMLCanvasElement, 0, 0, GO, GO)
+  const gobo = new CanvasTexture(goboCanvas as HTMLCanvasElement)
+  gobo.colorSpace = SRGBColorSpace
 
   // ~40% of points cast: tracing paper's shadow is a fraction of paper's.
   const D = 64
@@ -172,5 +220,5 @@ export function createSurfaces(): Surfaces {
   shadowDither.minFilter = NearestFilter
   shadowDither.generateMipmaps = false
 
-  return { fibreNormal, grainRoughness, crinkle, table, shadowDither }
+  return { fibreNormal, grainRoughness, crinkle, table, gobo, shadowDither }
 }

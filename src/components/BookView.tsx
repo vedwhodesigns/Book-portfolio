@@ -51,7 +51,7 @@ export function BookView({ engineRef, sound, chrome, startPage, onState }: Props
           background: [
             'linear-gradient(to bottom, rgba(10,10,9,0.55), transparent 110px)',
             'linear-gradient(to top, rgba(10,10,9,0.55), transparent 110px)',
-            'radial-gradient(ellipse 75% 70% at 50% 46%, transparent 55%, rgba(0,0,0,0.42) 100%)',
+            'radial-gradient(ellipse 80% 75% at 50% 46%, transparent 60%, rgba(0,0,0,0.22) 100%)',
           ].join(', '),
         }}
       />

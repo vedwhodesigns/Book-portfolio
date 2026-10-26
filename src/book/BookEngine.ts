@@ -1,5 +1,5 @@
 import {
-  BackSide, BoxGeometry, CanvasTexture, Color, DataTexture, DoubleSide, FrontSide, Group, Texture, HemisphereLight, Mesh, MeshBasicMaterial,
+  ACESFilmicToneMapping, BackSide, BoxGeometry, CanvasTexture, Color, DataTexture, DoubleSide, FrontSide, Group, Texture, HemisphereLight, Mesh, MeshBasicMaterial,
   MeshPhysicalMaterial, MeshStandardMaterial, PCFSoftShadowMap, PerspectiveCamera, Plane, PlaneGeometry, PMREMGenerator,
   Raycaster, RGBAFormat, Scene, SpotLight, SRGBColorSpace, Vector2, Vector3, WebGLRenderer, type MeshDepthMaterial,
 } from 'three'
@@ -8,7 +8,7 @@ import {
   type Face, type Leaf, type LeafKind, type Mode,
 } from './layout'
 import {
-  COVER, PAPER, SLEEVE_CONTENTS, filmMaterial, paperMaterial, setBackMap, sheetDepthMaterial, sheetUniforms, tracingMaterial,
+  COVER, KEY_SHADOW, PAPER, SLEEVE_CONTENTS, filmMaterial, paperMaterial, setBackMap, sheetDepthMaterial, sheetUniforms, tracingMaterial,
   type SheetUniforms,
 } from './materials'
 import { PAGE_ASPECT, PAGE_H, PAGE_W, renderPage, renderPlain } from './pageArt'
@@ -232,6 +232,10 @@ export class BookEngine {
     this.renderer = new WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
     this.renderer.outputColorSpace = SRGBColorSpace
+    // Film-like response: sunlit paper rolls off instead of clipping, and
+    // shadows keep their depth.
+    this.renderer.toneMapping = ACESFilmicToneMapping
+    this.renderer.toneMappingExposure = 1.05
     this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = PCFSoftShadowMap
     this.renderer.shadowMap.autoUpdate = false
@@ -244,21 +248,22 @@ export class BookEngine {
     canvas.style.userSelect = 'none'
     canvas.setAttribute('aria-hidden', 'true')
     container.appendChild(canvas)
+    this.surfaces = createSurfaces()
 
-    // Soft sky/ground fill plus one key light pooling over the book, as a
-    // room with a window would give. Shadows stay soft and never go black.
-    // One big soft key light and a much weaker fill (roughly 3:1, as in a
-    // product shot), so pages have shape and the mat falls off toward its
-    // edges. The fill's ground colour is light bounced off the green mat.
-    this.scene.add(new HemisphereLight(0xfffdf8, 0x6b8278, 0.8))
-    const key = new SpotLight(0xfffaf2, 2.9, 0, 0.6, 0.9, 0)
-    key.position.set(1.05, -1.75, 3.3)
+    // Late sun through a window. The key is warm, far off and low, so it
+    // throws long shadows that are crisp at the base and soften with distance;
+    // the window frame and leaves outside break it into bright patches (a
+    // projected light map). The fill is only the cool sky plus a little bounce
+    // off the mat, so shadows go deep.
+    this.scene.add(new HemisphereLight(0xc9d7e8, 0x55685c, 0.6))
+    const key = new SpotLight(0xffe6c4, 6.2, 0, 0.23, 0.45, 0)
+    key.map = this.surfaces.gobo
     key.target.position.set(0, 0, 0)
     key.castShadow = true
-    key.shadow.intensity = 0.62
+    key.shadow.intensity = 0.9
     key.shadow.mapSize.set(coarse ? 1536 : 2048, coarse ? 1536 : 2048)
-    key.shadow.camera.near = 1.5
-    key.shadow.camera.far = 7
+    key.shadow.camera.near = KEY_SHADOW.near
+    key.shadow.camera.far = KEY_SHADOW.far
     // A bowed or curling page shadows itself in bands parallel to the spine
     // unless the lookup is pushed off the surface along its normal (~3 mm).
     key.shadow.bias = -0.0003
@@ -266,7 +271,6 @@ export class BookEngine {
     this.scene.add(key, key.target)
     this.key = key
 
-    this.surfaces = createSurfaces()
     const pmrem = new PMREMGenerator(this.renderer)
     this.env = pmrem.fromScene(studio(), 0.02).texture
     pmrem.dispose()
@@ -356,8 +360,8 @@ export class BookEngine {
     // above its top edge, so the light moves round to the top-left to keep
     // its glare out of view.
     this.desk.layout(mode === 'single')
-    if (mode === 'single') this.key.position.set(-0.9, 1.7, 3.3)
-    else this.key.position.set(1.05, -1.75, 3.3)
+    if (mode === 'single') this.key.position.set(-5.6, 7.2, 7.0)
+    else this.key.position.set(7.2, -6.3, 7.0)
     const s = this.surfaces
     this.leaves = data.map((leaf, index) => {
       const kind = leaf.kind

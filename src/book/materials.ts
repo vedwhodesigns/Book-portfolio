@@ -27,11 +27,14 @@ import {
 // Light size is in shadow-map UV at the book; NEAR/FAR match the key light's
 // shadow camera.
 
+/** The key light's shadow camera range (the light stands ~12 units off). */
+export const KEY_SHADOW = { near: 8.5, far: 16 }
+
 const PCSS_GLSL = /* glsl */ `
 #define PCSS_SAMPLES 20
-#define PCSS_LIGHT 0.16
-#define PCSS_NEAR 1.5
-#define PCSS_FAR 7.0
+#define PCSS_LIGHT 0.12
+#define PCSS_NEAR ${KEY_SHADOW.near.toFixed(1)}
+#define PCSS_FAR ${KEY_SHADOW.far.toFixed(1)}
 float pcssViewZ(float d) { return (PCSS_NEAR * PCSS_FAR) / (PCSS_FAR - d * (PCSS_FAR - PCSS_NEAR)); }
 // Golden-angle spiral over the unit disc, turned per pixel so 20 taps read
 // as fine grain rather than banding.
