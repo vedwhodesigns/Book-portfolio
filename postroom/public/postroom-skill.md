@@ -13,19 +13,27 @@ Postroom posts to these accounts:
 | How It Clicks | `instagram:howitclicks.ai` | `youtube:howitclicksai` |
 | Bonbec | `instagram:bonbec.in` | none |
 
-Everything goes through one command on this computer: `node ~/postroom/postroom.mjs`.
+Everything goes through one command on this computer: `node "$HOME/postroom/postroom.mjs"` (works in PowerShell, Git Bash, macOS and Linux).
 
-If it's missing, ask the owner to run this once in Terminal (it asks for the Postroom password itself):
+If it's missing, ask the owner to run this once. It asks for the Postroom password itself.
 
-```bash
-curl -fsSL https://vwd-postroom.vercel.app/install.sh | bash
-```
+- **Windows (PowerShell):**
+
+  ```powershell
+  irm https://vwd-postroom.vercel.app/install.ps1 | iex
+  ```
+
+- **Mac/Linux (Terminal):**
+
+  ```bash
+  curl -fsSL https://vwd-postroom.vercel.app/install.sh | bash
+  ```
 
 Never ask for the password in chat, never print it, and never put it in a file other than `~/.postroom.json`.
 
 ## Steps
 
-1. **Know the account's brand kit:** run `node ~/postroom/postroom.mjs accounts`. It shows each account's posting slots and must-use hashtags. Follow that brand's voice, and never invent facts.
+1. **Know the account's brand kit:** run `node "$HOME/postroom/postroom.mjs" accounts`. It shows each account's posting slots and must-use hashtags. Follow that brand's voice, and never invent facts.
 2. **Write a post card** next to the files, as `<name>.card.json`:
 
 ```json
@@ -62,14 +70,14 @@ Never ask for the password in chat, never print it, and never put it in a file o
    - **Optional extras** go in `"options"`:
      - `"instagram"`: `collaborators`, `user_tags`, `first_comment`, `trial` (`"manual"` or `"auto"`), `alt_text`
      - `"youtube"`: `playlist_id`, `first_comment`, `privacy`
-3. **Check:** run `node ~/postroom/postroom.mjs check <card>`. Read the caption preview and fix any ✗.
-4. **Post:** run `node ~/postroom/postroom.mjs post <card>`. It uploads the files and schedules the post.
+3. **Check:** run `node "$HOME/postroom/postroom.mjs" check <card>`. Read the caption preview and fix any ✗.
+4. **Post:** run `node "$HOME/postroom/postroom.mjs" post <card>`. It uploads the files and schedules the post.
 5. **Report** the ✓ lines (platform, format, time) to the owner. The owner's phone gets a notification when each post goes live or fails.
 
 ## Other commands
 
-- `node ~/postroom/postroom.mjs queue`: what's scheduled
-- `node ~/postroom/postroom.mjs upload <files…>`: put files in the library only
+- `node "$HOME/postroom/postroom.mjs" queue`: what's scheduled
+- `node "$HOME/postroom/postroom.mjs" upload <files…>`: put files in the library only
 
 Changing or cancelling posts happens in the Postroom app: Queue → open the post.
 

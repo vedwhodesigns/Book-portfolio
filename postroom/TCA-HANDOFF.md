@@ -8,7 +8,7 @@ Paste this into the **TCA Tool Kit** session (or its CLAUDE.md) so it can schedu
 
 When a Crime Archives post is finished (video/images exported, caption written), hand it to Postroom. Don't ask; schedule it.
 
-**One-time setup (skip if `~/postroom/postroom.mjs` exists):**
+**One-time setup (skip if `$HOME/postroom/postroom.mjs` exists):**
 
 ```bash
 mkdir -p ~/postroom && curl -fsSL https://vwd-postroom.vercel.app/postroom.mjs -o ~/postroom/postroom.mjs
@@ -19,8 +19,8 @@ The Postroom password lives in `~/.postroom.json` (`{"password": "…"}`). If th
 **For each post:**
 
 1. Write a card next to the exported files, e.g. `post-card.json`.
-2. Run `node ~/postroom/postroom.mjs check post-card.json` and fix any ✗.
-3. Run `node ~/postroom/postroom.mjs post post-card.json`.
+2. Run `node "$HOME/postroom/postroom.mjs" check post-card.json` and fix any ✗.
+3. Run `node "$HOME/postroom/postroom.mjs" post post-card.json`.
 4. Report the result lines (✓ … → time) back to the owner.
 
 ### Cards by format
@@ -84,4 +84,4 @@ The Postroom password lives in `~/.postroom.json` (`{"password": "…"}`). If th
 - **Files:** MP4/MOV (H.264/AAC), reels up to 300 MB / 15 min; images JPEG/PNG.
 - **Time:** `"when"` takes `"next_slot"`, `"now"`, `"draft"`, or a time like `"2026-11-20T19:00"` (India time).
 
-Other commands: `node ~/postroom/postroom.mjs queue` (what's scheduled) and `node ~/postroom/postroom.mjs accounts` (slots and hashtags).
+Other commands: `node "$HOME/postroom/postroom.mjs" queue` (what's scheduled) and `node "$HOME/postroom/postroom.mjs" accounts` (slots and hashtags).

@@ -131,7 +131,7 @@ The facts in this example are only there to show the format. Always use the fact
 
 ## 10. Hand off
 
-- **If Postroom's command is set up on this computer** (`~/postroom/postroom.mjs` and `~/.postroom.json` exist):
-  1. Run `node ~/postroom/postroom.mjs check <card>`, fix anything marked ✗, then run `node ~/postroom/postroom.mjs post <card>`.
+- **If Postroom's command is set up on this computer** (`$HOME/postroom/postroom.mjs` and `~/.postroom.json` exist):
+  1. Run `node "$HOME/postroom/postroom.mjs" check <card>`, fix anything marked ✗, then run `node "$HOME/postroom/postroom.mjs" post <card>`.
   2. Report the ✓ lines.
 - **Otherwise,** give the owner the card and the video file to pass to the Postroom chat.
