@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 import { db, env, HttpError, PlatformError, logEvent, safeEqual } from './core.js';
 import { igGet, igPost } from './platforms/instagram.js';
 import { accessToken } from './accounts.js';
+import { notify } from './notify.js';
 
 export const WEBHOOK_FIELDS = ['messages', 'comments'];
 const WINDOW_MS = 24 * 3600e3; // Meta allows free-form replies within 24h of the person's last message
@@ -302,6 +303,7 @@ async function pollDMs(account, token, since, automate) {
   }, account);
   let fresh = 0;
   let autos = 0;
+  const newFrom = [];
   for (const c of convs.data || []) {
     if (automate && c.updated_time && metaDate(c.updated_time) < since) continue; // nothing new here (first pass stores history)
     const other = (c.participants?.data || []).find((p) => String(p.id) !== String(account.external_id));
@@ -318,6 +320,7 @@ async function pollDMs(account, token, since, automate) {
       thread = r.thread || thread;
       if (r.inserted && !out && at >= since) { fresh++; lastNew = { text: m.message || null, at }; }
     }
+    if (lastNew && automate) newFrom.push({ who: thread.username ? `@${thread.username}` : 'someone', text: lastNew.text });
     if (!lastNew || !automate) continue;
     try {
       if (!thread.username) {
@@ -331,6 +334,13 @@ async function pollDMs(account, token, since, automate) {
     } catch (e) {
       await logEvent({ accountId: account.id, level: 'warn', message: `Auto-reply to @${thread.username || other.id}: ${e.message}` });
     }
+  }
+  if (newFrom.length) {
+    await notify({
+      kind: 'dm', accountId: account.id, url: '/#/inbox',
+      title: newFrom.length === 1 ? `DM from ${newFrom[0].who} · @${account.username}` : `${newFrom.length} new DMs · @${account.username}`,
+      body: newFrom.length === 1 ? (newFrom[0].text || '[attachment]').slice(0, 140) : newFrom.map((x) => x.who).join(', '),
+    });
   }
   return { fresh, autos };
 }

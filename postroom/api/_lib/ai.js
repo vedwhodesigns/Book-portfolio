@@ -2,7 +2,8 @@
 // Optional — needs ANTHROPIC_API_KEY. Without it, Claude can still do this through the MCP endpoint.
 import Anthropic from '@anthropic-ai/sdk';
 import { jsonSchemaOutputFormat } from '@anthropic-ai/sdk/helpers/json-schema';
-import { env, HttpError } from './core.js';
+import { env, HttpError, db } from './core.js';
+import { brandSummary } from './brand.js';
 import { loadMedia } from './media.js';
 
 const MODEL = () => env('CLAUDE_MODEL', 'claude-opus-5-5');
@@ -25,7 +26,7 @@ const RULES = {
   tiktok: 'TikTok: one or two punchy lines in a conversational voice, a hook up front, 3–5 hashtags mixing niche and broad.',
 };
 
-export async function writeCaptions({ brief = '', platforms = [], media_id = null, tone = '', current = '' }) {
+export async function writeCaptions({ brief = '', platforms = [], media_id = null, tone = '', current = '', account_ids = [] }) {
   if (!aiEnabled()) throw new HttpError(400, 'Add ANTHROPIC_API_KEY in Vercel to use Write with Claude — or ask Claude through the MCP connector (Settings).');
   const list = [...new Set(platforms)].filter((p) => RULES[p]);
   if (!list.length) throw new HttpError(400, 'Pick at least one platform.');
@@ -38,6 +39,14 @@ export async function writeCaptions({ brief = '', platforms = [], media_id = nul
     properties: Object.fromEntries(list.map((p) => [p, VARIANT])),
   };
 
+  const brands = [];
+  if (account_ids?.length) {
+    const accts = await db()`select username, platform, brand from postroom.accounts where id = any(${account_ids}::uuid[])`;
+    for (const a of accts) {
+      const b = brandSummary(a);
+      if (b) brands.push(`@${a.username} (${a.platform}):\n${b}`);
+    }
+  }
   const content = [];
   if (media_id) {
     const [m] = await loadMedia([media_id]);
@@ -51,6 +60,7 @@ export async function writeCaptions({ brief = '', platforms = [], media_id = nul
       brief && `What the post is about:\n${brief}`,
       current && `Draft caption to improve (keep its meaning):\n${current}`,
       tone && `Tone: ${tone}`,
+      brands.length && `Brand kits of the accounts this will be posted on (follow them: voice, sign-off, call to action; use their hashtag sets where they fit):\n\n${brands.join('\n\n')}`,
       content.length ? 'The attached image is the media (or a frame from the video).' : '',
       'Platform rules:',
       ...list.map((p) => `- ${RULES[p]}`),

@@ -7,6 +7,8 @@ import { accessToken } from './accounts.js';
 import { loadMedia } from './media.js';
 import { MISSED_SLOT_HOURS } from './posts.js';
 import { pollInbox } from './inbox.js';
+import { notify } from './notify.js';
+import { deleteMedia } from './media.js';
 
 const MAX_ATTEMPTS = 6;
 const PROCESSING_TIMEOUT_HOURS = 6;
@@ -102,6 +104,11 @@ export async function advance(post, deadline) {
           next_attempt_at = null, upload = ${sql.json({ ...upload, progress: 1 })}, updated_at = now()
         where id = ${post.id}`;
       await logEvent({ postId: post.id, accountId: account.id, message: `Published${r.permalink ? `: ${r.permalink}` : ''}${r.note ? ` — ${r.note}` : ''}` });
+      await notify({
+        kind: 'published', postId: post.id, accountId: account.id, url: r.permalink || '/#/queue',
+        title: `Live on @${account.username} · ${KIND_LABEL[post.kind] || post.kind}`,
+        body: [(post.title || post.caption || '').split('\n')[0].slice(0, 90), r.note].filter(Boolean).join(' — '),
+      });
       return 'published';
     }
     if (r.waitSec) {
@@ -124,6 +131,7 @@ export async function handleError(post, e) {
   if (e.tokenInvalid) {
     await sql`update postroom.posts set status = 'failed', error = ${msg}, attempts = ${attempts}, locked_until = null, updated_at = now() where id = ${post.id}`;
     await logEvent({ postId: post.id, accountId: post.account_id, level: 'error', message: msg });
+    await notify({ kind: 'reconnect', postId: post.id, accountId: post.account_id, url: '/#/accounts', title: 'Post failed: account needs reconnecting', body: msg.slice(0, 200) });
     return 'failed: reconnect needed';
   }
   if ((e.transient || e.retryAfterSec) && attempts < MAX_ATTEMPTS) {
@@ -136,6 +144,7 @@ export async function handleError(post, e) {
   }
   await sql`update postroom.posts set status = 'failed', error = ${msg}, attempts = ${attempts}, locked_until = null, updated_at = now() where id = ${post.id}`;
   await logEvent({ postId: post.id, accountId: post.account_id, level: 'error', message: `Failed: ${msg}` });
+  await notify({ kind: 'failed', postId: post.id, accountId: post.account_id, url: '/#/queue', title: 'A post failed', body: msg.slice(0, 200) });
   return 'failed';
 }
 
@@ -148,11 +157,29 @@ export async function housekeeping(deadline = Date.now() + 60000) {
   if (Date.now() < deadline - 25000) out.comments = await throttle('inbox-comments', 170, () => pollInbox({ dms: false, comments: true, deadline: deadline - 15000 }));
   if (Date.now() < deadline - 20000) out.metrics = await throttle('metrics', 3 * 3600, () => collectMetrics(deadline));
   if (Date.now() < deadline - 20000) out.followers = await throttle('followers', 12 * 3600, collectFollowers);
+  out.cleanup = await throttle('media-cleanup', 6 * 3600, cleanupMedia);
   out.prune = await throttle('prune', 86400, async () => {
     const r = await db()`delete from postroom.events where at < now() - interval '90 days'`;
     return { events: r.count };
   });
   return out;
+}
+
+/** Delete media files N days after every post that used them is done (default 7). Library files never used are kept. */
+export async function cleanupMedia() {
+  const days = Number(process.env.MEDIA_RETENTION_DAYS || 7);
+  if (!days || days < 0) return { skipped: 'retention off' };
+  const rows = await db()`select m.id from postroom.media m where m.deleted_at is null
+    and exists (select 1 from postroom.posts p where m.id = any(p.media_ids) or p.cover_media_id = m.id)
+    and not exists (select 1 from postroom.posts p where (m.id = any(p.media_ids) or p.cover_media_id = m.id)
+      and (p.status in ('draft','scheduled','processing')
+        or (p.status in ('published','failed') and coalesce(p.published_at, p.updated_at) > now() - make_interval(days => ${days}))))
+    limit 200`;
+  let deleted = 0;
+  for (const r of rows) {
+    try { await deleteMedia(r.id); deleted++; } catch { /* in use or already gone */ }
+  }
+  return { deleted };
 }
 
 async function refreshTokens() {

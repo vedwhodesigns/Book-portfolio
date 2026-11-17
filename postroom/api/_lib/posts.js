@@ -4,6 +4,7 @@ import { db, HttpError, parseWhen, localLabel, logEvent } from './core.js';
 import { platform, KIND_LABEL } from './platforms/index.js';
 import { loadMedia, mediaRow } from './media.js';
 import { accountRow } from './accounts.js';
+import { nextSlot } from './brand.js';
 
 export const MISSED_SLOT_HOURS = 6;
 const EDITABLE = ['draft', 'scheduled', 'failed'];
@@ -42,6 +43,12 @@ export async function checkTargets(input) {
   const seen = new Set();
   for (const t of input.targets) {
     const account = await findAccount(t.account_id || t.account, t.platform);
+    // "next_slot": the account's next free posting slot (Accounts → Brand kit & slots).
+    let slotAt = null;
+    let slotError = null;
+    if ((t.scheduled_at ?? input.scheduled_at) === 'next_slot') {
+      try { slotAt = await nextSlot(account); } catch (e) { slotError = e.message; }
+    }
     if (seen.has(account.id)) throw new HttpError(400, `@${account.username} is selected twice.`);
     seen.add(account.id);
     const p = platform(account.platform);
@@ -58,6 +65,7 @@ export async function checkTargets(input) {
       ? p.validate({ kind, caption, title, media: tMedia, options, cover: tCover, account })
       : { errors: [`${p.label} can't post a ${KIND_LABEL[kind] || kind}. Options: ${p.kinds.map((k) => KIND_LABEL[k]).join(', ')}.`], warnings: [] };
     if (account.status !== 'active') r.errors.unshift(`@${account.username} needs reconnecting first (Accounts).`);
+    if (slotError) r.errors.unshift(slotError);
     out.push({
       account,
       platform: account.platform,
@@ -67,7 +75,7 @@ export async function checkTargets(input) {
       options,
       media: tMedia,
       cover: tCover,
-      scheduled_at: t.scheduled_at ? parseWhen(t.scheduled_at, { allowPast: true }) : null,
+      scheduled_at: slotAt || (t.scheduled_at && t.scheduled_at !== 'next_slot' ? parseWhen(t.scheduled_at, { allowPast: true }) : null),
       errors: r.errors,
       warnings: r.warnings,
     });
@@ -96,7 +104,7 @@ export function summariseCheck(check) {
 export async function createPosts(input, { createdBy = 'app' } = {}) {
   const mode = input.mode || (input.scheduled_at && input.scheduled_at !== 'now' ? 'schedule' : 'now');
   if (!['schedule', 'now', 'draft', 'plan'].includes(mode)) throw new HttpError(400, `Unknown mode "${mode}".`);
-  const when = mode === 'now' ? new Date() : parseWhen(input.scheduled_at, { allowPast: mode === 'draft' || mode === 'plan' });
+  const when = mode === 'now' ? new Date() : input.scheduled_at === 'next_slot' ? null : parseWhen(input.scheduled_at, { allowPast: mode === 'draft' || mode === 'plan' });
   const check = await checkTargets(input);
   if (!check.ok) throw new HttpError(400, 'Some accounts have problems — fix them and try again.', summariseCheck(check));
 

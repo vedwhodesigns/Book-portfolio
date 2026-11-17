@@ -11,6 +11,8 @@ import { tick } from './_lib/publisher.js';
 import { overview } from './_lib/analytics.js';
 import { writeCaptions, aiEnabled, draftDMReply } from './_lib/ai.js';
 import * as inbox from './_lib/inbox.js';
+import * as notifyLib from './_lib/notify.js';
+import { updateBrand } from './_lib/brand.js';
 import { handleMcp } from './_lib/mcp.js';
 import { platform } from './_lib/platforms/index.js';
 import { storageMode, LOCAL_DIR } from './_lib/storage.js';
@@ -197,6 +199,17 @@ export default async function handler(req, res) {
       return send(res, 200, { ok: true, settings: Object.fromEntries(EDITABLE_SETTINGS.map((k) => [k, settingSource(k)])) });
     }
 
+    // phone notifications
+    if (p === 'notifications' && m === 'GET') return send(res, 200, await notifyLib.listNotifications(query(req)));
+    if (p === 'notifications/read' && m === 'POST') return send(res, 200, await notifyLib.markRead());
+    if (p === 'push/status' && m === 'GET') return send(res, 200, await notifyLib.pushStatus());
+    if (p === 'push/subscribe' && m === 'POST') return send(res, 200, await notifyLib.subscribe(await body(req)));
+    if (p === 'push/unsubscribe' && m === 'POST') return send(res, 200, await notifyLib.unsubscribe(await body(req)));
+    if (p === 'push/test' && m === 'POST') {
+      await notifyLib.notify({ kind: 'test', title: 'Postroom notifications are on', body: 'You will get a message here when posts go live, fail, or a DM arrives.', url: '/#/alerts' });
+      return send(res, 200, await notifyLib.pushStatus());
+    }
+
     // accounts
     if (p === 'accounts' && m === 'GET') return send(res, 200, await listAccounts(query(req)));
     if (seg[0] === 'connect' && seg[1] && !seg[2]) return redirect(res, await startConnect(seg[1]));
@@ -207,6 +220,7 @@ export default async function handler(req, res) {
         if (a.platform !== 'tiktok') throw new HttpError(400, 'Only TikTok has creator info.');
         return send(res, 200, await platform('tiktok').creatorInfo(await accessToken(a)));
       }
+      if (seg[2] === 'brand' && (m === 'PATCH' || m === 'POST')) return send(res, 200, await updateBrand(seg[1], await body(req)));
       if (seg[2] === 'playlists' && m === 'GET') {
         const a = await getAccount(seg[1]);
         if (a.platform !== 'youtube') throw new HttpError(400, 'Only YouTube has playlists.');

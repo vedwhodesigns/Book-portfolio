@@ -72,6 +72,11 @@ async function fakeFetch(input, init = {}) {
     if (p === 'igmedia1/insights') return json({ data: [{ name: 'views', values: [{ value: 1200 }] }, { name: 'likes', values: [{ value: 80 }] }, { name: 'reach', values: [{ value: 900 }] }] });
     if (p === 'me') return json({ followers_count: 5100 });
   }
+  // Web Push service
+  if (url.host === 'push.test') {
+    (state.pushes ||= []).push({ auth: h.authorization, ttl: h.ttl });
+    return new Response('', { status: url.pathname === '/gone' ? 410 : 201 });
+  }
   // Google / YouTube
   if (url.host === 'www.googleapis.com' && url.pathname === '/upload/youtube/v3/thumbnails/set') {
     const meta = await (await import('sharp')).default(Buffer.from(init.body)).metadata();
@@ -139,7 +144,7 @@ before(async () => {
   if (skip) return;
   sql = postgres(URL_, { onnotice: () => {}, transform: { undefined: null } });
   await sql.unsafe('drop schema if exists postroom cascade');
-  for (const f of ['001_base.sql', '002_multiplatform.sql', '003_research.sql', '004_inbox.sql']) await sql.unsafe(fs.readFileSync(new URL(`../db/${f}`, import.meta.url), 'utf8'));
+  for (const f of ['001_base.sql', '002_multiplatform.sql', '003_research.sql', '004_inbox.sql', '005_alerts_brand.sql']) await sql.unsafe(fs.readFileSync(new URL(`../db/${f}`, import.meta.url), 'utf8'));
   globalThis.fetch = fakeFetch;
   core = await import('../api/_lib/core.js');
   posts = await import('../api/_lib/posts.js');
@@ -572,4 +577,74 @@ test('post styles: Instagram carousel extras + first comment, YouTube video with
   assert.equal(state.ytMeta.snippet.categoryId, '27');
   assert.deepEqual([state.ytPlaylist.playlistId, state.ytPlaylist.resourceId.videoId], ['PL1', 'ytvid1']);
   assert.equal(state.ytComment.topLevelComment.snippet.textOriginal, 'Thanks for watching');
+});
+
+test('alerts: published/failed notifications are stored and pushed with a valid VAPID signature', { skip }, async () => {
+  const crypto = await import('node:crypto');
+  const notify = await import('../api/_lib/notify.js');
+  await notify.subscribe({ endpoint: 'https://push.test/dev1', keys: { p256dh: 'x', auth: 'y' }, device: 'Samsung Fold' });
+  await notify.subscribe({ endpoint: 'https://push.test/gone', keys: {}, device: 'old phone' });
+  state.pushes = [];
+  const r = await posts.createPosts({ mode: 'now', media_ids: ['00000000-0000-0000-0000-0000000000f1'], caption: 'Alert me\nmore', targets: [{ account: 'instagram:brand.one' }] });
+  await drain();
+  const { items, unread } = await notify.listNotifications({ limit: 5 });
+  const n = items.find((x) => x.post_id === r.posts[0].id);
+  assert.ok(n, 'notification stored');
+  assert.equal(n.kind, 'published');
+  assert.match(n.title, /Live on @brand\.one/);
+  assert.equal(n.url, 'https://www.instagram.com/reel/unified/');
+  assert.ok(unread >= 1);
+  assert.equal(state.pushes.length, 2, 'pushed to both devices');
+  const [, t, k] = /vapid t=([^,]+), k=(.+)/.exec(state.pushes[0].auth);
+  const [h, c, sig] = t.split('.');
+  assert.equal(JSON.parse(Buffer.from(c, 'base64url')).aud, 'https://push.test');
+  const pub = Buffer.from(k, 'base64url');
+  const key = crypto.createPublicKey({ key: { kty: 'EC', crv: 'P-256', x: pub.subarray(1, 33).toString('base64url'), y: pub.subarray(33).toString('base64url') }, format: 'jwk' });
+  assert.ok(crypto.verify('sha256', Buffer.from(`${h}.${c}`), { key, dsaEncoding: 'ieee-p1363' }, Buffer.from(sig, 'base64url')), 'VAPID JWT verifies');
+  const subs = await sql`select device from postroom.push_subscriptions`;
+  assert.deepEqual(subs.map((x) => x.device), ['Samsung Fold'], 'expired subscription removed');
+  await notify.markRead();
+  assert.equal((await notify.listNotifications()).unread, 0);
+});
+
+test('brand kits and posting slots: next_slot fills free slots in order; Claude gets the kit', { skip }, async () => {
+  const brand = await import('../api/_lib/brand.js');
+  const [acct] = await sql`select * from postroom.accounts where username = 'brand.two'`;
+  await assert.rejects(brand.updateBrand(acct.id, { slots: [{ time: '25:00' }] }), /isn't a time/);
+  const saved = await brand.updateBrand(acct.id, {
+    brand: { tone: 'Calm and factual', signoff: '— Brand Two', hashtag_sets: [{ name: 'Core', tags: 'truecrime, #coldcase' }] },
+    slots: [{ time: '19:00' }, { time: '09:00', days: [1, 3, 5] }],
+  });
+  assert.deepEqual(saved.brand.hashtag_sets[0].tags, ['#truecrime', '#coldcase']);
+  assert.equal(saved.slots[0].time, '09:00', 'sorted by time');
+  const tz = process.env.APP_TIMEZONE || 'Asia/Kolkata';
+  const wall = (d) => new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(d);
+  const a1 = await posts.createPosts({ mode: 'schedule', scheduled_at: 'next_slot', media_ids: ['00000000-0000-0000-0000-0000000000f1'], caption: 'one', targets: [{ account: 'instagram:brand.two' }] });
+  const a2 = await posts.createPosts({ mode: 'schedule', scheduled_at: 'next_slot', media_ids: ['00000000-0000-0000-0000-0000000000f1'], caption: 'two', targets: [{ account: 'instagram:brand.two' }] });
+  const t1 = new Date(a1.posts[0].scheduled_at);
+  const t2 = new Date(a2.posts[0].scheduled_at);
+  assert.ok(t2 > t1, 'second post takes a later slot');
+  assert.ok(['09:00', '19:00'].includes(wall(t1)) && ['09:00', '19:00'].includes(wall(t2)), `${wall(t1)} ${wall(t2)}`);
+  const noSlots = await posts.checkTargets({ media_ids: ['00000000-0000-0000-0000-0000000000f1'], scheduled_at: 'next_slot', targets: [{ account: 'instagram:brand.one' }] });
+  assert.match(noSlots.targets[0].errors[0], /no posting slots/);
+  const listed = (await accounts.listAccounts()).find((x) => x.id === acct.id);
+  assert.equal(listed.brand.tone, 'Calm and factual');
+  assert.match(brand.brandSummary(listed), /Sign-off: — Brand Two/);
+  await sql`update postroom.posts set status = 'cancelled' where id = any(${[a1.posts[0].id, a2.posts[0].id]})`;
+});
+
+test('media cleanup: files are deleted 7 days after their posts are done, never while still needed', { skip }, async () => {
+  const img = (n) => ({ id: `00000000-0000-0000-0000-0000000000${n}`, url: `https://media.test/${n}.jpg`, pathname: `${n}.jpg`, kind: 'image', content_type: 'image/jpeg', size_bytes: 1000, width: 1080, height: 1350, filename: `${n}.jpg` });
+  await sql`insert into postroom.media ${sql([img('c1'), img('c2'), img('c3')], 'id', 'url', 'pathname', 'kind', 'content_type', 'size_bytes', 'width', 'height', 'filename')}`;
+  const [acct] = await sql`select id from postroom.accounts where username = 'brand.one'`;
+  const mk = (media, status, publishedDaysAgo) => sql`insert into postroom.posts (account_id, platform, kind, caption, media_ids, scheduled_at, status, published_at)
+    values (${acct.id}, 'instagram', 'image', 'x', ${media}, now() - interval '10 days', ${status}, ${publishedDaysAgo == null ? null : new Date(Date.now() - publishedDaysAgo * 864e5)})`;
+  await mk(['00000000-0000-0000-0000-0000000000c1'], 'published', 9); // old → delete
+  await mk(['00000000-0000-0000-0000-0000000000c2'], 'published', 2); // recent → keep
+  await mk(['00000000-0000-0000-0000-0000000000c3'], 'published', 9);
+  await mk(['00000000-0000-0000-0000-0000000000c3'], 'scheduled', null); // still needed → keep
+  const r = await publisher.cleanupMedia();
+  assert.equal(r.deleted, 1);
+  const rows = await sql`select id, deleted_at is not null as gone from postroom.media where id::text like '%0000000000c%' order by id`;
+  assert.deepEqual(rows.map((x) => x.gone), [true, false, false]);
 });

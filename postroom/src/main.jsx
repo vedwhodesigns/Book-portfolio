@@ -13,12 +13,14 @@ import Library from './pages/Library.jsx';
 import Settings from './pages/Settings.jsx';
 import Research from './pages/Research.jsx';
 import Inbox from './pages/Inbox.jsx';
+import Alerts from './pages/Alerts.jsx';
 import PostDrawer from './pages/PostDrawer.jsx';
 
 const NAV = [
   { path: 'calendar', label: 'Calendar', icon: 'calendar' },
   { path: 'queue', label: 'Queue', icon: 'list' },
   { path: 'inbox', label: 'Inbox', icon: 'inbox' },
+  { path: 'alerts', label: 'Alerts', icon: 'bell' },
   { path: 'plans', label: 'Plans', icon: 'sparkle' },
   { path: 'analytics', label: 'Analytics', icon: 'chart' },
   { path: 'accounts', label: 'Accounts', icon: 'users' },
@@ -26,7 +28,7 @@ const NAV = [
   { path: 'research', label: 'Research', icon: 'layers', ext: true },
   { path: 'settings', label: 'Settings', icon: 'settings' },
 ];
-const PAGES = { calendar: Calendar, compose: Compose, queue: Queue, plans: Plans, analytics: Analytics, accounts: Accounts, library: Library, settings: Settings, research: Research, inbox: Inbox };
+const PAGES = { calendar: Calendar, compose: Compose, queue: Queue, plans: Plans, analytics: Analytics, accounts: Accounts, library: Library, settings: Settings, research: Research, inbox: Inbox, alerts: Alerts };
 
 function parseHash() {
   const h = location.hash.replace(/^#\/?/, '');
@@ -75,6 +77,7 @@ function App() {
   const [accounts, setAccounts] = useState([]);
   const [plansCount, setPlansCount] = useState(0);
   const [unread, setUnread] = useState(0);
+  const [alerts, setAlerts] = useState(0);
   const [toasts, setToasts] = useState([]);
   const [openId, setOpenId] = useState(null);
   const [bump, setBump] = useState(0);
@@ -92,10 +95,13 @@ function App() {
     setAccounts(accs);
     setPlansCount(plans.length);
     api('inbox/status').then((s) => setUnread(s.unread || 0)).catch(() => {});
+    api('notifications', { query: { limit: 1 } }).then((n) => setAlerts(n.unread || 0)).catch(() => {});
   }, []);
 
   useEffect(() => {
     api('session').then((s) => setAuthed(s.authed)).catch(() => setAuthed(false));
+    // Keep the service worker registered so phone notifications work once turned on (Alerts page).
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
     const onHash = () => setRoute(parseHash());
     const onOut = () => setAuthed(false);
     window.addEventListener('hashchange', onHash);
@@ -143,6 +149,7 @@ function App() {
                 {n.label}
                 {n.path === 'plans' && plansCount > 0 && <span class="badge">{plansCount}</span>}
                 {n.path === 'inbox' && unread > 0 && <span class="badge">{unread}</span>}
+                {n.path === 'alerts' && alerts > 0 && <span class="badge">{alerts}</span>}
                 {n.path === 'accounts' && needsAttention > 0 && <span class="badge" title="Needs attention">!</span>}
               </a>,
             ])}
@@ -153,10 +160,11 @@ function App() {
           <Page params={route.params} key={route.path} />
         </main>
         <nav class="tabbar" aria-label="Main">
-          {[['calendar', 'Calendar', 'calendar'], ['queue', 'Queue', 'list'], ['compose', 'New', 'plus'], ['analytics', 'Stats', 'chart'], ['settings', 'More', 'more']].map(([p, l, i]) => (
-            <a key={p} href={`#/${p}`} class={`${route.path === p || (p === 'settings' && ['accounts', 'plans', 'library', 'research', 'inbox'].includes(route.path)) ? 'on' : ''} ${p === 'compose' ? 'plus' : ''}`}>
+          {[['calendar', 'Calendar', 'calendar'], ['queue', 'Queue', 'list'], ['compose', 'New', 'plus'], ['alerts', 'Alerts', 'bell'], ['settings', 'More', 'more']].map(([p, l, i]) => (
+            <a key={p} href={`#/${p}`} class={`${route.path === p || (p === 'settings' && ['accounts', 'plans', 'library', 'research', 'inbox', 'analytics'].includes(route.path)) ? 'on' : ''} ${p === 'compose' ? 'plus' : ''}`}>
               <span class="ic"><Icon name={i} size={20} /></span>{l}
-              {p === 'settings' && (plansCount > 0 || needsAttention > 0) && <span class="badge">{plansCount + needsAttention}</span>}
+              {p === 'settings' && (plansCount > 0 || needsAttention > 0 || unread > 0) && <span class="badge">{plansCount + needsAttention + unread}</span>}
+              {p === 'alerts' && alerts > 0 && <span class="badge">{alerts}</span>}
             </a>
           ))}
         </nav>

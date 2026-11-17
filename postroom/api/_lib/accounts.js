@@ -19,6 +19,8 @@ export function accountRow(a, extra = {}) {
     token_expires_at: a.token_expires_at,
     refresh_expires_at: a.refresh_expires_at,
     connected_at: a.connected_at,
+    brand: a.brand || {},
+    slots: a.slots || [],
     ...extra,
   };
 }

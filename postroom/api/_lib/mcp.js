@@ -1,6 +1,7 @@
 // MCP server (Streamable HTTP, stateless JSON-RPC) so Claude can plan and manage posts.
 // URL: {APP_URL}/api/mcp/{MCP_KEY}. Anything Claude schedules lands as a *plan* that you
 // approve in the app, unless you set MCP_AUTO_APPROVE=true.
+import { updateBrand } from './brand.js';
 import { send, body, env, localLabel, TZ } from './core.js';
 import { listAccounts } from './accounts.js';
 import { listMedia, importFromUrl } from './media.js';
@@ -19,7 +20,7 @@ const target = {
     kind: { type: 'string', enum: ['image', 'carousel', 'reel', 'story', 'short', 'video'], description: 'Optional. Defaults: Instagram reel/image/carousel, YouTube short (≤3 min vertical) or video, TikTok video.' },
     caption: { type: 'string', description: 'Overrides the shared caption for this account.' },
     title: { type: 'string', description: 'YouTube title (≤100 chars). Defaults to the caption\'s first line.' },
-    scheduled_at: { type: 'string', description: 'Overrides the shared time for this account.' },
+    scheduled_at: { type: 'string', description: 'Overrides the shared time for this account (or "next_slot").' },
     options: {
       type: 'object',
       description: 'Platform options. YouTube: {privacy: public|unlisted|private, made_for_kids: boolean (required), tags: string[], category_id (e.g. "22" People & Blogs, "24" Entertainment, "25" News & Politics, "27" Education, "28" Science & Technology), playlist_id, first_comment, synthetic: boolean (AI-altered realistic content), notify_subscribers: boolean, language: e.g. "en"}. TikTok: {mode: direct|inbox, privacy_level: PUBLIC_TO_EVERYONE|MUTUAL_FOLLOW_FRIENDS|FOLLOWER_OF_CREATOR|SELF_ONLY (required for direct), disable_comment, disable_duet, disable_stitch, brand_content, brand_organic, is_aigc}. Instagram: {share_to_feed: boolean (reels), collaborators: up to 3 usernames, user_tags: usernames to tag, alt_text (image) or alt_texts: {media_id: text} (carousel), audio_name (reels), thumb_offset_ms (reel cover frame), trial: "manual"|"auto" (trial reel), ai_generated: boolean, first_comment}.',
@@ -34,12 +35,25 @@ const postInput = {
   cover_media_id: { type: 'string', description: 'Optional image used as reel cover / YouTube thumbnail.' },
   caption: { type: 'string', description: 'Shared caption used for every account unless overridden.' },
   title: { type: 'string', description: 'Shared YouTube title.' },
-  scheduled_at: { type: 'string', description: `When to post: ISO time with offset, or wall-clock "YYYY-MM-DDTHH:mm" in ${TZ()}.` },
+  scheduled_at: { type: 'string', description: `When to post: ISO time with offset, wall-clock "YYYY-MM-DDTHH:mm" in ${TZ()}, or "next_slot" for each account's next free posting slot.` },
   targets: { type: 'array', items: target, description: 'One entry per account to post to (cross-posting).' },
 };
 
 const TOOLS = [
-  { name: 'list_accounts', description: 'List connected Instagram, YouTube and TikTok accounts with their status and counts.', inputSchema: { type: 'object', properties: { platform: { type: 'string', enum: ['instagram', 'youtube', 'tiktok'] } } } },
+  { name: 'list_accounts', description: 'List connected Instagram, YouTube and TikTok accounts with status, counts, brand kit (tone, audience, sign-off, hashtag sets, dos/don\'ts, defaults) and posting slots. Always follow an account\'s brand kit when writing its captions.', inputSchema: { type: 'object', properties: { platform: { type: 'string', enum: ['instagram', 'youtube', 'tiktok'] } } } },
+  {
+    name: 'update_brand_kit',
+    description: 'Save an account\'s brand kit and/or posting slots, as the user describes them. brand fields are merged into the existing kit. slots replace the existing slots.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        account: { type: 'string', description: 'Account id, @username or platform:username.' },
+        brand: { type: 'object', description: '{ tone, audience, language, cta, signoff, dos, donts, notes, hashtag_sets: [{ name, tags: ["#a", "#b"] }], defaults: { category_id, playlist_id, privacy, ... } }' },
+        slots: { type: 'array', items: { type: 'object', properties: { days: { type: 'array', items: { type: 'number' }, description: '1 = Monday … 7 = Sunday; omit for every day' }, time: { type: 'string', description: '"19:00" in the app time zone' } }, required: ['time'] } },
+      },
+      required: ['account'],
+    },
+  },
   { name: 'list_media', description: 'List the media library (newest first) with ids, type, size, dimensions and duration.', inputSchema: { type: 'object', properties: { limit: { type: 'number' } } } },
   { name: 'import_media', description: 'Download an image or video from a direct public URL into the media library.', inputSchema: { type: 'object', properties: { url: { type: 'string' }, filename: { type: 'string' } }, required: ['url'] } },
   { name: 'check_posts', description: 'Dry-run: check a cross-post against each platform\'s rules (lengths, formats, durations) without saving.', inputSchema: { type: 'object', properties: postInput, required: ['media_ids', 'targets'] } },
@@ -117,6 +131,10 @@ const short = (p) => ({
 async function callTool(name, a = {}) {
   switch (name) {
     case 'list_accounts': return listAccounts({ platform: a.platform });
+    case 'update_brand_kit': {
+      const acct = await findAccount(a.account);
+      return updateBrand(acct.id, { brand: a.brand ? { ...(acct.brand || {}), ...a.brand } : undefined, slots: a.slots });
+    }
     case 'list_media': return listMedia({ limit: a.limit || 30 });
     case 'import_media': return importFromUrl(a);
     case 'check_posts': return summariseCheck(await checkTargets(a));

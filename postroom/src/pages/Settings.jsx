@@ -114,6 +114,7 @@ export default function Settings() {
             <a class="btn" href="#/library"><Icon name="image" size={16} /> Library</a>
             <a class="btn" href="#/research"><Icon name="layers" size={16} /> Research</a>
             <a class="btn" href="#/inbox"><Icon name="inbox" size={16} /> Inbox</a>
+            <a class="btn" href="#/analytics"><Icon name="chart" size={16} /> Analytics</a>
           </div>
         </section>
 

@@ -1,6 +1,10 @@
 import { useState } from 'preact/hooks';
 import { api, fmtNum, relTime } from '../api.js';
 import { useApp, Icon, PfMark, PF, Avatar, Spinner } from '../ui.jsx';
+import BrandKit from './BrandKit.jsx';
+
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const slotLabel = (s) => `${s.time} ${s.days?.length === 7 || !s.days?.length ? 'daily' : s.days.map((d) => DAYS[d - 1]).join('/')}`;
 
 const HOW = {
   instagram: 'Professional (Creator or Business) Instagram accounts. You log in on Instagram\'s own page.',
@@ -11,6 +15,7 @@ const HOW = {
 export default function Accounts() {
   const { accounts, config, toast, refresh } = useApp();
   const [busy, setBusy] = useState(null);
+  const [kit, setKit] = useState(null);
   const act = async (id, fn, msg) => {
     setBusy(id);
     try {
@@ -68,6 +73,11 @@ export default function Accounts() {
                     <div class="stat"><b class="num">{a.upcoming}</b><span>upcoming</span></div>
                     <div class="stat"><b class="num">{a.published_7d}</b><span>posted 7d</span></div>
                   </div>
+                  <button type="button" class="kit-line" onClick={() => setKit(a)}>
+                    <Icon name="sparkle" size={14} />
+                    <span class="grow ellipsis">{a.brand?.tone || a.brand?.hashtag_sets?.length ? 'Brand kit set' : 'No brand kit yet'} · {a.slots?.length ? a.slots.map(slotLabel).join(', ') : 'no posting slots'}</span>
+                    <span class="tiny faint">Edit</span>
+                  </button>
                   {a.failed > 0 && <a class="small" href="#/queue?tab=failed" style={{ color: 'var(--bad)' }}>{a.failed} failed post{a.failed > 1 ? 's' : ''} →</a>}
                   <div class="actions">
                     {a.status !== 'active'
@@ -92,6 +102,7 @@ export default function Accounts() {
           </section>
         );
       })}
+      {kit && <BrandKit account={kit} onClose={() => setKit(null)} />}
       <p class="tiny faint">Tip: to connect a second account on the same platform, log out of the first one on that platform's website (or use a private window), then click Connect again.</p>
     </>
   );

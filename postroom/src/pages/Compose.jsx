@@ -172,7 +172,7 @@ export default function Compose({ params }) {
       cover_media_id: covers[a.platform] || null,
     };
   });
-  const payload = { media_ids: media.map((m) => m.id), caption, targets };
+  const payload = { media_ids: media.map((m) => m.id), caption, targets, ...(when === 'slot' ? { scheduled_at: 'next_slot' } : {}) };
 
   // Live rule check (debounced).
   useEffect(() => {
@@ -232,7 +232,7 @@ export default function Compose({ params }) {
   const runAi = async () => {
     setAi((s) => ({ ...s, busy: true }));
     try {
-      const r = await api('ai/captions', { method: 'POST', body: { brief: ai.brief, tone: ai.tone, platforms: platforms.length ? platforms : ['instagram'], media_id: media[0]?.id, current: caption } });
+      const r = await api('ai/captions', { method: 'POST', body: { brief: ai.brief, tone: ai.tone, platforms: platforms.length ? platforms : ['instagram'], media_id: media[0]?.id, current: caption, account_ids: chosen.map((a) => a.id) } });
       const list = Object.keys(r);
       setCaption(r[list[0]].caption);
       const ov = {};
@@ -251,7 +251,7 @@ export default function Compose({ params }) {
     setBusy(true);
     try {
       const mode = when === 'now' ? 'now' : when === 'draft' ? 'draft' : 'schedule';
-      const r = await api('posts', { method: 'POST', body: { ...payload, mode, scheduled_at: mode === 'now' ? 'now' : at } });
+      const r = await api('posts', { method: 'POST', body: { ...payload, mode, scheduled_at: mode === 'now' ? 'now' : when === 'slot' ? 'next_slot' : at } });
       toast(mode === 'now' ? `Publishing to ${r.posts.length} account${r.posts.length > 1 ? 's' : ''}…` : mode === 'draft' ? 'Saved as draft' : `Scheduled ${r.posts.length} post${r.posts.length > 1 ? 's' : ''}`);
       if (mode === 'now') api('run', { method: 'POST' }).then(() => refresh()).catch(() => {});
       refresh();
@@ -597,7 +597,8 @@ export default function Compose({ params }) {
           <section class="card pad">
             <div class="step"><span class="n">4</span><h2>When</h2></div>
             <div class="when-box">
-              <Seg value={when} onChange={setWhen} options={[{ value: 'now', label: 'Post now' }, { value: 'schedule', label: 'Schedule' }, { value: 'draft', label: 'Draft' }]} />
+              <Seg value={when} onChange={setWhen} options={[{ value: 'now', label: 'Now' }, { value: 'slot', label: 'Next slot' }, { value: 'schedule', label: 'Pick time' }, { value: 'draft', label: 'Draft' }]} />
+              {when === 'slot' && <span class="tiny faint">Each account's next free posting slot (set under Accounts → brand kit & slots).</span>}
               {when === 'schedule' && (
                 <>
                   <input type="datetime-local" class="input" value={at} min={wallTime(new Date())} onInput={(e) => setAt(e.currentTarget.value)} />
