@@ -29,6 +29,22 @@ async function fakeFetch(input, init = {}) {
     const [s, e] = m ? [Number(m[1]), Math.min(Number(m[2]), size - 1)] : [0, size - 1];
     return new Response(Buffer.alloc(e - s + 1, 7), { status: m ? 206 : 200 });
   }
+  // Meta Unified login (graph.facebook.com)
+  if (url.host === 'graph.facebook.com') {
+    const p = url.pathname.replace(/^\/v[\d.]+\//, '');
+    if (p === 'oauth/access_token') {
+      assert.equal(url.searchParams.get('client_id'), '999');
+      return json({ access_token: 'bisu-token', token_type: 'bearer' });
+    }
+    if (p === 'me') return json({ client_business_id: 'cb1', id: 'su1' });
+    if (p === 'me/assigned_instagram_accounts') return json({ data: [{ id: '17841400000000001', username: 'brand.one' }, { id: '17841400000000002', username: 'brand.two' }] });
+    if (/^1784140000000000[12]$/.test(p)) return json({ id: p, username: p.endsWith('1') ? 'brand.one' : 'brand.two', name: 'Brand', followers_count: 1234 });
+    if (p.endsWith('content_publishing_limit')) return json({ data: [{ quota_usage: 0, config: { quota_total: 100 } }] });
+    if (p.endsWith('/media') && method === 'POST') { state.fbPublish = true; return json({ id: 'fbcontainer' }); }
+    if (p === 'fbcontainer') return json({ status_code: 'FINISHED' });
+    if (p.endsWith('/media_publish')) return json({ id: 'fbmedia1' });
+    if (p === 'fbmedia1') return json({ permalink: 'https://www.instagram.com/reel/unified/' });
+  }
   // Instagram
   if (url.host === 'graph.instagram.com') {
     const p = url.pathname.replace(/^\/v[\d.]+\//, '');
@@ -125,7 +141,7 @@ async function drain(max = 30) {
   for (let i = 0; i < max; i++) {
     await sql`update postroom.posts set next_attempt_at = null where status = 'processing'`; // skip waits
     await publisher.tick({ budgetMs: 120000 });
-    const left = await sql`select count(*)::int as n from postroom.posts where status in ('scheduled','processing')`;
+    const left = await sql`select count(*)::int as n from postroom.posts where status = 'processing' or (status = 'scheduled' and scheduled_at <= now())`;
     if (!left[0].n) return i + 1;
   }
   throw new Error('posts did not finish');
@@ -231,7 +247,7 @@ function call(method, path, { body, headers = {} } = {}) {
       setHeader(k, v) { this.headers[k.toLowerCase()] = v; },
       end(b) { resolve({ status: this.statusCode, headers: this.headers, body: b ? JSON.parse(b) : null }); },
     };
-    router({ method, url: `/api/${path}`, headers, body, query: { __p: path.split('?')[0] } }, res);
+    router({ method, url: `/api/${path}`, headers, body, query: { ...Object.fromEntries(new URL(`http://x/api/${path}`).searchParams), __p: path.split('?')[0] } }, res);
   });
 }
 
@@ -339,4 +355,27 @@ test('settings stored in the database: save, apply, Vercel values win', { skip }
   assert.equal((await call('POST', 'settings', { body: { TIKTOK_AUDITED: '' }, headers: { cookie } })).status, 200);
   await call('POST', 'settings', { body: { ANTHROPIC_API_KEY: '' }, headers: { cookie } });
   assert.equal((await call('GET', 'config', { headers: { cookie } })).body.audited.tiktok, false);
+});
+
+test('Instagram via Meta Unified login: one login connects several accounts and publishes', { skip }, async () => {
+  const login = await call('POST', 'login', { body: { password: 'pw' } });
+  const cookie = login.headers['set-cookie'].split(';')[0];
+  assert.equal((await call('POST', 'settings', { body: { META_APP_ID: '999', META_APP_SECRET: 'sec', META_CONFIG_ID: 'cfg1' }, headers: { cookie } })).status, 200);
+  const start = await call('GET', 'connect/instagram', { headers: { cookie } });
+  const loc = new URL(start.headers.location);
+  assert.equal(loc.host, 'www.facebook.com');
+  assert.equal(loc.searchParams.get('config_id'), 'cfg1');
+  const back = await call('GET', `connect/instagram/callback?code=abc&state=${loc.searchParams.get('state')}`, { headers: { cookie } });
+  assert.match(decodeURIComponent(back.headers.location), /connected=instagram:brand\.one, @brand\.two/);
+  const rows = await sql`select username, meta->>'login' as login, meta->>'client_business_id' as cb, token_expires_at from postroom.accounts where meta->>'login' = 'unified' order by username`;
+  assert.deepEqual(rows.map((r) => [r.username, r.login, r.cb]), [['brand.one', 'unified', 'cb1'], ['brand.two', 'unified', 'cb1']]);
+  assert.equal(rows[0].token_expires_at, null, 'unified tokens do not expire');
+
+  const r = await posts.createPosts({ mode: 'now', media_ids: ['00000000-0000-0000-0000-0000000000f1'], caption: 'via unified', targets: [{ account: 'instagram:brand.one' }] });
+  await drain();
+  const [p] = await sql`select status, permalink, error from postroom.posts where id = ${r.posts[0].id}`;
+  assert.equal(p.status, 'published', p.error);
+  assert.equal(p.permalink, 'https://www.instagram.com/reel/unified/');
+  assert.ok(state.fbPublish, 'published through graph.facebook.com');
+  await call('POST', 'settings', { body: { META_APP_ID: '', META_APP_SECRET: '', META_CONFIG_ID: '' }, headers: { cookie } });
 });

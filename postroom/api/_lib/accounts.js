@@ -44,7 +44,7 @@ export function platformStatus() {
     id: p.id,
     label: p.label,
     configured: p.configured(),
-    missing: p.envVars.filter((k) => !process.env[k]),
+    missing: p.missing ? p.missing() : p.envVars.filter((k) => !process.env[k]),
     redirect_uri: redirectUri(p.id),
     kinds: p.kinds,
   }));
@@ -67,7 +67,15 @@ export async function finishConnect(id, query) {
   const st = query.state && (await kvGet(`oauth:${query.state}`));
   if (!st || st.platform !== id) throw new HttpError(400, 'This connect link expired. Start again from Accounts.');
   await kvDel(`oauth:${query.state}`);
-  const { tokens, profile } = await p.connect({ code: query.code, redirectUri: redirectUri(id) });
+  const result = await p.connect({ code: query.code, redirectUri: redirectUri(id) });
+  const { tokens } = result;
+  const profiles = result.profiles || [result.profile];
+  const rows = [];
+  for (const profile of profiles) rows.push(await saveConnected(p, id, tokens, profile));
+  return { ...rows[0], connected: rows.map((r) => r.username) };
+}
+
+async function saveConnected(p, id, tokens, profile) {
   const [row] = await db()`insert into postroom.accounts ${db()({
     platform: id,
     external_id: profile.external_id,
@@ -150,7 +158,7 @@ export async function syncAccount(id) {
   const a = await getAccount(id);
   const p = platform(a.platform);
   const token = await accessToken(a);
-  const prof = await p.refreshProfile(token);
+  const prof = await p.refreshProfile(token, a);
   const [row] = await db()`update postroom.accounts set username = ${prof.username}, name = ${prof.name},
       profile_picture_url = ${prof.profile_picture_url}, followers_count = ${prof.followers_count},
       profile_url = ${prof.profile_url}, updated_at = now()

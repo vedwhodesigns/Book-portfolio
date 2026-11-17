@@ -17,7 +17,7 @@ import { ingest, listProjects, projectOverview, searchPosts, getResearchPost, de
 
 // Settings the owner can paste into Postroom → Settings (stored in the database).
 const EDITABLE_SETTINGS = [
-  'IG_APP_ID', 'IG_APP_SECRET', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'TIKTOK_CLIENT_KEY', 'TIKTOK_CLIENT_SECRET',
+  'META_APP_ID', 'META_APP_SECRET', 'META_CONFIG_ID', 'IG_APP_ID', 'IG_APP_SECRET', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'TIKTOK_CLIENT_KEY', 'TIKTOK_CLIENT_SECRET',
   'YOUTUBE_AUDITED', 'TIKTOK_AUDITED', 'ANTHROPIC_API_KEY', 'MCP_AUTO_APPROVE', 'APP_PASSWORD',
 ];
 
@@ -118,7 +118,7 @@ export default async function handler(req, res) {
       if (!isAuthed(req)) return redirect(res, `/?error=${encodeURIComponent('Sign in, then connect the account again.')}#/accounts`);
       try {
         const row = await finishConnect(seg[1], query(req));
-        return redirect(res, `/?connected=${encodeURIComponent(`${row.platform}:${row.username}`)}#/accounts`);
+        return redirect(res, `/?connected=${encodeURIComponent(`${row.platform}:${(row.connected || [row.username]).join(', @')}`)}#/accounts`);
       } catch (e) {
         return redirect(res, `/?error=${encodeURIComponent(e.message)}#/accounts`);
       }

@@ -3,7 +3,7 @@ import { api } from '../api.js';
 import { useApp, Icon, PfMark, CopyField, Seg, Spinner } from '../ui.jsx';
 
 const KEYS = {
-  instagram: { fields: [['IG_APP_ID', 'Instagram app ID'], ['IG_APP_SECRET', 'Instagram app secret']], where: 'Meta for Developers → your app → Instagram → API setup with Instagram login' },
+  instagram: { fields: [['META_APP_ID', 'Meta app ID'], ['META_APP_SECRET', 'Meta app secret'], ['META_CONFIG_ID', 'Configuration ID (config_id)']], where: 'Meta for Developers → your app → App settings → Basic (ID & secret); Use cases → Instagram → Customize → API setup with Unified login (configuration)' },
   youtube: { fields: [['GOOGLE_CLIENT_ID', 'Google OAuth client ID'], ['GOOGLE_CLIENT_SECRET', 'Google OAuth client secret']], where: 'Google Cloud console → APIs & Services → Credentials → your OAuth client' },
   tiktok: { fields: [['TIKTOK_CLIENT_KEY', 'TikTok client key'], ['TIKTOK_CLIENT_SECRET', 'TikTok client secret']], where: 'TikTok for Developers → Manage apps → your app' },
 };
