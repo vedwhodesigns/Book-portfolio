@@ -248,7 +248,16 @@ export async function lookupYoutube({ channel, limit = 50 }) {
       views = excluded.views, caption = excluded.caption, thumb_url = excluded.thumb_url, updated_at = now()`;
   }
   await logEvent({ message: `Research: looked up YouTube ${name} (${videos.length} videos)` });
-  return { project_id: project.id, name, videos: videos.length, subscribers: ytNum(ch.statistics?.subscriberCount) };
+  // Hidden YouTube tags (set in Studio, not shown to viewers) and hashtags used in titles/descriptions.
+  const tagCount = new Map();
+  for (const v of videos) for (const t of new Set((v.snippet?.tags || []).map((x) => String(x).toLowerCase()))) tagCount.set(t, (tagCount.get(t) || 0) + 1);
+  const hidden_tags = [...tagCount.entries()].sort((x, y) => y[1] - x[1]).slice(0, 40).map(([tag, n]) => ({ tag, videos: n }));
+  const hashtags = hashtagStats(videos.map((v) => ({ caption: `${v.snippet.title}\n${v.snippet.description || ''}`, likes: ytNum(v.statistics?.likeCount), comments: ytNum(v.statistics?.commentCount) }))).slice(0, 30);
+  return {
+    project_id: project.id, name, videos: videos.length, subscribers: ytNum(ch.statistics?.subscriberCount),
+    videos_with_hidden_tags: videos.filter((v) => v.snippet?.tags?.length).length, hidden_tags, hashtags,
+    category_ids: [...new Set(videos.map((v) => v.snippet?.categoryId).filter(Boolean))],
+  };
 }
 
 /** Hashtag counts and average engagement across posts. */
