@@ -8,6 +8,41 @@ const KEYS = {
   tiktok: { fields: [['TIKTOK_CLIENT_KEY', 'TikTok client key'], ['TIKTOK_CLIENT_SECRET', 'TikTok client secret']], where: 'TikTok for Developers → Manage apps → your app' },
 };
 
+function ClaudeKey() {
+  const { config, toast, refresh } = useApp();
+  const [v, setV] = useState('');
+  const [busy, setBusy] = useState(false);
+  const fromVercel = config.settings?.ANTHROPIC_API_KEY === 'vercel';
+  const save = async (value) => {
+    setBusy(true);
+    try {
+      await api('settings', { method: 'POST', body: { ANTHROPIC_API_KEY: value } });
+      setV('');
+      toast(value ? 'Claude API key saved — Write with Claude is on' : 'Claude API key removed');
+      refresh();
+    } catch (e) {
+      toast(e.message, 'bad');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div class="col" style={{ gap: 6 }}>
+      <div class="row">
+        {config.ai ? <span class="pill good"><span class="dot" />On</span> : <span class="pill">Off</span>}
+        {!fromVercel && config.ai && <button class="btn ghost sm danger" disabled={busy} onClick={() => save('')}>Remove key</button>}
+      </div>
+      {!fromVercel && (
+        <div class="row">
+          <input class="input" type="password" autoComplete="off" placeholder={config.ai ? 'Saved — paste a new key to replace' : 'Paste a Claude API key (sk-ant-…)'} value={v} onInput={(e) => setV(e.currentTarget.value)} />
+          <button class="btn primary sm" disabled={!v || busy} onClick={() => save(v)}>{busy ? <Spinner /> : 'Save'}</button>
+        </div>
+      )}
+      <span class="tiny faint">Get one at platform.claude.com → API keys → Create key. Billed per use by Anthropic; a caption costs a fraction of a cent.</span>
+    </div>
+  );
+}
+
 function PlatformKeys({ p }) {
   const { config, toast, refresh } = useApp();
   const [vals, setVals] = useState({});
@@ -93,7 +128,7 @@ export default function Settings() {
             <span class="label">MCP connector URL</span>
             {config.mcp_url ? <CopyField value={config.mcp_url} /> : <span class="small muted">Set <code>MCP_KEY</code> in Vercel to enable.</span>}
             <span class="label">Write with Claude</span>
-            <span class="small">{config.ai ? <span class="pill good"><span class="dot" />On</span> : <span class="muted">Add <code>ANTHROPIC_API_KEY</code> to write captions inside the composer.</span>}</span>
+            <ClaudeKey />
           </div>
           {config.mcp_url && (
             <ol class="setup-steps">
