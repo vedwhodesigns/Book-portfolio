@@ -16,7 +16,7 @@ import { updateBrand } from './_lib/brand.js';
 import { handleMcp } from './_lib/mcp.js';
 import { platform } from './_lib/platforms/index.js';
 import { storageMode, LOCAL_DIR } from './_lib/storage.js';
-import { ingest, listProjects, projectOverview, searchPosts, getResearchPost, deleteProject, lookupYoutube, inspirationBrief } from './_lib/research.js';
+import { ingest, listProjects, projectOverview, searchPosts, getResearchPost, deleteProject, lookupYoutube, lookupInstagram, inspirationBrief } from './_lib/research.js';
 
 // Settings the owner can paste into Postroom → Settings (stored in the database).
 const EDITABLE_SETTINGS = [
@@ -311,6 +311,7 @@ export default async function handler(req, res) {
       return send(res, 200, { ...r, brief: inspirationBrief(r) });
     }
     if (p === 'research/youtube' && m === 'POST') return send(res, 200, await lookupYoutube(await body(req)));
+    if (p === 'research/instagram' && m === 'POST') return send(res, 200, await lookupInstagram(await body(req)));
 
     // analytics, AI, manual publish run
     if (p === 'analytics' && m === 'GET') return send(res, 200, await overview(query(req)));

@@ -52,6 +52,13 @@ async function fakeFetch(input, init = {}) {
     if (p.endsWith('/subscribed_apps') && method === 'POST') { state.subscribed = (state.subscribed || 0) + 1; return json({ success: true }); }
     if (p === 'igsid-1') return json({ username: 'fan.one', name: 'Fan One' });
     if (p === 'me/assigned_instagram_accounts') return json({ data: [{ id: '17841400000000001', username: 'brand.one' }, { id: '17841400000000002', username: 'brand.two' }] });
+    if (/^1784140000000000[12]$/.test(p) && (url.searchParams.get('fields') || '').startsWith('business_discovery')) {
+      assert.match(url.searchParams.get('fields'), /username\(rival\.crime\)/);
+      return json({ business_discovery: { username: 'rival.crime', followers_count: 50000, media: { data: [
+        { id: 'b1', caption: 'Case 1 #TrueCrime #fyp', media_product_type: 'REELS', like_count: 900, comments_count: 100, timestamp: '2026-11-01T10:00:00+0000', permalink: 'https://www.instagram.com/reel/b1/' },
+        { id: 'b2', caption: 'Case 2 #truecrime', media_type: 'CAROUSEL_ALBUM', like_count: 100, comments_count: 0, timestamp: '2026-11-02T10:00:00+0000' },
+      ] } } });
+    }
     if (/^1784140000000000[12]$/.test(p)) return json({ id: p, username: p.endsWith('1') ? 'brand.one' : 'brand.two', name: 'Brand', followers_count: 1234 });
     if (p.endsWith('content_publishing_limit')) return json({ data: [{ quota_usage: 0, config: { quota_total: 100 } }] });
     if (p.endsWith('/media') && method === 'POST') { state.fbPublish = true; (state.igCreates ||= []).push(Object.fromEntries(new URLSearchParams(String(init.body)))); return json({ id: 'fbcontainer' }); }
@@ -647,4 +654,14 @@ test('media cleanup: files are deleted 7 days after their posts are done, never 
   assert.equal(r.deleted, 1);
   const rows = await sql`select id, deleted_at is not null as gone from postroom.media where id::text like '%0000000000c%' order by id`;
   assert.deepEqual(rows.map((x) => x.gone), [true, false, false]);
+});
+
+test('research: study any public Instagram account through Business Discovery', { skip }, async () => {
+  const research = await import('../api/_lib/research.js');
+  const r = await research.lookupInstagram({ username: '@rival.crime' });
+  assert.equal(r.posts_read, 2);
+  assert.deepEqual(r.top_hashtags[0], { tag: '#truecrime', posts: 2, avg_engagement: 550 });
+  const rows = await sql`select type from postroom.research_posts where author = 'rival.crime' order by external_id`;
+  assert.deepEqual(rows.map((x) => x.type), ['reel', 'carousel']);
+  await assert.rejects(research.lookupInstagram({ username: 'bad name!' }), /username/);
 });

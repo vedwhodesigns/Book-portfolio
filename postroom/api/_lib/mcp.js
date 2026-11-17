@@ -8,7 +8,7 @@ import { listMedia, importFromUrl } from './media.js';
 import { checkTargets, summariseCheck, createPosts, listPosts, getPost, updatePost, cancelPost, listPlans, findAccount } from './posts.js';
 import { overview } from './analytics.js';
 import { KIND_LABEL } from './platforms/index.js';
-import { listProjects, projectOverview, searchPosts, getResearchPost, lookupYoutube, inspirationBrief } from './research.js';
+import { listProjects, projectOverview, searchPosts, getResearchPost, lookupYoutube, lookupInstagram, inspirationBrief } from './research.js';
 import * as inbox from './inbox.js';
 
 const PROTOCOL = '2025-06-18';
@@ -98,6 +98,7 @@ const TOOLS = [
   },
   { name: 'research_post', description: 'Full detail of one researched post: transcript, the full teardown (idea, hook, script beats, edit, sound, recipe) and measured pacing/loudness, plus an inspiration brief.', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
   { name: 'research_youtube_channel', description: 'Analyse any public YouTube channel (by @handle, URL or channel id) through the official API: subscribers and its latest videos with views/likes/comments. Saved as a research project.', inputSchema: { type: 'object', properties: { channel: { type: 'string' }, limit: { type: 'number' } }, required: ['channel'] } },
+  { name: 'research_instagram_account', description: 'Analyse any public Instagram Business/Creator account (by @username) through the official Business Discovery API: followers, its latest posts with likes/comments, and its most-used hashtags with average engagement. Saved as a research project.', inputSchema: { type: 'object', properties: { username: { type: 'string' }, limit: { type: 'number' } }, required: ['username'] } },
   // ---- Instagram DMs ----
   { name: 'inbox_threads', description: 'List Instagram DM conversations across the connected accounts (newest first), with unread counts and whether a reply is still allowed (Instagram only allows replies within 24h of their last message).', inputSchema: { type: 'object', properties: { account_id: { type: 'string' }, q: { type: 'string', description: 'Search username or last message' } } } },
   { name: 'inbox_thread', description: 'Read one DM conversation (messages oldest → newest).', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
@@ -174,6 +175,7 @@ async function callTool(name, a = {}) {
     case 'research_search': return searchPosts({ ...a, limit: a.limit || 25 });
     case 'research_post': { const r = await getResearchPost(a.id); return { ...r, inspiration_brief: inspirationBrief(r) }; }
     case 'research_youtube_channel': return lookupYoutube(a);
+    case 'research_instagram_account': return lookupInstagram(a);
     default: throw Object.assign(new Error(`Unknown tool ${name}`), { rpc: -32602 });
   }
 }

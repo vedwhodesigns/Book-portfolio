@@ -6,6 +6,7 @@
 import { db, HttpError, PlatformError, fetchT, readJson, logEvent } from './core.js';
 import { putFile } from './storage.js';
 import { accessToken } from './accounts.js';
+import { igGet } from './platforms/instagram.js';
 
 const n = (v) => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Math.round(Number(v)));
 const str = (v, max = 20000) => (v == null ? null : String(v).slice(0, max));
@@ -248,4 +249,71 @@ export async function lookupYoutube({ channel, limit = 50 }) {
   }
   await logEvent({ message: `Research: looked up YouTube ${name} (${videos.length} videos)` });
   return { project_id: project.id, name, videos: videos.length, subscribers: ytNum(ch.statistics?.subscriberCount) };
+}
+
+/** Hashtag counts and average engagement across posts. */
+export function hashtagStats(posts) {
+  const by = new Map();
+  for (const p of posts) {
+    const tags = [...new Set((String(p.caption || '').match(/#[\p{L}\p{N}_]+/gu) || []).map((t) => t.toLowerCase()))];
+    const eng = Number(p.likes || 0) + Number(p.comments || 0);
+    for (const t of tags) {
+      const r = by.get(t) || { tag: t, posts: 0, engagement: 0 };
+      r.posts++;
+      r.engagement += eng;
+      by.set(t, r);
+    }
+  }
+  return [...by.values()].map((r) => ({ tag: r.tag, posts: r.posts, avg_engagement: Math.round(r.engagement / r.posts) }))
+    .sort((a, b) => b.posts - a.posts || b.avg_engagement - a.avg_engagement);
+}
+
+/**
+ * Study any public Instagram professional account through the official Business Discovery API
+ * (uses a connected Instagram account's login, no scraping). Saved as a research project.
+ */
+export async function lookupInstagram({ username, limit = 50 }) {
+  const u = String(username || '').trim().replace(/^https?:\/\/(www\.)?instagram\.com\//, '').replace(/^@/, '').replace(/\/.*$/, '');
+  if (!/^[\w.]{1,30}$/.test(u)) throw new HttpError(400, 'Give an Instagram @username.');
+  const [acc] = await db()`select * from postroom.accounts where platform = 'instagram' and status = 'active' order by (meta->>'login' = 'unified') desc nulls last, connected_at limit 1`;
+  if (!acc) throw new HttpError(400, 'Connect an Instagram account first — lookups use its login.');
+  const token = await accessToken(acc);
+  const n = Math.min(Number(limit) || 50, 100);
+  const fields = `business_discovery.username(${u}){username,name,biography,followers_count,media_count,profile_picture_url,media.limit(${n}){id,caption,media_type,media_product_type,like_count,comments_count,timestamp,permalink,thumbnail_url,media_url}}`;
+  let bd;
+  try {
+    bd = (await igGet(acc.external_id, token, { fields }, acc)).business_discovery;
+  } catch (e) {
+    if (/not.*found|cannot be found|does not exist|Invalid user/i.test(e.message)) throw new HttpError(404, `@${u} isn't a public Instagram professional account (Instagram only shares Business and Creator accounts).`);
+    throw e;
+  }
+  if (!bd) throw new HttpError(404, `No data for @${u}.`);
+  const media = bd.media?.data || [];
+  const project = await upsertProject({
+    source: 'instagram-api',
+    name: `@${bd.username}`,
+    niche: bd.name || bd.username,
+    competitors: [`https://www.instagram.com/${bd.username}/`],
+    scrapedAt: new Date().toISOString(),
+    meta: { followers: bd.followers_count ?? null, media_count: bd.media_count ?? null, biography: str(bd.biography || '', 1000), thumbnail: bd.profile_picture_url || null },
+  });
+  for (const m of media) {
+    const type = m.media_product_type === 'REELS' ? 'reel' : m.media_type === 'CAROUSEL_ALBUM' ? 'carousel' : m.media_type === 'VIDEO' ? 'video' : 'image';
+    await db()`insert into postroom.research_posts ${db()({
+      project_id: project.id, platform: 'instagram', external_id: m.id, url: m.permalink || null,
+      author: bd.username, source: 'instagram-api', type,
+      posted_at: m.timestamp ? new Date(String(m.timestamp).replace(/([+-]\d\d)(\d\d)$/, '$1:$2')) : null,
+      caption: str(m.caption || '', 5000), likes: m.like_count ?? null, comments: m.comments_count ?? null,
+      thumb_url: m.thumbnail_url || (m.media_type === 'IMAGE' ? m.media_url : null) || null,
+    })} on conflict (project_id, external_id) do update set likes = excluded.likes, comments = excluded.comments,
+      caption = excluded.caption, thumb_url = excluded.thumb_url, updated_at = now()`;
+  }
+  await logEvent({ message: `Research: looked up Instagram @${bd.username} (${media.length} posts)` });
+  return {
+    project_id: project.id,
+    username: bd.username,
+    followers: bd.followers_count ?? null,
+    posts_read: media.length,
+    top_hashtags: hashtagStats(media.map((m) => ({ caption: m.caption, likes: m.like_count, comments: m.comments_count }))).slice(0, 40),
+  };
 }
