@@ -24,7 +24,7 @@ function kindOptions(platform, media) {
 }
 function defaultKind(platform, media) {
   const m = media[0];
-  if (platform === 'youtube') return m && m.duration_s && m.duration_s <= 180 && m.height >= m.width ? 'short' : 'video';
+  if (platform === 'youtube') return m && (!m.duration_s || m.duration_s <= 180) && m.height >= m.width ? 'short' : 'video';
   return kindOptions(platform, media)[0];
 }
 function nextSlot(dateKey) {

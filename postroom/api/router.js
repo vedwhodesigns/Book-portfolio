@@ -202,6 +202,11 @@ export default async function handler(req, res) {
     // phone notifications
     if (p === 'notifications' && m === 'GET') return send(res, 200, await notifyLib.listNotifications(query(req)));
     if (p === 'notifications/read' && m === 'POST') return send(res, 200, await notifyLib.markRead());
+    if (p === 'notifications' && m === 'POST') {
+      const b = await body(req);
+      if (!b.title) throw new HttpError(400, 'title is required.');
+      return send(res, 200, await notifyLib.notify({ kind: String(b.kind || 'reminder').slice(0, 30), title: String(b.title).slice(0, 140), body: b.body ? String(b.body).slice(0, 500) : null, url: b.url || '/#/queue' }));
+    }
     if (p === 'push/status' && m === 'GET') return send(res, 200, await notifyLib.pushStatus());
     if (p === 'push/subscribe' && m === 'POST') return send(res, 200, await notifyLib.subscribe(await body(req)));
     if (p === 'push/unsubscribe' && m === 'POST') return send(res, 200, await notifyLib.unsubscribe(await body(req)));

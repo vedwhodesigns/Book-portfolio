@@ -122,7 +122,8 @@ export default {
 
   defaultKind(media) {
     const m = media[0];
-    return m && m.duration_s && m.duration_s <= 180 && (isVertical(m) || m.width === m.height) ? 'short' : 'video';
+    // Vertical/square up to 3 min is a Short; an unknown length counts as short when the shape is vertical.
+    return m && (!m.duration_s || m.duration_s <= 180) && (isVertical(m) || m.width === m.height) ? 'short' : 'video';
   },
 
   validate({ kind, caption = '', title, media, options = {}, cover, account }) {

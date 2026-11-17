@@ -15,4 +15,12 @@ const opts = {
   logLevel: 'info',
 };
 if (watch) await (await esbuild.context(opts)).watch();
-else await esbuild.build(opts);
+else {
+  await esbuild.build(opts);
+  // Standalone command line (served as /postroom.mjs) so other machines can hand posts to Postroom with plain Node.
+  await esbuild.build({
+    entryPoints: ['cli/postroom.mjs'], bundle: true, platform: 'node', format: 'esm', target: 'node18',
+    outfile: 'public/postroom.mjs', minify: false, logLevel: 'warning', legalComments: 'none',
+    banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
+  });
+}
