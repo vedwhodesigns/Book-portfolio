@@ -41,17 +41,22 @@ export function db() {
       transform: { undefined: null },
       onnotice: () => {},
     };
-    _sql = env('DATABASE_URL')
-      ? postgres(env('DATABASE_URL'), common)
-      : postgres({
-          host: env('DB_HOST'),
-          port: Number(env('DB_PORT', '6543')),
-          database: env('DB_NAME', 'postgres'),
-          username: env('DB_USER'),
-          password: env('DB_PASSWORD'),
-          ssl: env('DB_SSL', 'require') === 'disable' ? false : 'require',
-          ...common,
-        });
+    // Same connection settings as Postroom v1 (DB_* variables); DATABASE_URL only as a fallback.
+    if (env('DB_HOST')) {
+      _sql = postgres({
+        host: env('DB_HOST'),
+        port: Number(env('DB_PORT', '6543')),
+        database: env('DB_NAME', 'postgres'),
+        username: env('DB_USER'),
+        password: env('DB_PASSWORD'),
+        ssl: env('DB_SSL', 'require') === 'disable' ? false : 'require',
+        ...common,
+      });
+    } else {
+      const url = env('DATABASE_URL');
+      const local = /@(localhost|127\.0\.0\.1)[:/]/.test(url);
+      _sql = postgres(url, { ...common, ...(local ? {} : { ssl: 'require' }) });
+    }
   }
   return _sql;
 }
