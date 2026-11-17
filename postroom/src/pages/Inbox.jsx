@@ -8,17 +8,23 @@ const KIND = {
   comment_keyword: { label: 'Comment → DM', hint: 'Someone comments a keyword on a post/reel → they get a DM.' },
 };
 
+function ago(iso) {
+  if (!iso) return 'not yet';
+  const m = Math.round((Date.now() - new Date(iso)) / 60000);
+  return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`;
+}
+
 function SetupCard({ status, onDone }) {
   const { toast, config } = useApp();
   const [busy, setBusy] = useState(false);
-  const allSubscribed = status.accounts.length > 0 && status.accounts.every((a) => a.subscribed);
-  if (status.verify_token_set && allSubscribed) return null;
+  const [more, setMore] = useState(false);
+  const errors = status.accounts.filter((a) => a.check_error);
   const subscribe = async () => {
     setBusy(true);
     try {
       const r = await api('inbox/subscribe', { method: 'POST' });
       const bad = r.filter((x) => !x.ok);
-      toast(bad.length ? `${bad.length} account(s) couldn't be enabled: ${bad[0].reason}` : 'DMs enabled for all accounts', bad.length ? 'bad' : '');
+      toast(bad.length ? `${bad.length} account(s) couldn't be switched on: ${bad[0].reason}` : 'Instant mode on for all accounts', bad.length ? 'bad' : '');
       onDone();
     } catch (e) {
       toast(e.message, 'bad');
@@ -28,26 +34,32 @@ function SetupCard({ status, onDone }) {
   };
   return (
     <section class="card pad" style={{ marginBottom: 16 }}>
-      <h2 class="row"><Icon name="alert" size={16} /> Finish DM setup (one time)</h2>
-      <ol class="setup-steps">
-        <li>
-          In Meta: <b>Use cases → Instagram → Customize → API setup with Unified login → 3. Configure webhooks</b>. Paste:
-          <div class="grid2" style={{ margin: '8px 0' }}>
-            <div class="field"><label>Callback URL</label><CopyField value={status.webhook_url} /></div>
-            <div class="field"><label>Verify token</label>{status.verify_token ? <CopyField value={status.verify_token} /> : <span class="small muted">Not set yet</span>}</div>
-          </div>
-          Click <b>Verify and save</b>, then subscribe to the fields <code>messages</code> and <code>comments</code>.
-        </li>
-        <li>In Meta: switch the app to <b>Live</b> (top of the App Dashboard). Meta only sends DM notifications to Live apps.</li>
-        <li>On each Instagram account (phone app): <b>Settings → Messages and story replies → Message controls → Connected tools → Allow access to messages</b>.</li>
-        <li>
-          Then: <button class="btn primary sm" disabled={busy} onClick={subscribe}>{busy ? <Spinner /> : 'Enable DMs for my accounts'}</button>
-          <span class="tiny faint" style={{ marginLeft: 8 }}>
-            {status.accounts.map((a) => `@${a.username} ${a.subscribed ? '✓' : '·'}`).join('  ')}
+      <div class="row between wrap">
+        <h2 class="row" style={{ margin: 0 }}><Icon name="inbox" size={16} /> Checking for new DMs every minute</h2>
+        <button class="btn ghost sm" onClick={() => setMore(!more)}>{more ? 'Hide details' : 'How it works'}</button>
+      </div>
+      <div class="row wrap" style={{ gap: 8, marginTop: 10 }}>
+        {status.accounts.map((a) => (
+          <span key={a.id} class={`pill ${a.check_error ? 'bad' : a.checked_at ? 'good' : ''}`} title={a.check_error || ''}>
+            <span class="dot" />@{a.username} · {a.check_error ? 'check failed' : `checked ${ago(a.checked_at)}`}
           </span>
-        </li>
-      </ol>
-      <p class="tiny faint" style={{ margin: 0 }}>Until Meta grants Advanced Access (Business Verification + App Review), only DMs and comments from people with a role on the app (you and your test accounts) come through.{config.ai ? '' : ' Add a Claude API key in Settings to draft replies here.'}</p>
+        ))}
+      </div>
+      {errors.length > 0 && <div class="notice bad small" style={{ marginTop: 10 }}>@{errors[0].username}: {errors[0].check_error}</div>}
+      {more && (
+        <div class="small" style={{ marginTop: 12 }}>
+          <p style={{ marginTop: 0 }}>Postroom checks every Instagram account for new DMs every minute and new comments every 3 minutes, then runs your Automations on anything new (never on old messages). Replies you send here go out from the account.</p>
+          <ol class="setup-steps">
+            <li>On each Instagram account (phone app): <b>Settings → Messages and story replies → Message controls → Connected tools → Allow access to messages</b>. Without it that account's DMs stay empty.</li>
+            <li>
+              Optional, later — <b>instant mode</b> (no 1-minute delay): needs your Meta business portfolio verified and the Meta app published. Then:{' '}
+              <button class="btn sm" disabled={busy} onClick={subscribe}>{busy ? <Spinner /> : 'Switch on instant mode'}</button>
+              <div class="field" style={{ marginTop: 8 }}><label>Webhook callback URL (already registered)</label><CopyField value={status.webhook_url} /></div>
+            </li>
+          </ol>
+          <p class="tiny faint" style={{ margin: 0 }}>Instagram only lets you reply within 24 hours of the person's last message.{config.ai ? '' : ' Add a Claude API key in Settings to have Claude draft replies.'}</p>
+        </div>
+      )}
     </section>
   );
 }

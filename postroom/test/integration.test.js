@@ -42,9 +42,12 @@ async function fakeFetch(input, init = {}) {
       const recipient = JSON.parse(f.get('recipient'));
       const message = JSON.parse(f.get('message'));
       (state.sent ||= []).push({ recipient, text: message.text });
-      return json({ recipient_id: recipient.id || 'igsid-commenter', message_id: `m_out_${state.sent.length}` });
+      return json({ recipient_id: recipient.id || 'igsid-commenter', message_id: `m_out_${state.outSeq = (state.outSeq || 0) + 1}` });
     }
     if (p.endsWith('/replies') && method === 'POST') { state.publicReplies = (state.publicReplies || 0) + 1; return json({ id: 'reply1' }); }
+    if (p === '17841400000000001/conversations') return json({ data: state.convs || [] });
+    if (p === '17841400000000001/media' && method === 'GET') return json({ data: [{ id: 'pmedia1', timestamp: '2026-11-01T00:00:00+0000', comments: { data: state.comments || [] } }] });
+    if (/\/(conversations|media)$/.test(p) && method === 'GET') return json({ data: [] });
     if (p.endsWith('/subscribed_apps') && method === 'POST') { state.subscribed = (state.subscribed || 0) + 1; return json({ success: true }); }
     if (p === 'igsid-1') return json({ username: 'fan.one', name: 'Fan One' });
     if (p === 'me/assigned_instagram_accounts') return json({ data: [{ id: '17841400000000001', username: 'brand.one' }, { id: '17841400000000002', username: 'brand.two' }] });
@@ -473,4 +476,39 @@ test('Instagram inbox: webhooks, auto-replies, comment-to-DM, 24h window, drafts
   // subscribing accounts to webhooks
   const sub = await call('POST', 'inbox/subscribe', { headers: { cookie } });
   assert.ok(sub.body.some((x) => x.ok));
+});
+
+test('Instagram inbox polling: works without webhooks, never auto-replies to history', { skip }, async () => {
+  const inbox = await import('../api/_lib/inbox.js');
+  const [acct] = await sql`select * from postroom.accounts where username = 'brand.one'`;
+  const metaTs = (ms) => new Date(ms).toISOString().replace(/\.\d+Z$/, '+0000');
+  const old = metaTs(Date.now() - 3600e3);
+  const me = { id: acct.external_id, username: 'brand.one' };
+  state.convs = [{ participants: { data: [me, { id: 'igsid-p', username: 'poller' }] }, updated_time: old,
+    messages: { data: [{ id: 'pm1', message: 'price?', from: { id: 'igsid-p' }, created_time: old }] } }];
+  state.comments = [{ id: 'pc1', text: 'LINK', timestamp: old, username: 'old.c', from: { id: 'u1', username: 'old.c' } }];
+  state.sent = [];
+  state.publicReplies = 0;
+
+  await inbox.pollInbox();
+  assert.equal(state.sent.length, 0, 'first pass only records history');
+  const [h] = await sql`select count(*)::int as n from postroom.dm_messages where mid = 'pm1'`;
+  assert.equal(h.n, 1);
+
+  await sql`update postroom.accounts set meta = meta || ${sql.json({ inbox_poll_since: new Date(Date.now() - 20000).toISOString() })} where id = ${acct.id}`;
+  const fresh = metaTs(Date.now() - 5000);
+  state.convs[0].updated_time = fresh;
+  state.convs[0].messages.data.unshift({ id: 'pm2', message: 'price please', from: { id: 'igsid-p' }, created_time: fresh });
+  state.comments.unshift({ id: 'pc2', text: 'send LINK', timestamp: fresh, username: 'new.c', from: { id: 'u2', username: 'new.c' } });
+  await inbox.pollInbox();
+  assert.deepEqual(state.sent.map((x) => x.text), ['Our price list: example', 'Here is your link @new.c'], 'keyword reply, no welcome (not first DM), comment DM');
+  assert.deepEqual(state.sent[1].recipient, { comment_id: 'pc2' });
+  assert.equal(state.publicReplies, 1);
+  const [t] = await sql`select unread, last_text from postroom.dm_threads where igsid = 'igsid-p'`;
+  assert.deepEqual([t.unread, t.last_text], [1, 'Our price list: example']);
+
+  await inbox.pollInbox();
+  assert.equal(state.sent.length, 2, 'nothing is sent twice');
+  const st = await inbox.inboxStatus();
+  assert.ok(st.accounts.find((a) => a.username === 'brand.one').checked_at);
 });

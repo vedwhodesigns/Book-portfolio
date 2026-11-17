@@ -11,6 +11,8 @@ export const WEBHOOK_FIELDS = ['messages', 'comments'];
 const WINDOW_MS = 24 * 3600e3; // Meta allows free-form replies within 24h of the person's last message
 
 // ---------- helpers ----------
+/** Meta timestamps look like 2026-11-17T10:00:00+0000; make them Date-parseable. */
+export const metaDate = (v) => new Date(typeof v === 'string' ? v.replace(/([+-]\d\d)(\d\d)$/, '$1:$2') : v);
 async function igAccountByExternal(externalId) {
   const [a] = await db()`select * from postroom.accounts where platform = 'instagram' and external_id = ${String(externalId)} and status <> 'disconnected'`;
   return a || null;
@@ -59,7 +61,7 @@ async function storeMessage(account, igsid, { mid, direction, text, attachments,
       last_text = case when coalesce(last_message_at, ${created}) <= ${created} then ${text || (attachments ? '[attachment]' : '')} else last_text end,
       last_direction = case when coalesce(last_message_at, ${created}) <= ${created} then ${direction} else last_direction end,
       last_inbound_at = case when ${direction} = 'in' then greatest(coalesce(last_inbound_at, ${created}), ${created}) else last_inbound_at end,
-      unread = case when ${direction} = 'in' and ${source} = 'webhook' then unread + 1 else unread end,
+      unread = case when ${direction === 'in' && (source === 'webhook' || source === 'poll')} then unread + 1 else unread end,
       updated_at = now()
     where id = ${thread.id} returning *`;
   return { inserted: true, thread: t };
@@ -127,15 +129,16 @@ async function onInboundDM(account, thread, text, isFirst) {
   }
 }
 
-async function onComment(account, value) {
+async function onComment(account, value, { automate = true } = {}) {
   const commentId = String(value.id);
   const from = value.from || {};
   if (from.id && String(from.id) === String(account.external_id)) return; // our own replies
   const mediaId = value.media?.id ? String(value.media.id) : null;
-  const ins = await db()`insert into postroom.ig_comments (account_id, comment_id, media_external_id, from_id, username, text)
-    values (${account.id}, ${commentId}, ${mediaId}, ${from.id || null}, ${from.username || null}, ${value.text || null})
+  const at = value.timestamp ? metaDate(value.timestamp) : new Date();
+  const ins = await db()`insert into postroom.ig_comments (account_id, comment_id, media_external_id, from_id, username, text, created_at)
+    values (${account.id}, ${commentId}, ${mediaId}, ${from.id || null}, ${from.username || null}, ${value.text || null}, ${at})
     on conflict (comment_id) do nothing returning id`;
-  if (!ins.length || value.parent_id) return; // duplicate delivery, or a reply inside a thread
+  if (!ins.length || value.parent_id || !automate) return false; // duplicate, a reply inside a thread, or history
   for (const rule of await rulesFor(account.id, 'comment_keyword')) {
     if (rule.media_external_id && rule.media_external_id !== mediaId) continue;
     if (!ruleMatches(rule, value.text)) continue;
@@ -276,6 +279,106 @@ export async function syncConversations(accountId, { limit = 25 } = {}) {
   return { conversations: (convs.data || []).length, messages };
 }
 
+// ---------- polling ----------
+// Webhooks only reach a *published* Meta app. Until then (and as a safety net afterwards) the cron
+// tick polls each account: DMs every minute, comments every few minutes. Automations only fire on
+// messages/comments newer than the account's poll baseline, never on history.
+const POLL_MAX_LOOKBACK_MS = 2 * 3600e3;
+
+async function pollBaseline(account) {
+  let base = account.meta?.inbox_poll_since ? new Date(account.meta.inbox_poll_since) : null;
+  if (!base) {
+    base = new Date();
+    await db()`update postroom.accounts set meta = meta || ${db().json({ inbox_poll_since: base.toISOString() })} where id = ${account.id}`;
+    return { since: base, first: true };
+  }
+  return { since: new Date(Math.max(base.getTime(), Date.now() - POLL_MAX_LOOKBACK_MS)), first: false };
+}
+
+async function pollDMs(account, token, since, automate) {
+  const convs = await igGet(`${account.external_id}/conversations`, token, {
+    platform: 'instagram', limit: 10,
+    fields: 'participants,updated_time,messages.limit(10){id,message,from,to,created_time,attachments}',
+  }, account);
+  let fresh = 0;
+  let autos = 0;
+  for (const c of convs.data || []) {
+    if (automate && c.updated_time && metaDate(c.updated_time) < since) continue; // nothing new here (first pass stores history)
+    const other = (c.participants?.data || []).find((p) => String(p.id) !== String(account.external_id));
+    if (!other) continue;
+    let thread = await upsertThread(account, other.id, { username: other.username || null });
+    let lastNew = null;
+    for (const m of (c.messages?.data || []).slice().reverse()) {
+      const out = String(m.from?.id) === String(account.external_id);
+      const at = metaDate(m.created_time);
+      const r = await storeMessage(account, other.id, {
+        mid: m.id, direction: out ? 'out' : 'in', text: m.message || null,
+        attachments: m.attachments?.data || null, at, source: out ? 'sync' : at >= since ? 'poll' : 'sync',
+      });
+      thread = r.thread || thread;
+      if (r.inserted && !out && at >= since) { fresh++; lastNew = { text: m.message || null, at }; }
+    }
+    if (!lastNew || !automate) continue;
+    try {
+      if (!thread.username) {
+        const prof = await fetchProfile(account, token, other.id);
+        if (prof.username || prof.name) thread = await upsertThread(account, other.id, prof);
+      }
+      const [{ n }] = await db()`select count(*)::int as n from postroom.dm_messages
+        where thread_id = ${thread.id} and direction = 'in' and created_at < ${since}`;
+      await onInboundDM(account, thread, lastNew.text, n === 0);
+      autos++;
+    } catch (e) {
+      await logEvent({ accountId: account.id, level: 'warn', message: `Auto-reply to @${thread.username || other.id}: ${e.message}` });
+    }
+  }
+  return { fresh, autos };
+}
+
+async function pollComments(account, token, since, automate) {
+  const media = await igGet(`${account.external_id}/media`, token, {
+    limit: 8, fields: 'id,timestamp,comments.limit(30){id,text,timestamp,username,from,parent_id}',
+  }, account);
+  let fresh = 0;
+  for (const md of media.data || []) {
+    for (const c of md.comments?.data || []) {
+      const at = metaDate(c.timestamp);
+      try {
+        await onComment(account, {
+          id: c.id, text: c.text, timestamp: c.timestamp, parent_id: c.parent_id,
+          from: { id: c.from?.id, username: c.from?.username || c.username }, media: { id: md.id },
+        }, { automate: automate && at >= since });
+        if (at >= since) fresh++;
+      } catch (e) {
+        await logEvent({ accountId: account.id, level: 'warn', message: `Comment check: ${e.message}` });
+      }
+    }
+  }
+  return { fresh };
+}
+
+/** One polling pass over every active Instagram account. Called by the cron tick. */
+export async function pollInbox({ dms = true, comments = true, deadline = Date.now() + 40000 } = {}) {
+  const accounts = await db()`select * from postroom.accounts where platform = 'instagram' and status = 'active'`;
+  const out = [];
+  for (const account of accounts) {
+    if (Date.now() > deadline) break;
+    const row = { account: account.username };
+    try {
+      const { since, first } = await pollBaseline(account);
+      const token = await accessToken(account);
+      if (dms) row.dms = await pollDMs(account, token, since, !first);
+      if (comments) row.comments = await pollComments(account, token, since, !first);
+      await db()`update postroom.accounts set meta = (meta - 'inbox_poll_error') || ${db().json({ inbox_poll_at: new Date().toISOString() })} where id = ${account.id}`;
+    } catch (e) {
+      row.error = e.message;
+      await db()`update postroom.accounts set meta = meta || ${db().json({ inbox_poll_at: new Date().toISOString(), inbox_poll_error: e.message.slice(0, 300) })} where id = ${account.id}`;
+    }
+    out.push(row);
+  }
+  return out;
+}
+
 // ---------- reads ----------
 export async function listThreads({ account_id = null, q = '', limit = 100 } = {}) {
   return db()`select t.*, a.username as account_username, a.profile_picture_url as account_avatar,
@@ -360,7 +463,10 @@ export async function inboxStatus() {
     webhook_url: null, // filled by the router
     verify_token_set: !!env('META_WEBHOOK_VERIFY_TOKEN'),
     app_secret_set: !!env('META_APP_SECRET'),
-    accounts: accounts.map((a) => ({ id: a.id, username: a.username, unified: a.meta?.login === 'unified', subscribed: !!a.meta?.dm_subscribed_at })),
+    accounts: accounts.map((a) => ({
+      id: a.id, username: a.username, unified: a.meta?.login === 'unified', subscribed: !!a.meta?.dm_subscribed_at,
+      checked_at: a.meta?.inbox_poll_at || null, check_error: a.meta?.inbox_poll_error || null,
+    })),
   };
 }
 

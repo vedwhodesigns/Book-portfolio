@@ -6,6 +6,7 @@ import { platform, KIND_LABEL } from './platforms/index.js';
 import { accessToken } from './accounts.js';
 import { loadMedia } from './media.js';
 import { MISSED_SLOT_HOURS } from './posts.js';
+import { pollInbox } from './inbox.js';
 
 const MAX_ATTEMPTS = 6;
 const PROCESSING_TIMEOUT_HOURS = 6;
@@ -142,6 +143,9 @@ export async function handleError(post, e) {
 export async function housekeeping(deadline = Date.now() + 60000) {
   const out = {};
   out.tokens = await throttle('tokens', 3600, refreshTokens);
+  // Instagram DMs every minute, comments every ~3 minutes (works while the Meta app is unpublished).
+  out.inbox = await throttle('inbox-dms', 50, () => pollInbox({ dms: true, comments: false, deadline: deadline - 15000 }));
+  if (Date.now() < deadline - 25000) out.comments = await throttle('inbox-comments', 170, () => pollInbox({ dms: false, comments: true, deadline: deadline - 15000 }));
   if (Date.now() < deadline - 20000) out.metrics = await throttle('metrics', 3 * 3600, () => collectMetrics(deadline));
   if (Date.now() < deadline - 20000) out.followers = await throttle('followers', 12 * 3600, collectFollowers);
   out.prune = await throttle('prune', 86400, async () => {
