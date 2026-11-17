@@ -48,7 +48,7 @@ export default function PostDrawer({ id, onClose }) {
       foot={
         <>
           {p.status === 'failed' && <button class="btn primary" disabled={busy} onClick={() => act(() => api(`posts/${id}/retry`, { method: 'POST' }).then(() => api('run', { method: 'POST' }).catch(() => {})), 'Retrying…')}><Icon name="refresh" size={16} /> Retry now</button>}
-          {p.status === 'draft' && <button class="btn primary" disabled={busy} onClick={() => act(() => api(`posts/${id}`, { method: 'PATCH', body: { status: 'scheduled' } }), 'Scheduled')}><Icon name="clock" size={16} /> Schedule</button>}
+          {p.status === 'draft' && <button class="btn primary" disabled={busy} onClick={() => act(() => api(`posts/${id}/schedule`, { method: 'POST', body: {} }), p.group_id ? 'Scheduled on every platform' : 'Scheduled')}><Icon name="clock" size={16} /> Schedule{p.group_id ? ' all' : ''}</button>}
           {editable && !edit && <button class="btn" onClick={() => setEdit({ caption: p.caption, title: p.title || '', at: wallTime(p.scheduled_at) })}>Edit</button>}
           {p.permalink && <a class="btn" href={p.permalink} target="_blank" rel="noreferrer"><Icon name="external" size={16} /> Open</a>}
           <button class="btn" onClick={() => { onClose(); go(`compose?from=${id}`); }}><Icon name="copy" size={16} /> Duplicate</button>

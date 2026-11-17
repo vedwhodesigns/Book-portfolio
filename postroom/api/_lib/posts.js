@@ -247,6 +247,32 @@ export async function updatePost(id, patch, { by = 'app' } = {}) {
   return postRow(row);
 }
 
+/**
+ * Turn a draft into a scheduled post (and, by default, the other drafts of the same cross-post too).
+ * when: a time, "next_slot", or omitted to keep the draft's own time (if it's still in the future).
+ */
+export async function schedulePost(id, { scheduled_at = null, group = true, by = 'app' } = {}) {
+  const p = await mustGet(id);
+  const list = group && p.group_id
+    ? await db()`select * from postroom.posts where group_id = ${p.group_id} and status = 'draft' order by platform`
+    : [p];
+  if (!list.length || list.every((x) => x.status !== 'draft')) throw new HttpError(409, `This post is ${p.status}, not a draft.`);
+  const out = [];
+  for (const x of list) {
+    let when = scheduled_at;
+    if (when === 'next_slot') {
+      const [acc] = await db()`select * from postroom.accounts where id = ${x.account_id}`;
+      when = (await nextSlot(acc)).toISOString();
+    }
+    if (!when) {
+      if (new Date(x.scheduled_at) < new Date(Date.now() + 60e3)) throw new HttpError(400, 'This draft\'s time has passed — give a new time.');
+      when = new Date(x.scheduled_at).toISOString();
+    }
+    out.push(await updatePost(x.id, { scheduled_at: when, status: 'scheduled' }, { by }));
+  }
+  return { scheduled: out.map((r) => ({ id: r.id, platform: r.platform, kind: r.kind, scheduled_at: r.scheduled_at, status: r.status })) };
+}
+
 export async function reschedule(id, when) {
   return updatePost(id, { scheduled_at: when });
 }

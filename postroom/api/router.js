@@ -6,7 +6,7 @@ import { pipeline } from 'node:stream/promises';
 import { APP_URL, TZ, env, HttpError, body, send, redirect, isAuthed, sessionCookie, clearCookie, safeEqual, db, loadSettings, saveSettings, settingSource } from './_lib/core.js';
 import { listAccounts, platformStatus, startConnect, finishConnect, syncAccount, disconnectAccount, getAccount, accessToken } from './_lib/accounts.js';
 import { listMedia, registerMedia, importFromUrl, deleteMedia, updateMediaMeta, uploadConfig, ALLOWED_TYPES, MAX_UPLOAD_BYTES } from './_lib/media.js';
-import { checkTargets, summariseCheck, createPosts, listPosts, getPost, updatePost, cancelPost, retryPost, deletePost, listPlans, approvePlan, discardPlan } from './_lib/posts.js';
+import { checkTargets, summariseCheck, createPosts, listPosts, getPost, updatePost, schedulePost, cancelPost, retryPost, deletePost, listPlans, approvePlan, discardPlan } from './_lib/posts.js';
 import { tick } from './_lib/publisher.js';
 import { overview } from './_lib/analytics.js';
 import { writeCaptions, aiEnabled, draftDMReply } from './_lib/ai.js';
@@ -260,6 +260,7 @@ export default async function handler(req, res) {
       if (!seg[2] && m === 'PATCH') return send(res, 200, await updatePost(id, await body(req)));
       if (!seg[2] && m === 'DELETE') return send(res, 200, await deletePost(id));
       if (seg[2] === 'cancel' && m === 'POST') return send(res, 200, await cancelPost(id));
+      if (seg[2] === 'schedule' && m === 'POST') return send(res, 200, await schedulePost(id, await body(req)));
       if (seg[2] === 'retry' && m === 'POST') return send(res, 200, await retryPost(id));
     }
 

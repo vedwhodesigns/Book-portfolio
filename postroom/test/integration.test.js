@@ -693,3 +693,21 @@ test('reminders: one heads-up ~1 day before and one 10 minutes before, per cross
   assert.equal((await sql`select count(*)::int as n from postroom.notifications where post_id = ${fresh.posts[0].id}`)[0].n, 0);
   await sql`update postroom.posts set status = 'cancelled' where id = any(${[...ids, fresh.posts[0].id]})`;
 });
+
+test('drafts: schedule a cross-post draft in one step (both platforms), at its own time or a new one', { skip }, async () => {
+  const media = ['00000000-0000-0000-0000-0000000000f1'];
+  const later = new Date(Date.now() + 48 * 3600e3).toISOString();
+  const r = await posts.createPosts({ mode: 'draft', scheduled_at: later, media_ids: media, caption: 'draft me',
+    targets: [{ account: 'instagram:brand.one' }, { account: 'youtube:crimearchivesyt', options: { privacy: 'public', made_for_kids: false } }] });
+  const out = await posts.schedulePost(r.posts[0].id);
+  assert.equal(out.scheduled.length, 2, 'both platforms');
+  const rows = await sql`select status, scheduled_at from postroom.posts where group_id = ${r.group_id}`;
+  assert.deepEqual(rows.map((x) => x.status), ['scheduled', 'scheduled']);
+  assert.ok(Math.abs(new Date(rows[0].scheduled_at) - new Date(later)) < 1000, 'kept the draft time');
+  await assert.rejects(posts.schedulePost(r.posts[0].id), /not a draft/);
+  const d2 = await posts.createPosts({ mode: 'draft', media_ids: media, caption: 'old time', targets: [{ account: 'instagram:brand.one' }] });
+  await assert.rejects(posts.schedulePost(d2.posts[0].id), /time has passed/);
+  const s2 = await posts.schedulePost(d2.posts[0].id, { scheduled_at: later });
+  assert.equal(s2.scheduled[0].status, 'scheduled');
+  await sql`update postroom.posts set status = 'cancelled' where group_id = ${r.group_id} or id = ${d2.posts[0].id}`;
+});

@@ -5,7 +5,7 @@ import { updateBrand } from './brand.js';
 import { send, body, env, localLabel, TZ } from './core.js';
 import { listAccounts } from './accounts.js';
 import { listMedia, importFromUrl } from './media.js';
-import { checkTargets, summariseCheck, createPosts, listPosts, getPost, updatePost, cancelPost, listPlans, findAccount } from './posts.js';
+import { checkTargets, summariseCheck, createPosts, listPosts, getPost, updatePost, schedulePost, cancelPost, listPlans, findAccount } from './posts.js';
 import { overview } from './analytics.js';
 import { KIND_LABEL } from './platforms/index.js';
 import { listProjects, projectOverview, searchPosts, getResearchPost, lookupYoutube, lookupInstagram, inspirationBrief } from './research.js';
@@ -81,6 +81,11 @@ const TOOLS = [
     name: 'update_post',
     description: 'Edit a draft, scheduled or failed post (caption, title, time, options).',
     inputSchema: { type: 'object', properties: { id: { type: 'string' }, caption: { type: 'string' }, title: { type: 'string' }, scheduled_at: { type: 'string' }, options: { type: 'object' } }, required: ['id'] },
+  },
+  {
+    name: 'schedule_post',
+    description: 'Schedule a DRAFT post so it publishes automatically. By default every draft in the same cross-post (e.g. its Instagram and YouTube versions) is scheduled together. Use this instead of re-creating a post. To only change the time of an already-scheduled post, use update_post.',
+    inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'Any one post id of the draft' }, scheduled_at: { type: 'string', description: 'Optional new time (ISO with offset, wall-clock "YYYY-MM-DDTHH:mm" in the app time zone, or "next_slot"); omit to keep the draft\'s time.' }, group: { type: 'boolean', description: 'Also schedule the other drafts of the same cross-post (default true).' } }, required: ['id'] },
   },
   { name: 'cancel_post', description: 'Cancel a draft, scheduled or failed post.', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
   {
@@ -159,6 +164,7 @@ async function callTool(name, a = {}) {
     case 'get_post': return getPost(a.id);
     case 'update_post': { const { id, ...patch } = a; return updatePost(id, patch, { by: 'claude' }); }
     case 'cancel_post': return cancelPost(a.id, { by: 'claude' });
+    case 'schedule_post': return schedulePost(a.id, { scheduled_at: a.scheduled_at || null, group: a.group !== false, by: 'claude' });
     case 'get_analytics': return overview(a);
     case 'inbox_threads': return (await inbox.listThreads(a)).map((t) => ({ id: t.id, account: `@${t.account_username}`, with: t.username ? `@${t.username}` : t.igsid, last: t.last_text, last_at: t.last_message_at, unread: t.unread, can_reply: t.can_reply, has_draft: !!t.draft_text }));
     case 'inbox_thread': { const t = await inbox.getThread(a.id, { markRead: false }); return { id: t.id, account: `@${t.account_username}`, with: t.username ? `@${t.username}` : t.igsid, can_reply: t.can_reply, window_ends_at: t.window_ends_at, messages: t.messages.map((m) => ({ from: m.direction === 'in' ? 'them' : 'us', text: m.text, at: m.created_at })) }; }

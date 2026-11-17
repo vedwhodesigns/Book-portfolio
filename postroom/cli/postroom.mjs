@@ -226,7 +226,7 @@ const fmt = (d) => new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', 
 
 const [cmd, ...args] = process.argv.slice(2);
 if (!cmd || cmd === 'help') {
-  console.log('Usage: node postroom.mjs post|check <card.json> · upload <files…> · queue · accounts');
+  console.log('Usage: node postroom.mjs post|check <card.json> · drafts · schedule <post-id> [time|next_slot] · upload <files…> · queue · accounts');
   process.exit(0);
 }
 await login();
@@ -245,6 +245,15 @@ if (cmd === 'accounts') {
   const rows = await api('posts?status=scheduled,processing&limit=60');
   for (const p of rows) console.log(`${fmt(p.scheduled_at)}  ${p.platform}:@${p.username}  ${p.kind}  ${(p.title || p.caption || '').split('\n')[0].slice(0, 60)}`);
   if (!rows.length) console.log('Nothing scheduled.');
+} else if (cmd === 'schedule') {
+  // node postroom.mjs schedule <post-id> [time|next_slot]   — schedule a draft (and its other platforms)
+  if (!args[0]) die('Usage: node postroom.mjs schedule <post-id> [2026-11-20T22:00 | next_slot]');
+  const r = await api(`posts/${args[0]}/schedule`, { method: 'POST', body: args[1] ? { scheduled_at: args[1] } : {} });
+  for (const x of r.scheduled) console.log(`✓ ${x.platform} ${x.kind} → ${fmt(x.scheduled_at)}  [post ${x.id}]`);
+} else if (cmd === 'drafts') {
+  const rows = await api('posts?status=draft&limit=100');
+  for (const p of rows) console.log(`${fmt(p.scheduled_at)}  ${p.platform}:@${p.username}  ${p.kind}  ${(p.title || p.caption || '').split('\n')[0].slice(0, 50)}  [post ${p.id}]`);
+  if (!rows.length) console.log('No drafts.');
 } else if (cmd === 'post' || cmd === 'check') {
   if (!args[0]) die(`Usage: node postroom.mjs ${cmd} card.json`);
   const dry = cmd === 'check';
