@@ -25,9 +25,8 @@ these files from `db/` in order:
 (`001_base.sql` is only for a brand-new database. Alternatively, run `DATABASE_URL=… npm run db:migrate`
 to apply all three, since each is safe to re-run.)
 
-The migration also turns on Row Level Security for every Postroom table. This closes the
-"tables readable with the anon key" hole Supabase was warning about. The app connects as the table
-owner, so it's unaffected.
+The migration also turns on Row Level Security for every Postroom table (which clears Supabase's
+warning) with a policy giving the app's own database login, `postroom_app`, full access.
 
 The existing cron job (`postroom-tick`, every minute) stays as it is. Postroom v2 checks the same
 `x-cron-secret` header, so set `CRON_SECRET` in Vercel to the secret already in that job (Supabase →

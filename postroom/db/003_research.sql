@@ -42,5 +42,18 @@ create table if not exists postroom.research_posts (
 create index if not exists research_posts_author_idx on postroom.research_posts (project_id, author);
 create index if not exists research_posts_views_idx on postroom.research_posts (project_id, views desc nulls last);
 
-alter table postroom.research_projects enable row level security;
-alter table postroom.research_posts enable row level security;
+-- ---------- security ----------
+-- Row Level Security on every table, with full access for the app's own login role
+-- (postroom_app, if it exists) and the owner. Supabase's anon/authenticated roles get nothing.
+do $$
+declare t text;
+begin
+  foreach t in array array['research_projects', 'research_posts'] loop
+    execute format('alter table postroom.%I enable row level security', t);
+    if exists (select 1 from pg_roles where rolname = 'postroom_app') then
+      execute format('drop policy if exists postroom_app_all on postroom.%I', t);
+      execute format('create policy postroom_app_all on postroom.%I for all to postroom_app using (true) with check (true)', t);
+      execute format('grant select, insert, update, delete on postroom.%I to postroom_app', t);
+    end if;
+  end loop;
+end $$;
