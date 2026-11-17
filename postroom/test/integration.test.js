@@ -323,3 +323,20 @@ test('research: toolkit push, search, overview, MCP and YouTube lookup', { skip 
   const vids = await research.searchPosts({ project_id: out.project_id });
   assert.deepEqual(vids.map((v) => [v.external_id, v.type, v.views]), [['v1', 'short', 120000], ['v2', 'video', 30000]]);
 });
+
+test('settings stored in the database: save, apply, Vercel values win', { skip }, async () => {
+  const login = await call('POST', 'login', { body: { password: 'pw' } });
+  const cookie = login.headers['set-cookie'].split(';')[0];
+  const saved = await call('POST', 'settings', { body: { TIKTOK_AUDITED: 'true', ANTHROPIC_API_KEY: 'sk-test' }, headers: { cookie } });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  assert.equal(saved.body.settings.TIKTOK_AUDITED, 'postroom');
+  const cfg = await call('GET', 'config', { headers: { cookie } });
+  assert.equal(cfg.body.audited.tiktok, true);
+  assert.equal(cfg.body.ai, true);
+  assert.equal(cfg.body.settings.IG_APP_ID, 'vercel');
+  assert.equal((await call('POST', 'settings', { body: { IG_APP_ID: 'x' }, headers: { cookie } })).status, 400, 'env vars win');
+  assert.equal((await call('POST', 'settings', { body: { ENCRYPTION_KEY: 'x' }, headers: { cookie } })).status, 400, 'not editable');
+  assert.equal((await call('POST', 'settings', { body: { TIKTOK_AUDITED: '' }, headers: { cookie } })).status, 200);
+  await call('POST', 'settings', { body: { ANTHROPIC_API_KEY: '' }, headers: { cookie } });
+  assert.equal((await call('GET', 'config', { headers: { cookie } })).body.audited.tiktok, false);
+});

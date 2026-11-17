@@ -78,6 +78,51 @@ export async function kvSet(key, value, ttlSeconds = null) {
 export async function kvDel(key) {
   await db()`delete from postroom.kv where key = ${key}`;
 }
+// ---------- settings stored in the database ----------
+// Anything not set as a Vercel environment variable can live in postroom.kv('settings'),
+// so keys can be pasted into Postroom → Settings instead of the Vercel dashboard.
+// Real environment variables always win.
+export const DB_SETTING_KEYS = [
+  'APP_PASSWORD', 'ENCRYPTION_KEY', 'SESSION_SECRET', 'CRON_SECRET', 'RESEARCH_KEY', 'MCP_KEY', 'APP_TIMEZONE',
+  'IG_APP_ID', 'IG_APP_SECRET', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'TIKTOK_CLIENT_KEY', 'TIKTOK_CLIENT_SECRET',
+  'YOUTUBE_AUDITED', 'TIKTOK_AUDITED', 'ANTHROPIC_API_KEY', 'MCP_AUTO_APPROVE',
+];
+const fromEnv = new Set();
+let envScanned = false;
+let settingsLoadedAt = 0;
+export async function loadSettings({ force = false } = {}) {
+  if (!envScanned) {
+    for (const k of DB_SETTING_KEYS) if (process.env[k]) fromEnv.add(k);
+    envScanned = true;
+  }
+  if (!force && Date.now() - settingsLoadedAt < 30000) return;
+  let s = {};
+  try {
+    s = (await kvGet('settings')) || {};
+  } catch (e) {
+    console.error('loadSettings failed', e.message);
+    return;
+  }
+  for (const k of DB_SETTING_KEYS) {
+    if (fromEnv.has(k)) continue;
+    if (s[k] == null || s[k] === '') delete process.env[k];
+    else process.env[k] = String(s[k]);
+  }
+  settingsLoadedAt = Date.now();
+}
+export async function saveSettings(patch) {
+  const cur = (await kvGet('settings')) || {};
+  for (const [k, v] of Object.entries(patch || {})) {
+    if (!DB_SETTING_KEYS.includes(k)) throw new HttpError(400, `Unknown setting ${k}.`);
+    if (fromEnv.has(k)) throw new HttpError(400, `${k} is set in Vercel; change it there.`);
+    if (v === null || v === '') delete cur[k];
+    else cur[k] = String(v).trim();
+  }
+  await kvSet('settings', cur);
+  await loadSettings({ force: true });
+}
+export const settingSource = (k) => (fromEnv.has(k) ? 'vercel' : process.env[k] ? 'postroom' : null);
+
 /** Run `fn` at most once per `everySec` (best effort, shared through kv). */
 export async function throttle(key, everySec, fn) {
   const last = await kvGet(`throttle:${key}`);

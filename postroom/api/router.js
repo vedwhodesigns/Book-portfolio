@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import { APP_URL, TZ, env, HttpError, body, send, redirect, isAuthed, sessionCookie, clearCookie, safeEqual, db } from './_lib/core.js';
+import { APP_URL, TZ, env, HttpError, body, send, redirect, isAuthed, sessionCookie, clearCookie, safeEqual, db, loadSettings, saveSettings, settingSource } from './_lib/core.js';
 import { listAccounts, platformStatus, startConnect, finishConnect, syncAccount, disconnectAccount, getAccount, accessToken } from './_lib/accounts.js';
 import { listMedia, registerMedia, importFromUrl, deleteMedia, uploadConfig, ALLOWED_TYPES, MAX_UPLOAD_BYTES } from './_lib/media.js';
 import { checkTargets, summariseCheck, createPosts, listPosts, getPost, updatePost, cancelPost, retryPost, deletePost, listPlans, approvePlan, discardPlan } from './_lib/posts.js';
@@ -14,6 +14,12 @@ import { handleMcp } from './_lib/mcp.js';
 import { platform } from './_lib/platforms/index.js';
 import { storageMode, LOCAL_DIR } from './_lib/storage.js';
 import { ingest, listProjects, projectOverview, searchPosts, getResearchPost, deleteProject, lookupYoutube, inspirationBrief } from './_lib/research.js';
+
+// Settings the owner can paste into Postroom → Settings (stored in the database).
+const EDITABLE_SETTINGS = [
+  'IG_APP_ID', 'IG_APP_SECRET', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'TIKTOK_CLIENT_KEY', 'TIKTOK_CLIENT_SECRET',
+  'YOUTUBE_AUDITED', 'TIKTOK_AUDITED', 'ANTHROPIC_API_KEY', 'MCP_AUTO_APPROVE', 'APP_PASSWORD',
+];
 
 function routePath(req) {
   if (req.query && typeof req.query.__p === 'string') return req.query.__p.replace(/^\/+|\/+$/g, '');
@@ -51,6 +57,7 @@ export default async function handler(req, res) {
   const seg = p.split('/');
   const m = req.method;
   try {
+    await loadSettings();
     // ---------- public ----------
     if (seg[0] === 'mcp') {
       if (!seg[1] || !env('MCP_KEY') || !safeEqual(seg[1], env('MCP_KEY'))) return send(res, 404, { error: 'Not found' });
@@ -135,7 +142,14 @@ export default async function handler(req, res) {
         audited: { youtube: env('YOUTUBE_AUDITED') === 'true', tiktok: env('TIKTOK_AUDITED') === 'true' },
         cron: !!env('CRON_SECRET'),
         research: { ingest_url: `${APP_URL()}/api/research/ingest`, key_set: !!env('RESEARCH_KEY') },
+        settings: Object.fromEntries(EDITABLE_SETTINGS.map((k) => [k, settingSource(k)])),
       });
+    }
+    if (p === 'settings' && m === 'POST') {
+      const patch = await body(req);
+      for (const k of Object.keys(patch)) if (!EDITABLE_SETTINGS.includes(k)) throw new HttpError(400, `${k} can't be changed here.`);
+      await saveSettings(patch);
+      return send(res, 200, { ok: true, settings: Object.fromEntries(EDITABLE_SETTINGS.map((k) => [k, settingSource(k)])) });
     }
 
     // accounts

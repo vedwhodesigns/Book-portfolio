@@ -1,6 +1,59 @@
 import { useState } from 'preact/hooks';
 import { api } from '../api.js';
-import { useApp, Icon, PfMark, CopyField, Seg } from '../ui.jsx';
+import { useApp, Icon, PfMark, CopyField, Seg, Spinner } from '../ui.jsx';
+
+const KEYS = {
+  instagram: { fields: [['IG_APP_ID', 'Instagram app ID'], ['IG_APP_SECRET', 'Instagram app secret']], where: 'Meta for Developers → your app → Instagram → API setup with Instagram login' },
+  youtube: { fields: [['GOOGLE_CLIENT_ID', 'Google OAuth client ID'], ['GOOGLE_CLIENT_SECRET', 'Google OAuth client secret']], where: 'Google Cloud console → APIs & Services → Credentials → your OAuth client' },
+  tiktok: { fields: [['TIKTOK_CLIENT_KEY', 'TikTok client key'], ['TIKTOK_CLIENT_SECRET', 'TikTok client secret']], where: 'TikTok for Developers → Manage apps → your app' },
+};
+
+function PlatformKeys({ p }) {
+  const { config, toast, refresh } = useApp();
+  const [vals, setVals] = useState({});
+  const [busy, setBusy] = useState(false);
+  const k = KEYS[p.id];
+  const save = async () => {
+    setBusy(true);
+    try {
+      await api('settings', { method: 'POST', body: vals });
+      setVals({});
+      toast(`${p.label} keys saved`);
+      refresh();
+    } catch (e) {
+      toast(e.message, 'bad');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const dirty = Object.values(vals).some((v) => v);
+  return (
+    <div class="col" style={{ gap: 10, padding: '14px 0', borderTop: '1px solid var(--line)' }}>
+      <div class="row wrap">
+        <PfMark platform={p.id} size={22} />
+        <b style={{ width: 90 }}>{p.label}</b>
+        {p.configured ? <span class="pill good"><span class="dot" />Ready</span> : <span class="pill warn">Keys needed</span>}
+        {p.id === 'youtube' && p.configured && <span class={`pill ${config.audited.youtube ? 'good' : ''}`}>{config.audited.youtube ? 'Audited: public uploads' : 'Not audited: uploads are private'}</span>}
+        {p.id === 'tiktok' && p.configured && <span class={`pill ${config.audited.tiktok ? 'good' : ''}`}>{config.audited.tiktok ? 'Audited: public posts' : 'Not audited: "Only me" or inbox'}</span>}
+      </div>
+      <div class="grid2">
+        {k.fields.map(([key, label]) => (
+          <div class="field" key={key}>
+            <label for={key}>{label}</label>
+            <input id={key} class="input" type={key.includes('SECRET') ? 'password' : 'text'} autoComplete="off"
+              placeholder={config.settings?.[key] === 'vercel' ? 'Set in Vercel' : config.settings?.[key] ? 'Saved — paste to replace' : 'Paste here'}
+              disabled={config.settings?.[key] === 'vercel'} value={vals[key] || ''} onInput={(e) => setVals({ ...vals, [key]: e.currentTarget.value })} />
+          </div>
+        ))}
+      </div>
+      <div class="field"><label>Redirect URL to paste into the {p.label} developer app</label><CopyField value={p.redirect_uri} /></div>
+      <div class="row between wrap">
+        <span class="tiny faint">Find the keys in: {k.where}. Full walkthrough in SETUP.md.</span>
+        <button class="btn primary sm" disabled={!dirty || busy} onClick={save}>{busy ? <Spinner /> : 'Save keys'}</button>
+      </div>
+    </div>
+  );
+}
 
 function theme() {
   try { return localStorage.getItem('pr-theme') || 'system'; } catch { return 'system'; }
@@ -28,20 +81,10 @@ export default function Settings() {
           </div>
         </section>
 
-        <section class="card pad">
-          <h2>Platforms</h2>
-          <div class="col" style={{ gap: 10 }}>
-            {config.platforms.map((p) => (
-              <div class="row" key={p.id}>
-                <PfMark platform={p.id} size={22} />
-                <b style={{ width: 90 }}>{p.label}</b>
-                {p.configured ? <span class="pill good"><span class="dot" />Ready</span> : <span class="pill warn">Missing {p.missing.join(', ')}</span>}
-                {p.id === 'youtube' && p.configured && <span class={`pill ${config.audited.youtube ? 'good' : ''}`}>{config.audited.youtube ? 'Audited: public uploads' : 'Not audited: uploads are private'}</span>}
-                {p.id === 'tiktok' && p.configured && <span class={`pill ${config.audited.tiktok ? 'good' : ''}`}>{config.audited.tiktok ? 'Audited: public posts' : 'Not audited: "Only me" or inbox'}</span>}
-              </div>
-            ))}
-          </div>
-          <p class="small muted">Each platform needs a free developer app (one-time, ~15 minutes each). Follow <b>SETUP.md</b> in the Postroom folder.</p>
+        <section class="card pad" id="platform-keys">
+          <h2>Platform keys</h2>
+          <p class="small muted" style={{ marginTop: 0 }}>Each platform needs a free developer app (one-time). Paste its two keys here — no Vercel needed. Your accounts then connect by logging in on the platform's own page.</p>
+          {config.platforms.map((p) => <PlatformKeys key={p.id} p={p} />)}
         </section>
 
         <section class="card pad">

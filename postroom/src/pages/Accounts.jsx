@@ -46,7 +46,7 @@ export default function Accounts() {
               <div class="notice warn" style={{ marginBottom: 12 }}>
                 <Icon name="alert" size={16} />
                 <div>
-                  <b>One-time setup:</b> create a free {pf.id === 'instagram' ? 'Meta' : pf.id === 'youtube' ? 'Google Cloud' : 'TikTok for Developers'} app and add {pf.missing.map((k, i) => <span key={k}>{i ? ' and ' : ''}<code>{k}</code></span>)} to Vercel → Settings → Environment Variables. Step-by-step in <b>SETUP.md</b>.
+                  <b>One-time setup:</b> create a free {pf.id === 'instagram' ? 'Meta' : pf.id === 'youtube' ? 'Google Cloud' : 'TikTok for Developers'} app, then paste its keys in <a href="#/settings">Settings → Platform keys</a>. Step-by-step in <b>SETUP.md</b>.
                   <div class="tiny" style={{ marginTop: 4 }}>Redirect URL to paste into the app: <code>{pf.redirect_uri}</code></div>
                 </div>
               </div>
