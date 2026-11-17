@@ -72,6 +72,11 @@ export async function finishConnect(id, query) {
   const profiles = result.profiles || [result.profile];
   const rows = [];
   for (const profile of profiles) rows.push(await saveConnected(p, id, tokens, profile));
+  if (id === 'instagram') {
+    // Turn on DM/comment webhooks for the new accounts (best effort; Inbox has a retry button).
+    const { subscribeAccount } = await import('./inbox.js');
+    for (const r of rows) await subscribeAccount(r).catch((e) => logEvent({ accountId: r.id, level: 'warn', message: `DM setup: ${e.message}` }));
+  }
   return { ...rows[0], connected: rows.map((r) => r.username) };
 }
 

@@ -9,7 +9,8 @@ import { listMedia, registerMedia, importFromUrl, deleteMedia, uploadConfig, ALL
 import { checkTargets, summariseCheck, createPosts, listPosts, getPost, updatePost, cancelPost, retryPost, deletePost, listPlans, approvePlan, discardPlan } from './_lib/posts.js';
 import { tick } from './_lib/publisher.js';
 import { overview } from './_lib/analytics.js';
-import { writeCaptions, aiEnabled } from './_lib/ai.js';
+import { writeCaptions, aiEnabled, draftDMReply } from './_lib/ai.js';
+import * as inbox from './_lib/inbox.js';
 import { handleMcp } from './_lib/mcp.js';
 import { platform } from './_lib/platforms/index.js';
 import { storageMode, LOCAL_DIR } from './_lib/storage.js';
@@ -30,6 +31,19 @@ function query(req) {
   if (req.query) return req.query;
   return Object.fromEntries(new URL(req.url, 'http://x').searchParams);
 }
+/** Raw request body (needed to check Meta's webhook signature). */
+async function readRaw(req) {
+  if (req[Symbol.asyncIterator] && req.readable !== false) {
+    const chunks = [];
+    for await (const c of req) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
+    if (chunks.length) return Buffer.concat(chunks);
+  }
+  const b = req.body;
+  if (Buffer.isBuffer(b)) return b;
+  if (typeof b === 'string') return Buffer.from(b);
+  return Buffer.from(b ? JSON.stringify(b) : '');
+}
+
 function requireAuth(req) {
   if (!isAuthed(req)) throw new HttpError(401, 'Sign in to Postroom first.');
 }
@@ -62,6 +76,22 @@ export default async function handler(req, res) {
     if (seg[0] === 'mcp') {
       if (!seg[1] || !env('MCP_KEY') || !safeEqual(seg[1], env('MCP_KEY'))) return send(res, 404, { error: 'Not found' });
       return handleMcp(req, res);
+    }
+    // Meta webhooks: Instagram DMs and comments.
+    if (p === 'webhooks/meta') {
+      if (m === 'GET') {
+        const challenge = inbox.verifyChallenge(query(req));
+        if (challenge == null) return send(res, 403, { error: 'Bad verify token' });
+        res.statusCode = 200;
+        res.setHeader('content-type', 'text/plain');
+        return res.end(challenge);
+      }
+      const raw = await readRaw(req);
+      if (!inbox.verifySignature(raw, req.headers['x-hub-signature-256'])) return send(res, 401, { error: 'Bad signature' });
+      let payload;
+      try { payload = JSON.parse(raw.toString('utf8')); } catch { return send(res, 400, { error: 'Bad JSON' }); }
+      const r = await inbox.processWebhook(payload);
+      return send(res, 200, { ok: true, ...r });
     }
     if (p === 'cron/tick') {
       const secret = req.headers['x-cron-secret'] || String(req.headers.authorization || '').replace(/^Bearer /, '');
@@ -211,6 +241,43 @@ export default async function handler(req, res) {
     if (p === 'plans' && m === 'GET') return send(res, 200, await listPlans(query(req)));
     if (seg[0] === 'plans' && seg[2] === 'approve' && m === 'POST') return send(res, 200, await approvePlan(seg[1]));
     if (seg[0] === 'plans' && seg[2] === 'discard' && m === 'POST') return send(res, 200, await discardPlan(seg[1]));
+
+    // inbox (Instagram DMs, comments, automations)
+    if (seg[0] === 'inbox') {
+      if (p === 'inbox/status' && m === 'GET') {
+        const st = await inbox.inboxStatus();
+        const [{ n }] = await db()`select coalesce(sum(unread), 0)::int as n from postroom.dm_threads`;
+        return send(res, 200, { ...st, webhook_url: `${APP_URL()}/api/webhooks/meta`, verify_token: env('META_WEBHOOK_VERIFY_TOKEN') || null, unread: n });
+      }
+      if (p === 'inbox/threads' && m === 'GET') return send(res, 200, await inbox.listThreads(query(req)));
+      if (seg[1] === 'threads' && seg[2]) {
+        const id = seg[2];
+        if (!seg[3] && m === 'GET') return send(res, 200, await inbox.getThread(id));
+        if (seg[3] === 'reply' && m === 'POST') return send(res, 200, await inbox.replyInThread(id, (await body(req)).text));
+        if (seg[3] === 'draft' && m === 'POST') {
+          const t = await inbox.getThread(id, { markRead: false });
+          const text = await draftDMReply({ thread: t, accountName: t.account_username, guidance: (await body(req)).guidance || '' });
+          await inbox.saveDraft(id, text, 'claude');
+          return send(res, 200, { text });
+        }
+        if (seg[3] === 'draft' && m === 'DELETE') return send(res, 200, await inbox.saveDraft(id, null));
+      }
+      if (p === 'inbox/sync' && m === 'POST') {
+        const { account_id } = await body(req);
+        const ids = account_id ? [account_id] : (await db()`select id from postroom.accounts where platform = 'instagram' and status = 'active'`).map((a) => a.id);
+        const out = [];
+        for (const a of ids) {
+          try { out.push({ account_id: a, ...(await inbox.syncConversations(a)) }); } catch (e) { out.push({ account_id: a, error: e.message }); }
+        }
+        return send(res, 200, out);
+      }
+      if (p === 'inbox/subscribe' && m === 'POST') return send(res, 200, await inbox.subscribeAll());
+      if (p === 'inbox/comments' && m === 'GET') return send(res, 200, await inbox.listComments(query(req)));
+      if (p === 'inbox/rules' && m === 'GET') return send(res, 200, await inbox.listRules());
+      if (p === 'inbox/rules' && m === 'POST') return send(res, 200, await inbox.createRule(await body(req)));
+      if (seg[1] === 'rules' && seg[2] && m === 'PATCH') return send(res, 200, await inbox.updateRule(seg[2], await body(req)));
+      if (seg[1] === 'rules' && seg[2] && m === 'DELETE') return send(res, 200, await inbox.deleteRule(seg[2]));
+    }
 
     // research extension
     if (p === 'research/projects' && m === 'GET') return send(res, 200, await listProjects());

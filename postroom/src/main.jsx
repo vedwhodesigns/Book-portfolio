@@ -12,11 +12,13 @@ import Accounts from './pages/Accounts.jsx';
 import Library from './pages/Library.jsx';
 import Settings from './pages/Settings.jsx';
 import Research from './pages/Research.jsx';
+import Inbox from './pages/Inbox.jsx';
 import PostDrawer from './pages/PostDrawer.jsx';
 
 const NAV = [
   { path: 'calendar', label: 'Calendar', icon: 'calendar' },
   { path: 'queue', label: 'Queue', icon: 'list' },
+  { path: 'inbox', label: 'Inbox', icon: 'inbox' },
   { path: 'plans', label: 'Plans', icon: 'sparkle' },
   { path: 'analytics', label: 'Analytics', icon: 'chart' },
   { path: 'accounts', label: 'Accounts', icon: 'users' },
@@ -24,7 +26,7 @@ const NAV = [
   { path: 'research', label: 'Research', icon: 'layers', ext: true },
   { path: 'settings', label: 'Settings', icon: 'settings' },
 ];
-const PAGES = { calendar: Calendar, compose: Compose, queue: Queue, plans: Plans, analytics: Analytics, accounts: Accounts, library: Library, settings: Settings, research: Research };
+const PAGES = { calendar: Calendar, compose: Compose, queue: Queue, plans: Plans, analytics: Analytics, accounts: Accounts, library: Library, settings: Settings, research: Research, inbox: Inbox };
 
 function parseHash() {
   const h = location.hash.replace(/^#\/?/, '');
@@ -72,6 +74,7 @@ function App() {
   const [config, setConfig] = useState(null);
   const [accounts, setAccounts] = useState([]);
   const [plansCount, setPlansCount] = useState(0);
+  const [unread, setUnread] = useState(0);
   const [toasts, setToasts] = useState([]);
   const [openId, setOpenId] = useState(null);
   const [bump, setBump] = useState(0);
@@ -88,6 +91,7 @@ function App() {
     setConfig(cfg);
     setAccounts(accs);
     setPlansCount(plans.length);
+    api('inbox/status').then((s) => setUnread(s.unread || 0)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -138,6 +142,7 @@ function App() {
                 <Icon name={n.icon} />
                 {n.label}
                 {n.path === 'plans' && plansCount > 0 && <span class="badge">{plansCount}</span>}
+                {n.path === 'inbox' && unread > 0 && <span class="badge">{unread}</span>}
                 {n.path === 'accounts' && needsAttention > 0 && <span class="badge" title="Needs attention">!</span>}
               </a>,
             ])}
@@ -149,7 +154,7 @@ function App() {
         </main>
         <nav class="tabbar" aria-label="Main">
           {[['calendar', 'Calendar', 'calendar'], ['queue', 'Queue', 'list'], ['compose', 'New', 'plus'], ['analytics', 'Stats', 'chart'], ['settings', 'More', 'more']].map(([p, l, i]) => (
-            <a key={p} href={`#/${p}`} class={`${route.path === p || (p === 'settings' && ['accounts', 'plans', 'library', 'research'].includes(route.path)) ? 'on' : ''} ${p === 'compose' ? 'plus' : ''}`}>
+            <a key={p} href={`#/${p}`} class={`${route.path === p || (p === 'settings' && ['accounts', 'plans', 'library', 'research', 'inbox'].includes(route.path)) ? 'on' : ''} ${p === 'compose' ? 'plus' : ''}`}>
               <span class="ic"><Icon name={i} size={20} /></span>{l}
               {p === 'settings' && (plansCount > 0 || needsAttention > 0) && <span class="badge">{plansCount + needsAttention}</span>}
             </a>

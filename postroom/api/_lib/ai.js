@@ -77,3 +77,25 @@ export async function writeCaptions({ brief = '', platforms = [], media_id = nul
   }
   return out;
 }
+
+/** Draft a reply to an Instagram DM thread. Saved as a draft; a person sends it. */
+export async function draftDMReply({ thread, accountName, guidance = '' }) {
+  if (!aiEnabled()) throw new HttpError(400, 'Add a Claude API key in Settings → Claude to draft replies here — or ask Claude through the connector.');
+  const history = (thread.messages || []).slice(-20)
+    .map((m) => `${m.direction === 'in' ? `@${thread.username || 'them'}` : `@${accountName} (us)`}: ${m.text || '[attachment]'}`).join('\n');
+  if (!history) throw new HttpError(400, 'There are no messages to reply to yet.');
+  const client = new Anthropic();
+  const res = await client.beta.messages.create({
+    model: MODEL(),
+    max_tokens: 1500,
+    betas: ['server-side-fallback-2026-07-01'],
+    fallbacks: 'default',
+    output_config: { effort: 'low' },
+    system: `You draft Instagram DM replies for the account @${accountName}. Reply as that account: warm, brief (1–3 short sentences), in the same language as the other person. Never invent prices, dates, links or promises that aren't in the conversation or the guidance — if something is unknown, say you'll check. Output only the reply text.`,
+    messages: [{ role: 'user', content: `Conversation so far:\n${history}\n\n${guidance ? `Guidance from the owner: ${guidance}\n\n` : ''}Write the next reply from @${accountName}.` }],
+  });
+  if (res.stop_reason === 'refusal') throw new HttpError(422, 'Claude declined to draft this one.');
+  const text = res.content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+  if (!text) throw new HttpError(502, 'Claude returned an empty draft. Try again.');
+  return text.slice(0, 1000);
+}

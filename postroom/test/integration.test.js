@@ -37,6 +37,16 @@ async function fakeFetch(input, init = {}) {
       return json({ access_token: 'bisu-token', token_type: 'bearer' });
     }
     if (p === 'me') return json({ client_business_id: 'cb1', id: 'su1' });
+    if (p.endsWith('/messages') && method === 'POST') {
+      const f = new URLSearchParams(String(init.body));
+      const recipient = JSON.parse(f.get('recipient'));
+      const message = JSON.parse(f.get('message'));
+      (state.sent ||= []).push({ recipient, text: message.text });
+      return json({ recipient_id: recipient.id || 'igsid-commenter', message_id: `m_out_${state.sent.length}` });
+    }
+    if (p.endsWith('/replies') && method === 'POST') { state.publicReplies = (state.publicReplies || 0) + 1; return json({ id: 'reply1' }); }
+    if (p.endsWith('/subscribed_apps') && method === 'POST') { state.subscribed = (state.subscribed || 0) + 1; return json({ success: true }); }
+    if (p === 'igsid-1') return json({ username: 'fan.one', name: 'Fan One' });
     if (p === 'me/assigned_instagram_accounts') return json({ data: [{ id: '17841400000000001', username: 'brand.one' }, { id: '17841400000000002', username: 'brand.two' }] });
     if (/^1784140000000000[12]$/.test(p)) return json({ id: p, username: p.endsWith('1') ? 'brand.one' : 'brand.two', name: 'Brand', followers_count: 1234 });
     if (p.endsWith('content_publishing_limit')) return json({ data: [{ quota_usage: 0, config: { quota_total: 100 } }] });
@@ -116,7 +126,7 @@ before(async () => {
   if (skip) return;
   sql = postgres(URL_, { onnotice: () => {}, transform: { undefined: null } });
   await sql.unsafe('drop schema if exists postroom cascade');
-  for (const f of ['001_base.sql', '002_multiplatform.sql', '003_research.sql']) await sql.unsafe(fs.readFileSync(new URL(`../db/${f}`, import.meta.url), 'utf8'));
+  for (const f of ['001_base.sql', '002_multiplatform.sql', '003_research.sql', '004_inbox.sql']) await sql.unsafe(fs.readFileSync(new URL(`../db/${f}`, import.meta.url), 'utf8'));
   globalThis.fetch = fakeFetch;
   core = await import('../api/_lib/core.js');
   posts = await import('../api/_lib/posts.js');
@@ -378,4 +388,89 @@ test('Instagram via Meta Unified login: one login connects several accounts and 
   assert.equal(p.permalink, 'https://www.instagram.com/reel/unified/');
   assert.ok(state.fbPublish, 'published through graph.facebook.com');
   await call('POST', 'settings', { body: { META_APP_ID: '', META_APP_SECRET: '', META_CONFIG_ID: '' }, headers: { cookie } });
+});
+
+test('Instagram inbox: webhooks, auto-replies, comment-to-DM, 24h window, drafts', { skip }, async () => {
+  const crypto = await import('node:crypto');
+  await core.saveSettings({ META_APP_SECRET: 'appsecret', META_WEBHOOK_VERIFY_TOKEN: 'vt123' });
+  const inbox = await import('../api/_lib/inbox.js');
+  const [acct] = await sql`select * from postroom.accounts where username = 'brand.one'`;
+  assert.ok(acct, 'unified account from the previous test');
+
+  // verification handshake
+  const bad = await call('GET', 'webhooks/meta?hub.mode=subscribe&hub.verify_token=nope&hub.challenge=42');
+  assert.equal(bad.status, 403);
+  const ok = await new Promise((resolve) => {
+    const res = { statusCode: 200, headers: {}, setHeader(k, v) { this.headers[k] = v; }, end(b) { resolve({ status: this.statusCode, body: b }); } };
+    router({ method: 'GET', url: '/api/webhooks/meta', headers: {}, query: { __p: 'webhooks/meta', 'hub.mode': 'subscribe', 'hub.verify_token': 'vt123', 'hub.challenge': '42' } }, res);
+  });
+  assert.deepEqual([ok.status, ok.body], [200, '42']);
+
+  // automations
+  await inbox.createRule({ kind: 'welcome', reply_text: 'Hi {username}, thanks for writing!' });
+  await inbox.createRule({ kind: 'dm_keyword', keywords: 'price, cost', reply_text: 'Our price list: example' });
+  await inbox.createRule({ kind: 'comment_keyword', keywords: ['LINK'], reply_text: 'Here is your link {username}', public_reply_text: 'Check your DMs!' });
+  await assert.rejects(inbox.createRule({ kind: 'dm_keyword', keywords: '', reply_text: 'x' }), /keyword/);
+  assert.equal(inbox.ruleMatches({ match: 'contains', keywords: ['link'] }, 'Send me the LINK please'), true);
+  assert.equal(inbox.ruleMatches({ match: 'contains', keywords: ['link'] }, 'linkedin?'), false, 'whole words only');
+
+  const post = async (payload, sig = true) => {
+    const raw = JSON.stringify(payload);
+    const h = sig ? `sha256=${crypto.createHmac('sha256', 'appsecret').update(raw).digest('hex')}` : 'sha256=bad';
+    return call('POST', 'webhooks/meta', { body: raw, headers: { 'x-hub-signature-256': h } });
+  };
+  const now = Date.now();
+  const dm = (mid, text) => ({ object: 'instagram', entry: [{ id: acct.external_id, time: Date.now(), messaging: [{ sender: { id: 'igsid-1' }, recipient: { id: acct.external_id }, timestamp: Date.now(), message: { mid, text } }] }] });
+
+  assert.equal((await post(dm('m1', 'hello'), false)).status, 401, 'bad signature rejected');
+  state.sent = [];
+  assert.equal((await post(dm('m1', 'hello'))).status, 200);
+  await post(dm('m1', 'hello')); // duplicate delivery is ignored
+  assert.equal(state.sent.length, 1, 'welcome sent once');
+  assert.match(state.sent[0].text, /Hi @fan\.one/);
+  await post(dm('m2', 'what is the PRICE?'));
+  assert.equal(state.sent.length, 2);
+  assert.equal(state.sent[1].text, 'Our price list: example');
+
+  // comment → private DM + public reply
+  const comment = { object: 'instagram', entry: [{ id: acct.external_id, time: now, changes: [{ field: 'comments', value: { id: 'c123', text: 'LINK please', from: { id: 'igsid-9', username: 'commenter' }, media: { id: 'media1' } } }] }] };
+  await post(comment);
+  await post(comment);
+  const last = state.sent.at(-1);
+  assert.deepEqual(last.recipient, { comment_id: 'c123' });
+  assert.equal(last.text, 'Here is your link @commenter');
+  assert.equal(state.publicReplies, 1);
+  const [c] = await sql`select dm_sent, public_replied from postroom.ig_comments where comment_id = 'c123'`;
+  assert.deepEqual([c.dm_sent, c.public_replied], [true, true]);
+
+  // threads via HTTP
+  const login = await call('POST', 'login', { body: { password: 'pw' } });
+  const cookie = login.headers['set-cookie'].split(';')[0];
+  const threads = (await call('GET', 'inbox/threads', { headers: { cookie } })).body;
+  const t = threads.find((x) => x.username === 'fan.one');
+  assert.ok(t && t.can_reply);
+  const full = (await call('GET', `inbox/threads/${t.id}`, { headers: { cookie } })).body;
+  assert.deepEqual(full.messages.map((m) => m.direction), ['in', 'out', 'in', 'out']);
+  const r = await call('POST', `inbox/threads/${t.id}/reply`, { body: { text: 'Anything else?' }, headers: { cookie } });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(state.sent.at(-1).text, 'Anything else?');
+
+  // 24h window
+  await sql`update postroom.dm_threads set last_inbound_at = now() - interval '25 hours' where id = ${t.id}`;
+  const late = await call('POST', `inbox/threads/${t.id}/reply`, { body: { text: 'late' }, headers: { cookie } });
+  assert.equal(late.status, 409);
+
+  // Claude drafts through MCP are saved, never sent
+  const before = state.sent.length;
+  const d = await call('POST', 'mcp/mcpkey', { body: { jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'draft_dm_reply', arguments: { id: t.id, text: 'Happy to help!' } } } });
+  assert.ok(!d.body.result.isError, d.body.result.content[0].text);
+  assert.equal(state.sent.length, before);
+  const [dt] = await sql`select draft_text, draft_by from postroom.dm_threads where id = ${t.id}`;
+  assert.deepEqual([dt.draft_text, dt.draft_by], ['Happy to help!', 'claude']);
+  const auto = await call('POST', 'mcp/mcpkey', { body: { jsonrpc: '2.0', id: 8, method: 'tools/call', params: { name: 'create_automation', arguments: { kind: 'dm_keyword', keywords: ['hours'], reply_text: 'We are open 9–5' } } } });
+  assert.equal(JSON.parse(auto.body.result.content[0].text).enabled, false, 'Claude-created automations start OFF');
+
+  // subscribing accounts to webhooks
+  const sub = await call('POST', 'inbox/subscribe', { headers: { cookie } });
+  assert.ok(sub.body.some((x) => x.ok));
 });

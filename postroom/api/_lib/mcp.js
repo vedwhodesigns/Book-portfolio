@@ -4,10 +4,11 @@
 import { send, body, env, localLabel, TZ } from './core.js';
 import { listAccounts } from './accounts.js';
 import { listMedia, importFromUrl } from './media.js';
-import { checkTargets, summariseCheck, createPosts, listPosts, getPost, updatePost, cancelPost, listPlans } from './posts.js';
+import { checkTargets, summariseCheck, createPosts, listPosts, getPost, updatePost, cancelPost, listPlans, findAccount } from './posts.js';
 import { overview } from './analytics.js';
 import { KIND_LABEL } from './platforms/index.js';
 import { listProjects, projectOverview, searchPosts, getResearchPost, lookupYoutube, inspirationBrief } from './research.js';
+import * as inbox from './inbox.js';
 
 const PROTOCOL = '2025-06-18';
 
@@ -81,6 +82,28 @@ const TOOLS = [
   },
   { name: 'research_post', description: 'Full detail of one researched post: transcript, the full teardown (idea, hook, script beats, edit, sound, recipe) and measured pacing/loudness, plus an inspiration brief.', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
   { name: 'research_youtube_channel', description: 'Analyse any public YouTube channel (by @handle, URL or channel id) through the official API: subscribers and its latest videos with views/likes/comments. Saved as a research project.', inputSchema: { type: 'object', properties: { channel: { type: 'string' }, limit: { type: 'number' } }, required: ['channel'] } },
+  // ---- Instagram DMs ----
+  { name: 'inbox_threads', description: 'List Instagram DM conversations across the connected accounts (newest first), with unread counts and whether a reply is still allowed (Instagram only allows replies within 24h of their last message).', inputSchema: { type: 'object', properties: { account_id: { type: 'string' }, q: { type: 'string', description: 'Search username or last message' } } } },
+  { name: 'inbox_thread', description: 'Read one DM conversation (messages oldest → newest).', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
+  { name: 'draft_dm_reply', description: 'Save a suggested reply on a DM conversation. It is NOT sent: the user reviews and sends it from Postroom → Inbox. Keep it brief, in their language, and never invent prices, dates or links.', inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'Conversation id from inbox_threads' }, text: { type: 'string' } }, required: ['id', 'text'] } },
+  { name: 'list_automations', description: 'List DM automations: welcome message, keyword auto-replies, and comment-to-DM rules, with hit counts.', inputSchema: { type: 'object', properties: {} } },
+  {
+    name: 'create_automation',
+    description: 'Create a DM automation. It is created switched OFF; the user turns it on in Postroom → Inbox → Automations. kind: welcome (first DM from someone), dm_keyword (DM contains a keyword), comment_keyword (a comment contains a keyword → private DM to the commenter, optional public reply). Use {username} to insert their handle.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: ['welcome', 'dm_keyword', 'comment_keyword'] },
+        name: { type: 'string' },
+        account: { type: 'string', description: 'Instagram account (@username) — omit for all accounts' },
+        keywords: { type: 'array', items: { type: 'string' } },
+        match: { type: 'string', enum: ['contains', 'exact', 'any'] },
+        reply_text: { type: 'string', description: 'The DM to send (≤1000 chars)' },
+        public_reply_text: { type: 'string', description: 'comment_keyword only: optional public reply under the comment' },
+      },
+      required: ['kind', 'reply_text'],
+    },
+  },
 ];
 
 const short = (p) => ({
@@ -116,6 +139,16 @@ async function callTool(name, a = {}) {
     case 'update_post': { const { id, ...patch } = a; return updatePost(id, patch, { by: 'claude' }); }
     case 'cancel_post': return cancelPost(a.id, { by: 'claude' });
     case 'get_analytics': return overview(a);
+    case 'inbox_threads': return (await inbox.listThreads(a)).map((t) => ({ id: t.id, account: `@${t.account_username}`, with: t.username ? `@${t.username}` : t.igsid, last: t.last_text, last_at: t.last_message_at, unread: t.unread, can_reply: t.can_reply, has_draft: !!t.draft_text }));
+    case 'inbox_thread': { const t = await inbox.getThread(a.id, { markRead: false }); return { id: t.id, account: `@${t.account_username}`, with: t.username ? `@${t.username}` : t.igsid, can_reply: t.can_reply, window_ends_at: t.window_ends_at, messages: t.messages.map((m) => ({ from: m.direction === 'in' ? 'them' : 'us', text: m.text, at: m.created_at })) }; }
+    case 'draft_dm_reply': await inbox.saveDraft(a.id, a.text, 'claude'); return { saved: true, next: 'Draft saved. The user reviews and sends it in Postroom → Inbox.' };
+    case 'list_automations': return inbox.listRules();
+    case 'create_automation': {
+      let account_id = null;
+      if (a.account) account_id = (await findAccount(a.account, 'instagram')).id;
+      const r = await inbox.createRule({ ...a, account_id, enabled: false });
+      return { ...r, next: 'Created switched OFF. Ask the user to review and turn it on in Postroom → Inbox → Automations.' };
+    }
     case 'research_projects': return listProjects();
     case 'research_overview': return projectOverview(a.project_id);
     case 'research_search': return searchPosts({ ...a, limit: a.limit || 25 });
