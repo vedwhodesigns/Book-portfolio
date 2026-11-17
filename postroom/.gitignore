@@ -6,3 +6,4 @@ node_modules
 public/app.js
 public/app.js.map
 public/app.css
+public/postroom.mjs
