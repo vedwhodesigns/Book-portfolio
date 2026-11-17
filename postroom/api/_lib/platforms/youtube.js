@@ -1,0 +1,274 @@
+// YouTube via the official YouTube Data API v3 with Google OAuth.
+// Uploads use the resumable protocol so big files survive across cron ticks.
+import { env, fetchT, readJson, form, PlatformError } from '../core.js';
+import { fetchRange } from '../storage.js';
+import { result, isVertical, fmtDur, byteLen, firstLine } from './common.js';
+
+const SCOPES = ['https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube.readonly'];
+const API = 'https://www.googleapis.com/youtube/v3';
+const UPLOAD = 'https://www.googleapis.com/upload/youtube/v3';
+const CHUNK = 16 * 1024 * 1024; // must be a multiple of 256 KiB
+const PRIVACY = ['public', 'unlisted', 'private'];
+
+function ytError(json, status) {
+  const e = json.error || {};
+  const reason = e.errors?.[0]?.reason || e.status || json.error;
+  const msg = e.message || json.error_description || (typeof json.error === 'string' ? json.error : null) || json.raw || `HTTP ${status}`;
+  const quota = ['quotaExceeded', 'dailyLimitExceeded', 'uploadLimitExceeded', 'rateLimitExceeded', 'userRateLimitExceeded'].includes(reason);
+  return new PlatformError(
+    quota ? `YouTube: ${reason === 'uploadLimitExceeded' ? 'this channel hit its daily upload limit' : 'API quota used up for today'} — it'll retry automatically.` : `YouTube: ${msg}`,
+    {
+      code: reason,
+      raw: e,
+      tokenInvalid: status === 401 || reason === 'invalid_grant' || reason === 'authError',
+      transient: quota || status >= 500 || status === 429 || status === 0 || reason === 'backendError',
+      retryAfterSec: quota ? secondsToPacificMidnight() + 300 : null,
+    },
+  );
+}
+function secondsToPacificMidnight() {
+  const now = new Date();
+  const pt = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
+  const next = new Date(pt);
+  next.setHours(24, 0, 0, 0);
+  return Math.max(60, Math.round((next - pt) / 1000));
+}
+async function call(url, init = {}) {
+  const res = await fetchT(url, init, 60000);
+  const json = await readJson(res);
+  if (!res.ok) throw ytError(json, res.status);
+  return json;
+}
+const authed = (token, extra = {}) => ({ authorization: `Bearer ${token}`, ...extra });
+
+async function tokenRequest(params) {
+  return call('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    body: form({ client_id: env('GOOGLE_CLIENT_ID'), client_secret: env('GOOGLE_CLIENT_SECRET'), ...params }),
+  });
+}
+async function channelProfile(token) {
+  const r = await call(`${API}/channels?part=snippet,statistics&mine=true`, { headers: authed(token) });
+  const c = r.items?.[0];
+  if (!c) throw new PlatformError("YouTube: this Google account doesn't have a YouTube channel yet. Create one at youtube.com, then connect again.");
+  const handle = c.snippet.customUrl || c.snippet.title;
+  return {
+    external_id: c.id,
+    username: handle.replace(/^@/, ''),
+    name: c.snippet.title,
+    profile_picture_url: c.snippet.thumbnails?.default?.url || null,
+    followers_count: c.statistics?.hiddenSubscriberCount ? null : Number(c.statistics?.subscriberCount ?? 0),
+    profile_url: c.snippet.customUrl ? `https://www.youtube.com/${c.snippet.customUrl}` : `https://www.youtube.com/channel/${c.id}`,
+    account_type: 'CHANNEL',
+    meta: {},
+  };
+}
+
+export function videoTitle(post) {
+  return (post.title && post.title.trim()) || firstLine(post.caption, 100) || 'Untitled';
+}
+export function videoDescription(post) {
+  let d = post.caption || '';
+  if (post.kind === 'short' && !/#shorts\b/i.test(`${d} ${post.title || ''}`)) d = `${d}\n\n#Shorts`.trim();
+  return d;
+}
+
+export default {
+  id: 'youtube',
+  label: 'YouTube',
+  kinds: ['short', 'video'],
+  envVars: ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'],
+  configured: () => !!(env('GOOGLE_CLIENT_ID') && env('GOOGLE_CLIENT_SECRET')),
+
+  authorizeUrl({ state, redirectUri }) {
+    return `https://accounts.google.com/o/oauth2/v2/auth?${form({
+      client_id: env('GOOGLE_CLIENT_ID'),
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: SCOPES.join(' '),
+      access_type: 'offline',
+      prompt: 'consent select_account',
+      include_granted_scopes: 'true',
+      state,
+    })}`;
+  },
+
+  async connect({ code, redirectUri }) {
+    const t = await tokenRequest({ code, grant_type: 'authorization_code', redirect_uri: redirectUri });
+    if (!t.refresh_token) throw new PlatformError('YouTube: Google did not return a refresh token. Remove Postroom from myaccount.google.com/permissions and connect again.');
+    if (!String(t.scope || '').includes('youtube.upload')) throw new PlatformError('YouTube: please tick "Manage your YouTube videos" on the Google consent screen.');
+    return {
+      tokens: {
+        access_token: t.access_token,
+        expires_at: new Date(Date.now() + (t.expires_in || 3600) * 1000),
+        refresh_token: t.refresh_token,
+        scopes: t.scope,
+      },
+      profile: await channelProfile(t.access_token),
+    };
+  },
+
+  /** Access tokens last 1 hour; refresh a few minutes before. */
+  needsRefresh: (account) => !account.token_expires_at || new Date(account.token_expires_at) - Date.now() < 5 * 60e3,
+  async refresh(account, { refresh_token }) {
+    if (!refresh_token) throw new PlatformError('YouTube: no refresh token stored — reconnect the channel.', { tokenInvalid: true });
+    const t = await tokenRequest({ refresh_token, grant_type: 'refresh_token' });
+    return { access_token: t.access_token, expires_at: new Date(Date.now() + (t.expires_in || 3600) * 1000), refresh_token: t.refresh_token || undefined };
+  },
+  refreshProfile: (token) => channelProfile(token),
+
+  defaultKind(media) {
+    const m = media[0];
+    return m && m.duration_s && m.duration_s <= 180 && (isVertical(m) || m.width === m.height) ? 'short' : 'video';
+  },
+
+  validate({ kind, caption = '', title, media, options = {}, cover }) {
+    const r = result();
+    const t = (title && title.trim()) || firstLine(caption, 100);
+    if (!t) r.err('YouTube needs a title.');
+    else if (t.length > 100) r.err(`Title is ${t.length} characters; YouTube allows 100.`);
+    if (/[<>]/.test(`${t}${caption}`)) r.err('YouTube titles and descriptions can\'t contain < or >.');
+    if (byteLen(caption) > 5000) r.err('Description is over YouTube\'s 5,000-byte limit.');
+    const tags = options.tags || [];
+    if (tags.join(',').length > 500) r.err('YouTube tags must total 500 characters or fewer.');
+    if (media.length !== 1 || media[0].kind !== 'video') r.err('YouTube needs exactly one video.');
+    else {
+      const m = media[0];
+      if (kind === 'short') {
+        if (m.duration_s && m.duration_s > 180) r.err(`Shorts can be up to 3 minutes (this is ${fmtDur(m.duration_s)}). Post it as a regular video instead.`);
+        if (m.width && m.height && !(isVertical(m) || m.width === m.height)) r.warn('Shorts should be vertical or square, or YouTube may treat it as a regular video.');
+      }
+      if (!m.duration_s) r.warn("Couldn't read this video's length.");
+    }
+    if (!PRIVACY.includes(options.privacy || 'public')) r.err('Choose public, unlisted or private.');
+    if (options.made_for_kids === undefined || options.made_for_kids === null) r.err('Say whether this video is made for kids (YouTube requires it).');
+    if ((options.privacy || 'public') !== 'private' && env('YOUTUBE_AUDITED') !== 'true') {
+      r.warn('Until your Google project passes YouTube\'s API audit, YouTube locks API uploads to private. You can make it public in YouTube Studio afterwards.');
+    }
+    if (cover && kind === 'short') r.warn('YouTube ignores custom thumbnails on Shorts.');
+    return r;
+  },
+
+  async step({ post, token, media, cover, upload, save, deadline }) {
+    const m = media[0];
+    const total = Number(m.size_bytes);
+    if (!total) throw new PlatformError('YouTube: the video file size is unknown — re-upload it.');
+
+    if (!upload.session_uri) {
+      const o = post.options || {};
+      const meta = {
+        snippet: {
+          title: videoTitle(post),
+          description: videoDescription(post),
+          tags: o.tags?.length ? o.tags : undefined,
+          categoryId: String(o.category_id || '22'),
+        },
+        status: {
+          privacyStatus: o.privacy || 'public',
+          selfDeclaredMadeForKids: !!o.made_for_kids,
+          containsSyntheticMedia: o.synthetic ? true : undefined,
+          embeddable: true,
+        },
+      };
+      const qs = form({ uploadType: 'resumable', part: 'snippet,status', notifySubscribers: o.notify_subscribers !== false });
+      const res = await fetchT(`${UPLOAD}/videos?${qs}`, {
+        method: 'POST',
+        headers: authed(token, {
+          'content-type': 'application/json; charset=UTF-8',
+          'x-upload-content-length': String(total),
+          'x-upload-content-type': m.content_type || 'video/mp4',
+        }),
+        body: JSON.stringify(meta),
+      });
+      if (!res.ok) throw ytError(await readJson(res), res.status);
+      const loc = res.headers.get('location');
+      if (!loc) throw new PlatformError('YouTube: no upload session returned.', { transient: true });
+      await save({ session_uri: loc, offset: 0, started_at: Date.now() });
+      upload.session_uri = loc;
+      upload.offset = 0;
+    }
+
+    if (upload.video_id) return this.afterUpload({ post, token, cover, upload, save });
+
+    // Upload chunks until done or out of time.
+    let offset = Number(upload.offset || 0);
+    while (Date.now() < deadline - 30000) {
+      const end = Math.min(offset + CHUNK, total) - 1;
+      const chunk = await fetchRange(m.url, offset, end);
+      const res = await fetchT(upload.session_uri, {
+        method: 'PUT',
+        headers: authed(token, { 'content-length': String(chunk.length), 'content-range': `bytes ${offset}-${end}/${total}` }),
+        body: chunk,
+      }, 120000);
+      if (res.status === 308) {
+        const range = res.headers.get('range');
+        offset = range ? Number(range.split('-')[1]) + 1 : 0;
+        await save({ offset });
+        continue;
+      }
+      if (res.status === 200 || res.status === 201) {
+        const v = await readJson(res);
+        await save({ video_id: v.id, offset: total });
+        upload.video_id = v.id;
+        return this.afterUpload({ post, token, cover, upload, save });
+      }
+      if (res.status === 404 || res.status === 410) {
+        await save({ session_uri: null, offset: 0 }); // session expired — start again
+        throw new PlatformError('YouTube: upload session expired, restarting.', { transient: true, retryAfterSec: 30 });
+      }
+      const json = await readJson(res);
+      if (res.status >= 500) {
+        // ask YouTube how much it has, then carry on next tick
+        const q = await fetchT(upload.session_uri, { method: 'PUT', headers: authed(token, { 'content-length': '0', 'content-range': `bytes */${total}` }) });
+        const range = q.headers.get('range');
+        await save({ offset: q.status === 308 && range ? Number(range.split('-')[1]) + 1 : 0 });
+      }
+      throw ytError(json, res.status);
+    }
+    return { continue: true, progress: offset / total };
+  },
+
+  async afterUpload({ post, token, cover, upload, save }) {
+    if (cover && post.kind === 'video' && !upload.thumbnail_done) {
+      try {
+        const img = await fetchRange(cover.url, 0, Math.max(0, Number(cover.size_bytes || 2e6) - 1));
+        await call(`${UPLOAD}/thumbnails/set?videoId=${upload.video_id}`, {
+          method: 'POST', headers: authed(token, { 'content-type': cover.content_type || 'image/jpeg' }), body: img,
+        });
+      } catch (e) {
+        upload.thumbnail_error = e.message; // custom thumbnails need a verified channel; not fatal
+      }
+      await save({ thumbnail_done: true, thumbnail_error: upload.thumbnail_error || null });
+    }
+    const id = upload.video_id;
+    return {
+      done: true,
+      externalId: id,
+      permalink: post.kind === 'short' ? `https://www.youtube.com/shorts/${id}` : `https://youtu.be/${id}`,
+      note: upload.thumbnail_error ? `Thumbnail not set: ${upload.thumbnail_error}` : null,
+    };
+  },
+
+  async fetchMetrics({ token, posts }) {
+    const out = {};
+    for (let i = 0; i < posts.length; i += 50) {
+      const batch = posts.slice(i, i + 50);
+      const r = await call(`${API}/videos?part=statistics&id=${batch.map((p) => p.external_id).join(',')}`, { headers: authed(token) });
+      const byVid = new Map((r.items || []).map((v) => [v.id, v.statistics || {}]));
+      for (const p of batch) {
+        const s = byVid.get(p.external_id);
+        if (s) out[p.id] = { views: num(s.viewCount), likes: num(s.likeCount), comments: num(s.commentCount) };
+      }
+    }
+    return out;
+  },
+
+  async fetchFollowers({ account, token }) {
+    const r = await call(`${API}/channels?part=statistics&id=${account.external_id}`, { headers: authed(token) });
+    const s = r.items?.[0]?.statistics;
+    return s && !s.hiddenSubscriberCount ? Number(s.subscriberCount) : null;
+  },
+
+  permalinkFallback: (account) => account.profile_url,
+};
+const num = (v) => (v == null ? null : Number(v));

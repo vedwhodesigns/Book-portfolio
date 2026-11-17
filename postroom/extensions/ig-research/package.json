@@ -1,0 +1,18 @@
+{
+  "name": "ig-research",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Instagram niche research tool - scrape, transcribe, analyze top-performing content in any niche",
+  "scripts": {
+    "scrape": "node scripts/scrape.js",
+    "transcribe": "bash scripts/transcribe.sh",
+    "report": "node scripts/report-html.js",
+    "dealbot": "node scripts/dealbot.js",
+    "teardown": "node scripts/teardown.js",
+    "library": "node scripts/library.js",
+    "push": "node scripts/push-to-postroom.js"
+  },
+  "dependencies": {
+    "chrome-remote-interface": "^0.33.0"
+  }
+}
