@@ -78,8 +78,23 @@ export default async function handler(req, res) {
     if (p === 'logout') return send(res, 200, { ok: true }, { 'set-cookie': clearCookie() });
     if (p === 'session') return send(res, 200, { authed: isAuthed(req) });
     if (p === 'health') {
-      await db()`select 1`;
-      return send(res, 200, { ok: true });
+      try {
+        await db()`select 1`;
+        return send(res, 200, { ok: true });
+      } catch (e) {
+        // Shape of the connection settings only — never values.
+        const h = env('DB_HOST');
+        return send(res, 500, {
+          error: e.message,
+          db: {
+            host: h ? h.replace(/^[^.]+/, '…') : null, host_parts: h ? h.split('.').length : 0,
+            user_has_project_suffix: env('DB_USER').includes('.'), user_len: env('DB_USER').length,
+            port: env('DB_PORT') || '(default 6543)', has_password: !!env('DB_PASSWORD'),
+            has_database_url: !!env('DATABASE_URL'), db_ssl: env('DB_SSL') || '(default require)', db_name: env('DB_NAME') || '(default postgres)',
+            other_db_vars: Object.keys(process.env).filter((k) => /^(PG|POSTGRES|SUPABASE)/.test(k)),
+          },
+        });
+      }
     }
 
     // Meta-required callbacks (set these URLs in the Meta app dashboard).
