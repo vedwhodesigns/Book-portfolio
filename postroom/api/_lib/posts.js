@@ -50,9 +50,12 @@ export async function checkTargets(input) {
     const options = { ...(input.options?.[account.platform] || {}), ...(t.options || {}) };
     // A target can use its own media (e.g. YouTube gets a video made from the images Instagram posts).
     const tMedia = t.media_ids?.length ? await loadMedia(t.media_ids) : media;
+    // Each account can have its own cover/thumbnail (Instagram 9:16 cover, YouTube 16:9 thumbnail).
+    const tCover = t.cover_media_id === null ? null : t.cover_media_id ? (await loadMedia([t.cover_media_id]))[0] : cover;
+    if (tCover && tCover.kind !== 'image') throw new HttpError(400, 'A cover or thumbnail must be an image.');
     const kind = t.kind || p.defaultKind(tMedia);
     const r = p.kinds.includes(kind)
-      ? p.validate({ kind, caption, title, media: tMedia, options, cover, account })
+      ? p.validate({ kind, caption, title, media: tMedia, options, cover: tCover, account })
       : { errors: [`${p.label} can't post a ${KIND_LABEL[kind] || kind}. Options: ${p.kinds.map((k) => KIND_LABEL[k]).join(', ')}.`], warnings: [] };
     if (account.status !== 'active') r.errors.unshift(`@${account.username} needs reconnecting first (Accounts).`);
     out.push({
@@ -63,6 +66,7 @@ export async function checkTargets(input) {
       title,
       options,
       media: tMedia,
+      cover: tCover,
       scheduled_at: t.scheduled_at ? parseWhen(t.scheduled_at, { allowPast: true }) : null,
       errors: r.errors,
       warnings: r.warnings,
@@ -115,7 +119,7 @@ export async function createPosts(input, { createdBy = 'app' } = {}) {
         caption: t.caption,
         title: t.title,
         media_ids: t.media.map((m) => m.id),
-        cover_media_id: check.cover?.id || null,
+        cover_media_id: t.cover?.id || null,
         options: sql.json(t.options),
         scheduled_at: t.scheduled_at || when,
         status: mode === 'draft' || mode === 'plan' ? 'draft' : 'scheduled',

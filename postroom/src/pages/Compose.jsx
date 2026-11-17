@@ -34,6 +34,46 @@ function nextSlot(dateKey) {
   return wallTime(d);
 }
 
+/** Cover / thumbnail chooser: upload a new image or pick one from the library. */
+function CoverPicker({ label, hint, value, onChange, images, onUpload, uploading }) {
+  const ref = useRef();
+  const chosen = images.find((m) => m.id === value);
+  return (
+    <div class="field">
+      <label>{label}</label>
+      <div class="row wrap" style={{ gap: 10, alignItems: 'center' }}>
+        {chosen && <img src={chosen.poster_url || chosen.url} alt="" style={{ height: 64, borderRadius: 8, border: '1px solid var(--line)' }} />}
+        <button type="button" class="btn sm" onClick={() => ref.current.click()} disabled={uploading}>{uploading ? <Spinner /> : <Icon name="upload" size={14} />} Upload image</button>
+        <select class="select" style={{ width: 'auto', maxWidth: 260 }} value={value || ''} onChange={(e) => onChange(e.currentTarget.value || '')}>
+          <option value="">{chosen ? 'Remove' : 'Or pick from library…'}</option>
+          {images.map((m) => <option key={m.id} value={m.id}>{m.filename} ({m.width}×{m.height})</option>)}
+        </select>
+        <input ref={ref} type="file" accept="image/jpeg,image/png,image/webp" class="hidden" onChange={(e) => { const f = e.currentTarget.files[0]; e.currentTarget.value = ''; if (f) onUpload(f); }} />
+      </div>
+      {hint && <span class="tiny faint">{hint}</span>}
+    </div>
+  );
+}
+
+/** Pick the reel cover frame by time (Instagram's thumb_offset). */
+function FramePicker({ video, value, onChange }) {
+  const ref = useRef();
+  const dur = video.duration_s || 0;
+  useEffect(() => { if (ref.current && value != null) ref.current.currentTime = value / 1000; }, [value]);
+  return (
+    <div class="field">
+      <label>Cover frame</label>
+      <div class="row" style={{ gap: 12, alignItems: 'center' }}>
+        <video ref={ref} src={video.url} muted playsInline preload="metadata" style={{ height: 110, borderRadius: 8, background: '#000', flex: 'none' }} />
+        <div class="col grow" style={{ gap: 4 }}>
+          <input type="range" min={0} max={Math.max(0, Math.floor(dur * 1000) - 50)} step={100} value={value ?? 0} onInput={(e) => onChange(Number(e.currentTarget.value))} disabled={!dur} />
+          <span class="tiny faint">{dur ? `Frame at ${fmtDur((value ?? 0) / 1000)} — or upload a cover image below` : "Couldn't read the video length — upload a cover image instead."}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MediaTile({ m, index, selected, onClick, onRemove }) {
   return (
     <button type="button" class={`media-tile ${selected ? 'sel' : ''}`} onClick={onClick} title={m.filename}>
@@ -64,7 +104,8 @@ export default function Compose({ params }) {
   const [tab, setTab] = useState(null);
   const [when, setWhen] = useState(params.date ? 'schedule' : 'now');
   const [at, setAt] = useState(nextSlot(params.date));
-  const [cover, setCover] = useState('');
+  const [covers, setCovers] = useState({ instagram: '', youtube: '' }); // per-platform cover / thumbnail media id
+  const [coverBusy, setCoverBusy] = useState(null);
   const [check, setCheck] = useState(null);
   const [checking, setChecking] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -100,7 +141,7 @@ export default function Compose({ params }) {
         setYtTitle(p.title || '');
         setKinds({ [p.platform]: p.kind });
         setOpts((o) => ({ ...o, [p.platform]: { ...o[p.platform], ...p.options } }));
-        if (p.cover) setCover(p.cover.id);
+        if (p.cover) setCovers((c) => ({ ...c, [p.platform]: p.cover.id }));
       }).catch((e) => toast(e.message, 'bad'));
     }
   }, []);
@@ -128,9 +169,10 @@ export default function Compose({ params }) {
       caption: pa.caption ?? overrides[a.platform] ?? undefined,
       title: yt ? (pa.title ?? ytTitle) || undefined : undefined,
       options: yt ? { ...opts.youtube, playlist_id: pa.playlist_id || undefined } : opts[a.platform],
+      cover_media_id: covers[a.platform] || null,
     };
   });
-  const payload = { media_ids: media.map((m) => m.id), cover_media_id: cover || null, caption, targets };
+  const payload = { media_ids: media.map((m) => m.id), caption, targets };
 
   // Live rule check (debounced).
   useEffect(() => {
@@ -169,6 +211,18 @@ export default function Compose({ params }) {
       toast(e.message, 'bad');
     } finally {
       setUploads((u) => u.filter((x) => x.key !== 'url'));
+    }
+  };
+  const uploadCover = async (pf, f) => {
+    setCoverBusy(pf);
+    try {
+      const m = await uploadFile(f, config.storage.mode);
+      setLibrary((l) => [m, ...l]);
+      setCovers((c) => ({ ...c, [pf]: m.id }));
+    } catch (e) {
+      toast(e.message, 'bad');
+    } finally {
+      setCoverBusy(null);
     }
   };
   const toggleMedia = (m) => setMedia((s) => (s.some((x) => x.id === m.id) ? s.filter((x) => x.id !== m.id) : [...s, m]));
@@ -407,6 +461,8 @@ export default function Compose({ params }) {
                               <Seg value={opts.instagram.trial || ''} onChange={(v) => setOpt('instagram', 'trial', v)} options={[{ value: '', label: 'Off' }, { value: 'manual', label: 'Non-followers first' }, { value: 'auto', label: 'Auto-share if it does well' }]} />
                               <span class="tiny faint">Trial reels are shown to non-followers first. "Auto-share" shares it with your followers if it performs well; otherwise share it yourself in the Instagram app.</span>
                             </div>
+                            {!covers.instagram && media[0]?.kind === 'video' && <FramePicker video={media[0]} value={opts.instagram.thumb_offset_ms} onChange={(v) => setOpt('instagram', 'thumb_offset_ms', v)} />}
+                            <CoverPicker label="Reel cover image (9:16)" hint="Shown on your profile grid and Reels tab. 1080×1920 JPEG works best; Instagram crops the middle square for the feed." value={covers.instagram} onChange={(v) => setCovers((c) => ({ ...c, instagram: v }))} images={libImages} onUpload={(f) => uploadCover('instagram', f)} uploading={coverBusy === 'instagram'} />
                             <div class="field"><label for="iga">Audio name (optional)</label><input id="iga" class="input" placeholder="e.g. The Crime Archives — original audio" value={opts.instagram.audio_name} onInput={(e) => setOpt('instagram', 'audio_name', e.currentTarget.value)} /><span class="tiny faint">Names your original audio. Can only be set once.</span></div>
                           </>
                         )}
@@ -465,6 +521,7 @@ export default function Compose({ params }) {
                             {Object.entries(YT_CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                           </select>
                         </div>
+                        <CoverPicker label="Thumbnail (16:9)" hint="1280×720 recommended. Postroom crops and compresses it to YouTube's limits. Needs a phone-verified channel (youtube.com/verify)." value={covers.youtube} onChange={(v) => setCovers((c) => ({ ...c, youtube: v }))} images={libImages} onUpload={(f) => uploadCover('youtube', f)} uploading={coverBusy === 'youtube'} />
                         {chosen.filter((a) => a.platform === 'youtube').map((a) => {
                           const pl = playlists[a.id];
                           return (
@@ -531,16 +588,6 @@ export default function Compose({ params }) {
                   </div>
                 )}
               </>
-            )}
-            {libImages.length > 0 && platforms.some((p) => p === 'youtube' || (p === 'instagram' && pfKind('instagram') === 'reel')) && (
-              <div class="field" style={{ marginTop: 14 }}>
-                <label for="cov">Cover image (optional)</label>
-                <select id="cov" class="select" value={cover} onChange={(e) => setCover(e.currentTarget.value)}>
-                  <option value="">Use a frame from the video</option>
-                  {libImages.map((m) => <option key={m.id} value={m.id}>{m.filename} ({m.width}×{m.height})</option>)}
-                </select>
-                <span class="tiny faint">Used as the Reel cover and the YouTube thumbnail (custom thumbnails need a verified YouTube channel).</span>
-              </div>
             )}
           </section>
         </div>

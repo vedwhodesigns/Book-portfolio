@@ -200,7 +200,7 @@ export default {
     return media[0]?.kind === 'video' ? 'reel' : 'image';
   },
 
-  validate({ kind, caption = '', media, options = {} }) {
+  validate({ kind, caption = '', media, options = {}, cover = null }) {
     const r = result();
     if (caption.length > 2200) r.err(`Caption is ${caption.length} characters; Instagram allows 2,200.`);
     const tags = countHashtags(caption);
@@ -238,6 +238,13 @@ export default {
       if (caption.trim()) r.warn("Instagram doesn't show captions on stories.");
     } else r.err(`Instagram can't post a "${kind}".`);
     if (options.share_to_feed === false && kind !== 'reel') r.warn('"Share to feed" only applies to reels.');
+    if (cover && kind !== 'reel') r.warn('A cover image only applies to reels.');
+    if (cover && kind === 'reel') {
+      const ar = cover.width && cover.height ? cover.width / cover.height : null;
+      if (ar && Math.abs(ar - 9 / 16) > 0.05) r.warn(`The cover is ${cover.width}×${cover.height}; reel covers are 9:16 (1080×1920). Instagram crops the middle.`);
+      if (cover.size_bytes > 8 * 1024 * 1024) r.err('Reel covers must be under 8 MB.');
+    }
+    if (options.thumb_offset_ms != null && kind === 'reel' && media[0]?.duration_s && options.thumb_offset_ms / 1000 > media[0].duration_s) r.err('The cover frame is past the end of the video.');
     const collabs = cleanNames(options.collaborators);
     if (collabs.length > 3) r.err('Instagram allows up to 3 collaborators.');
     if (collabs.length && kind === 'story') r.err("Stories can't have collaborators.");

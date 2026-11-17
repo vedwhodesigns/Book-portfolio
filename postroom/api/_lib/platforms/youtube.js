@@ -149,7 +149,12 @@ export default {
     if ((options.privacy || 'public') !== 'private' && env('YOUTUBE_AUDITED') !== 'true') {
       r.warn('Until your Google project passes YouTube\'s API audit, YouTube locks API uploads to private. You can make it public in YouTube Studio afterwards.');
     }
-    if (cover && kind === 'short') r.warn('YouTube ignores custom thumbnails on Shorts.');
+    if (cover) {
+      const ar = cover.width && cover.height ? cover.width / cover.height : null;
+      if (ar && Math.abs(ar - 16 / 9) > 0.05) r.warn(`The thumbnail is ${cover.width}×${cover.height}; YouTube thumbnails are 16:9 (1280×720). It will be cropped to fit.`);
+      if (cover.width && cover.width < 640) r.err('YouTube thumbnails must be at least 640 pixels wide.');
+      if (kind === 'short') r.warn("YouTube may not show a custom thumbnail on Shorts in the Shorts feed; it's used in search and on your channel.");
+    }
     if (options.category_id && !CATEGORIES[options.category_id]) r.err('Pick a YouTube category from the list.');
     if (options.first_comment && String(options.first_comment).length > 10000) r.err('The first comment is too long.');
     if ((options.playlist_id || options.first_comment) && account && !hasManageScope(account)) {
@@ -241,6 +246,23 @@ export default {
   },
 
   async afterUpload({ post, account, token, cover, upload, save }) {
+    if (cover && !upload.thumbnail_done) {
+      try {
+        const got = await fetchT(cover.url, {}, 60000);
+        if (!got.ok) throw new Error(`couldn't read the image (HTTP ${got.status})`);
+        const img = Buffer.from(await got.arrayBuffer());
+        const sharp = (await import('sharp')).default;
+        // YouTube: 16:9, ≤2 MB. Crop to 1280×720 and compress.
+        let out = await sharp(img).rotate().resize(1280, 720, { fit: 'cover', position: 'attention' }).jpeg({ quality: 88, mozjpeg: true }).toBuffer();
+        if (out.length > 2e6) out = await sharp(out).jpeg({ quality: 70 }).toBuffer();
+        await call(`${UPLOAD}/thumbnails/set?videoId=${upload.video_id}`, {
+          method: 'POST', headers: authed(token, { 'content-type': 'image/jpeg' }), body: out,
+        });
+      } catch (e) {
+        upload.thumbnail_error = /verif|forbidden|permission/i.test(e.message) ? 'custom thumbnails need a phone-verified channel (youtube.com/verify)' : e.message;
+      }
+      await save({ thumbnail_done: true, thumbnail_error: upload.thumbnail_error || null });
+    }
     const o = post.options || {};
     const notes = [];
     if (o.playlist_id && !upload.playlist_done) {
@@ -268,17 +290,6 @@ export default {
     }
     if (upload.playlist_error) notes.push(`Not added to playlist: ${upload.playlist_error}`);
     if (upload.comment_error) notes.push(`First comment not posted: ${upload.comment_error}`);
-    if (cover && post.kind === 'video' && !upload.thumbnail_done) {
-      try {
-        const img = await fetchRange(cover.url, 0, Math.max(0, Number(cover.size_bytes || 2e6) - 1));
-        await call(`${UPLOAD}/thumbnails/set?videoId=${upload.video_id}`, {
-          method: 'POST', headers: authed(token, { 'content-type': cover.content_type || 'image/jpeg' }), body: img,
-        });
-      } catch (e) {
-        upload.thumbnail_error = e.message; // custom thumbnails need a verified channel; not fatal
-      }
-      await save({ thumbnail_done: true, thumbnail_error: upload.thumbnail_error || null });
-    }
     const id = upload.video_id;
     return {
       done: true,

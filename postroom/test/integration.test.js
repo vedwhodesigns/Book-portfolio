@@ -23,6 +23,7 @@ async function fakeFetch(input, init = {}) {
   const method = init.method || 'GET';
   calls.push(`${method} ${url.host}${url.pathname}`);
   const h = Object.fromEntries(Object.entries(init.headers || {}).map(([k, v]) => [k.toLowerCase(), v]));
+  if (url.host === 'media.test' && url.pathname.endsWith('.jpg')) return new Response(state.jpeg, { status: 200, headers: { 'content-type': 'image/jpeg' } });
   if (url.host === 'media.test') {
     const size = url.pathname.endsWith('.mp4') ? VIDEO_SIZE : 1000;
     const m = /bytes=(\d+)-(\d+)/.exec(h.range || '');
@@ -72,6 +73,11 @@ async function fakeFetch(input, init = {}) {
     if (p === 'me') return json({ followers_count: 5100 });
   }
   // Google / YouTube
+  if (url.host === 'www.googleapis.com' && url.pathname === '/upload/youtube/v3/thumbnails/set') {
+    const meta = await (await import('sharp')).default(Buffer.from(init.body)).metadata();
+    state.ytThumb = { videoId: url.searchParams.get('videoId'), width: meta.width, height: meta.height, bytes: init.body.length };
+    return json({ items: [{}] });
+  }
   if (url.host === 'www.googleapis.com' && url.pathname === '/youtube/v3/playlistItems' && method === 'POST') { state.ytPlaylist = JSON.parse(init.body).snippet; return json({ id: 'pli1' }); }
   if (url.host === 'www.googleapis.com' && url.pathname === '/youtube/v3/commentThreads' && method === 'POST') { state.ytComment = JSON.parse(init.body).snippet; return json({ id: 'ct1' }); }
   if (url.host === 'oauth2.googleapis.com') return json({ access_token: 'yt-new', expires_in: 3600 });
@@ -524,7 +530,8 @@ test('post styles: Instagram carousel extras + first comment, YouTube video with
   ], 'id', 'url', 'pathname', 'kind', 'content_type', 'size_bytes', 'width', 'height', 'duration_s', 'filename')}`;
   await sql`update postroom.accounts set scopes = 'youtube.upload youtube.readonly youtube.force-ssl' where platform = 'youtube'`;
   const images = ['00000000-0000-0000-0000-0000000000e2', '00000000-0000-0000-0000-0000000000e3'];
-  const yt = { account: 'youtube:crimearchivesyt', options: { privacy: 'public', made_for_kids: false, playlist_id: 'PL1', first_comment: 'Thanks for watching', category_id: '27' } };
+  state.jpeg = await (await import('sharp')).default({ create: { width: 1920, height: 1200, channels: 3, background: '#556' } }).jpeg().toBuffer();
+  const yt = { account: 'youtube:crimearchivesyt', cover_media_id: '00000000-0000-0000-0000-0000000000e3', options: { privacy: 'public', made_for_kids: false, playlist_id: 'PL1', first_comment: 'Thanks for watching', category_id: '27' } };
 
   const noVideo = await posts.checkTargets({ media_ids: images, caption: 'x', targets: [yt] });
   assert.match(noVideo.targets[0].errors.join(' '), /only accepts videos/);
@@ -549,6 +556,9 @@ test('post styles: Instagram carousel extras + first comment, YouTube video with
   const ytRow = rows.find((x) => x.platform === 'youtube');
   assert.deepEqual(ytRow.media_ids, ['00000000-0000-0000-0000-0000000000e4'], 'YouTube used its own video');
   assert.equal(ytRow.note, null, ytRow.note);
+  assert.deepEqual(state.ytThumb && [state.ytThumb.videoId, state.ytThumb.width, state.ytThumb.height], ['ytvid1', 1280, 720], 'thumbnail cropped to 1280×720');
+  const [igRow] = await sql`select cover_media_id from postroom.posts where group_id = ${r.group_id} and platform = 'instagram'`;
+  assert.equal(igRow.cover_media_id, null, 'the YouTube thumbnail is not used as the Instagram cover');
 
   const [first, second, parent] = state.igCreates;
   assert.equal(first.alt_text, 'A case file on a desk');
