@@ -111,4 +111,18 @@ export async function deleteMedia(id) {
   return { ok: true };
 }
 
+/** Save a preview image (and any missing size/length) for a library file — the browser makes these. */
+export async function updateMediaMeta(id, { poster_url, width, height, duration_s } = {}) {
+  const [m] = await db()`select * from postroom.media where id = ${id} and deleted_at is null`;
+  if (!m) throw new HttpError(404, 'Media not found.');
+  if (poster_url && !/^https:\/\/[\w.-]+\.blob\.vercel-storage\.com\//.test(poster_url) && !String(poster_url).startsWith('/')) throw new HttpError(400, 'Bad poster URL.');
+  const [row] = await db()`update postroom.media set
+      poster_url = coalesce(${poster_url || null}, poster_url),
+      width = coalesce(width, ${width ? Number(width) : null}),
+      height = coalesce(height, ${height ? Number(height) : null}),
+      duration_s = coalesce(duration_s, ${duration_s ? Number(duration_s) : null})
+    where id = ${id} returning *`;
+  return mediaRow(row);
+}
+
 export const uploadConfig = () => ({ mode: storageMode(), allowed: ALLOWED_TYPES, max_bytes: MAX_UPLOAD_BYTES });

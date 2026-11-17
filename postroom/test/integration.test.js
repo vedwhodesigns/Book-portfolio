@@ -665,3 +665,31 @@ test('research: study any public Instagram account through Business Discovery', 
   assert.deepEqual(rows.map((x) => x.type), ['reel', 'carousel']);
   await assert.rejects(research.lookupInstagram({ username: 'bad name!' }), /username/);
 });
+
+test('reminders: one heads-up ~1 day before and one 10 minutes before, per cross-post group', { skip }, async () => {
+  const notify = await import('../api/_lib/notify.js');
+  const media = ['00000000-0000-0000-0000-0000000000f1'];
+  const r = await posts.createPosts({
+    mode: 'schedule', scheduled_at: new Date(Date.now() + 5 * 3600e3).toISOString(), media_ids: media, caption: 'Reminder me\nmore',
+    targets: [{ account: 'instagram:brand.one' }, { account: 'youtube:crimearchivesyt', options: { privacy: 'public', made_for_kids: false } }],
+  });
+  const ids = r.posts.map((p) => p.id);
+  // pretend it was scheduled two days ago
+  await sql`update postroom.posts set created_at = now() - interval '2 days' where id = any(${ids})`;
+  const count = async (kind) => (await sql`select count(*)::int as n from postroom.notifications where kind = ${kind} and post_id = any(${ids})`)[0].n;
+  await publisher.sendReminders();
+  assert.equal(await count('upcoming'), 1, 'one day-before reminder for the whole group');
+  await publisher.sendReminders();
+  assert.equal(await count('upcoming'), 1, 'not repeated');
+  await sql`update postroom.posts set scheduled_at = now() + interval '9 minutes' where id = any(${ids})`;
+  await publisher.sendReminders();
+  assert.equal(await count('soon'), 1, '10-minute reminder');
+  const [n] = (await notify.listNotifications({ limit: 1 })).items;
+  assert.match(n.title, /^Posting in \d+ min: Reminder me/);
+  assert.match(n.body, /IG @brand\.one \+ YT @crimearchivesyt|YT @crimearchivesyt \+ IG @brand\.one/);
+  // a post scheduled just now for in 3 hours gets no day-before ping
+  const fresh = await posts.createPosts({ mode: 'schedule', scheduled_at: new Date(Date.now() + 3 * 3600e3).toISOString(), media_ids: media, caption: 'fresh', targets: [{ account: 'instagram:brand.one' }] });
+  await publisher.sendReminders();
+  assert.equal((await sql`select count(*)::int as n from postroom.notifications where post_id = ${fresh.posts[0].id}`)[0].n, 0);
+  await sql`update postroom.posts set status = 'cancelled' where id = any(${[...ids, fresh.posts[0].id]})`;
+});

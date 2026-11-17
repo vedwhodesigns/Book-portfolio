@@ -43,3 +43,8 @@ end $$;
 -- Research can also come from Instagram's Business Discovery API.
 alter table postroom.research_projects drop constraint if exists research_projects_source_check;
 alter table postroom.research_projects add constraint research_projects_source_check check (source in ('ig-research', 'youtube', 'instagram-api'));
+
+-- Heads-up reminders before posts go out, and a picture on notifications.
+alter table postroom.posts add column if not exists reminded_day_at timestamptz;
+alter table postroom.posts add column if not exists reminded_soon_at timestamptz;
+alter table postroom.notifications add column if not exists image text;

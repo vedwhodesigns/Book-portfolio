@@ -86,6 +86,12 @@ export default function PostDrawer({ id, onClose }) {
         )}
 
         <div class="media-strip">
+          {p.cover && (
+            <a href={p.cover.url} target="_blank" rel="noreferrer" class="media-tile" style={{ width: 110 }} title={p.platform === 'youtube' ? 'YouTube thumbnail' : 'Reel cover'}>
+              <img src={p.cover.url} alt="" />
+              <span class="meta">{p.platform === 'youtube' ? 'Thumbnail' : 'Cover'}</span>
+            </a>
+          )}
           {p.media.map((x) => (
             <a key={x.id} href={x.url} target="_blank" rel="noreferrer" class="media-tile" style={{ width: 110 }}>
               {x.poster_url ? <img src={x.poster_url} alt="" /> : <span />}

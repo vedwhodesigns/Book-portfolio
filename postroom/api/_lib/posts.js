@@ -174,7 +174,7 @@ function postRow(p, extra = {}) {
 export async function listPosts({ from = null, to = null, status = null, platform: pf = null, account_id = null, limit = 500 } = {}) {
   const statuses = status ? String(status).split(',') : null;
   const rows = await db()`select p.*, a.username, a.name as account_name, a.profile_picture_url,
-      (select coalesce(m.poster_url, case when m.kind = 'image' then m.url end) from postroom.media m where m.id = p.media_ids[1]) as thumb,
+      coalesce((select c.url from postroom.media c where c.id = p.cover_media_id and c.deleted_at is null), (select coalesce(m.poster_url, case when m.kind = 'image' then m.url end) from postroom.media m where m.id = p.media_ids[1])) as thumb,
       (select m.kind from postroom.media m where m.id = p.media_ids[1]) as media_kind
     from postroom.posts p join postroom.accounts a on a.id = p.account_id
     where true
@@ -288,7 +288,7 @@ export async function listPlans({ status = 'draft' } = {}) {
 }
 async function listPostsByBatch(ids) {
   const rows = await db()`select p.*, a.username, a.profile_picture_url,
-      (select coalesce(m.poster_url, case when m.kind = 'image' then m.url end) from postroom.media m where m.id = p.media_ids[1]) as thumb
+      coalesce((select c.url from postroom.media c where c.id = p.cover_media_id and c.deleted_at is null), (select coalesce(m.poster_url, case when m.kind = 'image' then m.url end) from postroom.media m where m.id = p.media_ids[1])) as thumb
     from postroom.posts p join postroom.accounts a on a.id = p.account_id
     where p.batch_id = any(${ids}::uuid[]) order by p.scheduled_at`;
   return rows.map((p) => postRow(p, { username: p.username, avatar: p.profile_picture_url, thumb: p.thumb }));

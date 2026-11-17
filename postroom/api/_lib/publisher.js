@@ -106,6 +106,7 @@ export async function advance(post, deadline) {
       await logEvent({ postId: post.id, accountId: account.id, message: `Published${r.permalink ? `: ${r.permalink}` : ''}${r.note ? ` — ${r.note}` : ''}` });
       await notify({
         kind: 'published', postId: post.id, accountId: account.id, url: r.permalink || '/#/queue',
+        image: cover?.url || media[0]?.poster_url || (media[0]?.kind === 'image' ? media[0].url : null),
         title: `Live on @${account.username} · ${KIND_LABEL[post.kind] || post.kind}`,
         body: [(post.title || post.caption || '').split('\n')[0].slice(0, 90), r.note].filter(Boolean).join(' — '),
       });
@@ -157,12 +158,58 @@ export async function housekeeping(deadline = Date.now() + 60000) {
   if (Date.now() < deadline - 25000) out.comments = await throttle('inbox-comments', 170, () => pollInbox({ dms: false, comments: true, deadline: deadline - 15000 }));
   if (Date.now() < deadline - 20000) out.metrics = await throttle('metrics', 3 * 3600, () => collectMetrics(deadline));
   if (Date.now() < deadline - 20000) out.followers = await throttle('followers', 12 * 3600, collectFollowers);
+  out.reminders = await sendReminders().catch((e) => ({ error: e.message }));
   out.cleanup = await throttle('media-cleanup', 6 * 3600, cleanupMedia);
   out.prune = await throttle('prune', 86400, async () => {
     const r = await db()`delete from postroom.events where at < now() - interval '90 days'`;
     return { events: r.count };
   });
   return out;
+}
+
+const PF_SHORT = { instagram: 'IG', youtube: 'YT', tiktok: 'TT' };
+const fmtWhen = (d) => new Intl.DateTimeFormat('en-IN', { timeZone: process.env.APP_TIMEZONE || 'Asia/Kolkata', weekday: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(d));
+
+/** Heads-up notifications: ~1 day before and ~10 minutes before scheduled posts (one per cross-post group). */
+export async function sendReminders() {
+  const sql = db();
+  const rows = await sql`select p.id, p.group_id, p.platform, p.kind, p.title, p.caption, p.scheduled_at, p.created_at, p.cover_media_id,
+      p.reminded_day_at, p.reminded_soon_at, a.username,
+      (select coalesce(c.url) from postroom.media c where c.id = p.cover_media_id and c.deleted_at is null) as cover_url,
+      (select coalesce(m.poster_url, case when m.kind = 'image' then m.url end) from postroom.media m where m.id = p.media_ids[1]) as thumb
+    from postroom.posts p join postroom.accounts a on a.id = p.account_id
+    where p.status = 'scheduled' and p.scheduled_at > now() and p.scheduled_at <= now() + interval '24 hours'
+      and (p.reminded_soon_at is null or p.reminded_day_at is null)
+    order by p.scheduled_at limit 200`;
+  const groups = new Map();
+  for (const r of rows) {
+    const k = r.group_id || r.id;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
+  }
+  let sent = 0;
+  for (const list of groups.values()) {
+    const first = list[0];
+    const at = new Date(first.scheduled_at);
+    const mins = (at - Date.now()) / 60e3;
+    const where = list.map((r) => `${PF_SHORT[r.platform] || r.platform} @${r.username}`).join(' + ');
+    const what = ((first.title || first.caption || '').split('\n')[0] || 'Untitled').slice(0, 80);
+    const image = list.find((r) => r.thumb)?.thumb || list.find((r) => r.cover_url)?.cover_url || null;
+    const ids = list.map((r) => r.id);
+    if (mins <= 11 && list.some((r) => !r.reminded_soon_at)) {
+      await notify({ kind: 'soon', postId: first.id, url: '/#/queue', image, title: `Posting in ${Math.max(1, Math.round(mins))} min: ${what}`, body: where });
+      await sql`update postroom.posts set reminded_soon_at = now(), reminded_day_at = coalesce(reminded_day_at, now()) where id = any(${ids})`;
+      sent++;
+    } else if (mins > 60 && list.some((r) => !r.reminded_day_at)) {
+      // only when it was scheduled well in advance — no heads-up for something you just scheduled
+      if (list.every((r) => at - new Date(r.created_at) > 23 * 3600e3)) {
+        await notify({ kind: 'upcoming', postId: first.id, url: '/#/queue', image, title: `Coming up ${fmtWhen(at)}: ${what}`, body: where });
+        sent++;
+      }
+      await sql`update postroom.posts set reminded_day_at = now() where id = any(${ids})`;
+    }
+  }
+  return { sent };
 }
 
 /** Delete media files N days after every post that used them is done (default 7). Library files never used are kept. */

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { APP_URL, TZ, env, HttpError, body, send, redirect, isAuthed, sessionCookie, clearCookie, safeEqual, db, loadSettings, saveSettings, settingSource } from './_lib/core.js';
 import { listAccounts, platformStatus, startConnect, finishConnect, syncAccount, disconnectAccount, getAccount, accessToken } from './_lib/accounts.js';
-import { listMedia, registerMedia, importFromUrl, deleteMedia, uploadConfig, ALLOWED_TYPES, MAX_UPLOAD_BYTES } from './_lib/media.js';
+import { listMedia, registerMedia, importFromUrl, deleteMedia, updateMediaMeta, uploadConfig, ALLOWED_TYPES, MAX_UPLOAD_BYTES } from './_lib/media.js';
 import { checkTargets, summariseCheck, createPosts, listPosts, getPost, updatePost, cancelPost, retryPost, deletePost, listPlans, approvePlan, discardPlan } from './_lib/posts.js';
 import { tick } from './_lib/publisher.js';
 import { overview } from './_lib/analytics.js';
@@ -248,6 +248,7 @@ export default async function handler(req, res) {
       return send(res, 200, { url: `${APP_URL()}/dev-media/${name}`, pathname: name });
     }
     if (seg[0] === 'media' && seg[1] && m === 'DELETE') return send(res, 200, await deleteMedia(seg[1]));
+    if (seg[0] === 'media' && seg[1] && !seg[2] && m === 'PATCH') return send(res, 200, await updateMediaMeta(seg[1], await body(req)));
 
     // posts
     if (p === 'posts/check' && m === 'POST') return send(res, 200, summariseCheck(await checkTargets(await body(req))));

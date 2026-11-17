@@ -67,7 +67,7 @@ function readMeta(file) {
   });
 }
 
-async function putToStorage(name, file, mode, onProgress) {
+export async function putToStorage(name, file, mode, onProgress) {
   if (mode === 'blob') {
     const r = await blobUpload(`media/${name}`, file, {
       access: 'public',

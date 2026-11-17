@@ -60,10 +60,10 @@ export async function pushAll() {
 }
 
 /** Record a notification and push it to devices. Never throws (publishing must not fail because of it). */
-export async function notify({ kind, title, body = null, url = null, postId = null, accountId = null }) {
+export async function notify({ kind, title, body = null, url = null, postId = null, accountId = null, image = null }) {
   try {
-    const [n] = await db()`insert into postroom.notifications (kind, title, body, url, post_id, account_id)
-      values (${kind}, ${title}, ${body}, ${url}, ${postId}, ${accountId}) returning id`;
+    const [n] = await db()`insert into postroom.notifications (kind, title, body, url, post_id, account_id, image)
+      values (${kind}, ${title}, ${body}, ${url}, ${postId}, ${accountId}, ${image}) returning id`;
     await pushAll();
     return n;
   } catch (e) {

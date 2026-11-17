@@ -14,6 +14,7 @@ import Settings from './pages/Settings.jsx';
 import Research from './pages/Research.jsx';
 import Inbox from './pages/Inbox.jsx';
 import Alerts from './pages/Alerts.jsx';
+import { backfillPosters } from './posters.js';
 import PostDrawer from './pages/PostDrawer.jsx';
 
 const NAV = [
@@ -111,7 +112,10 @@ function App() {
 
   useEffect(() => {
     if (!authed) return;
-    loadBasics().catch((e) => toast(e.message, 'bad'));
+    loadBasics().then(() => api('config')).then((cfg) => {
+      // quietly make preview images for videos that arrived without one
+      setTimeout(() => backfillPosters(cfg.storage?.mode, () => setBump((b) => b + 1)), 2500);
+    }).catch((e) => toast(e.message, 'bad'));
     // OAuth round-trip messages
     const q = new URLSearchParams(location.search);
     if (q.get('connected')) toast(`Connected ${q.get('connected').replace(':', ' @')}`);

@@ -299,7 +299,7 @@ img, video { display: block; max-width: 100%; }
 .post-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-bottom: 1px solid var(--line); cursor: pointer; }
 .post-row:last-child { border-bottom: 0; }
 .post-row:hover { background: var(--surface-2); }
-.post-row .thumb { width: 44px; height: 56px; border-radius: 8px; object-fit: cover; background: var(--surface-3); flex: none; }
+.post-row .thumb { width: 54px; height: 72px; border-radius: 8px; object-fit: cover; background: var(--surface-3); flex: none; }
 .post-row .when { width: 116px; flex: none; font-size: 12.5px; color: var(--text-2); }
 @media (max-width: 640px) { .post-row .when { display: none; } .post-row .hide-sm { display: none; } }
 .progress { height: 4px; background: var(--surface-3); border-radius: 99px; overflow: hidden; }

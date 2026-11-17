@@ -16,6 +16,7 @@ self.addEventListener('push', (event) => {
       icon: '/icon-192.png',
       badge: '/icon-192.png',
       tag: n?.id || 'postroom',
+      ...(n?.image ? { image: n.image } : {}),
       data: { url: n?.url || '/#/alerts' },
     });
   })());

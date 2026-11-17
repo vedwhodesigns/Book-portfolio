@@ -8,6 +8,9 @@ const KIND = {
   reconnect: ['alert', 'bad'],
   dm: ['inbox', 'info'],
   test: ['send', 'info'],
+  soon: ['clock', 'info'],
+  upcoming: ['clock', 'info'],
+  reminder: ['alert', 'bad'],
 };
 
 const b64ToBytes = (b64) => {
@@ -124,6 +127,7 @@ export default function Alerts() {
                     <div style={{ fontWeight: 600 }}>{n.title}</div>
                     {n.body && <div class="small muted" style={{ overflowWrap: 'anywhere' }}>{n.body}</div>}
                   </div>
+                  {n.image && <img src={n.image} alt="" style={{ width: 40, height: 52, objectFit: 'cover', borderRadius: 6, flex: 'none' }} loading="lazy" />}
                   <span class="tiny faint" style={{ flex: 'none' }}>{relTime(n.created_at)}</span>
                 </a>
               );
