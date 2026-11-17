@@ -4,7 +4,10 @@ import { env, fetchT, readJson, form, PlatformError } from '../core.js';
 import { fetchRange } from '../storage.js';
 import { result, isVertical, fmtDur, byteLen, firstLine } from './common.js';
 
-const SCOPES = ['https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube.readonly'];
+// youtube.force-ssl lets Postroom add videos to playlists and post the first comment.
+const SCOPES = ['https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube.readonly', 'https://www.googleapis.com/auth/youtube.force-ssl'];
+export const hasManageScope = (account) => String(account?.scopes || '').includes('youtube.force-ssl');
+export const CATEGORIES = { 1: 'Film & Animation', 2: 'Autos & Vehicles', 10: 'Music', 15: 'Pets & Animals', 17: 'Sports', 19: 'Travel & Events', 20: 'Gaming', 22: 'People & Blogs', 23: 'Comedy', 24: 'Entertainment', 25: 'News & Politics', 26: 'Howto & Style', 27: 'Education', 28: 'Science & Technology', 29: 'Nonprofits & Activism' };
 const API = 'https://www.googleapis.com/youtube/v3';
 const UPLOAD = 'https://www.googleapis.com/upload/youtube/v3';
 const CHUNK = 16 * 1024 * 1024; // must be a multiple of 256 KiB
@@ -122,7 +125,7 @@ export default {
     return m && m.duration_s && m.duration_s <= 180 && (isVertical(m) || m.width === m.height) ? 'short' : 'video';
   },
 
-  validate({ kind, caption = '', title, media, options = {}, cover }) {
+  validate({ kind, caption = '', title, media, options = {}, cover, account }) {
     const r = result();
     const t = (title && title.trim()) || firstLine(caption, 100);
     if (!t) r.err('YouTube needs a title.');
@@ -131,7 +134,8 @@ export default {
     if (byteLen(caption) > 5000) r.err('Description is over YouTube\'s 5,000-byte limit.');
     const tags = options.tags || [];
     if (tags.join(',').length > 500) r.err('YouTube tags must total 500 characters or fewer.');
-    if (media.length !== 1 || media[0].kind !== 'video') r.err('YouTube needs exactly one video.');
+    if (media.length && media.every((m) => m.kind === 'image')) r.err('YouTube only accepts videos — leave this channel out of photo posts.');
+    else if (media.length !== 1 || media[0].kind !== 'video') r.err('YouTube needs exactly one video.');
     else {
       const m = media[0];
       if (kind === 'short') {
@@ -146,10 +150,15 @@ export default {
       r.warn('Until your Google project passes YouTube\'s API audit, YouTube locks API uploads to private. You can make it public in YouTube Studio afterwards.');
     }
     if (cover && kind === 'short') r.warn('YouTube ignores custom thumbnails on Shorts.');
+    if (options.category_id && !CATEGORIES[options.category_id]) r.err('Pick a YouTube category from the list.');
+    if (options.first_comment && String(options.first_comment).length > 10000) r.err('The first comment is too long.');
+    if ((options.playlist_id || options.first_comment) && account && !hasManageScope(account)) {
+      r.warn(`Reconnect @${account.username} (Accounts → Reconnect) to allow playlists and the first comment; the video will still upload.`);
+    }
     return r;
   },
 
-  async step({ post, token, media, cover, upload, save, deadline }) {
+  async step({ post, account, token, media, cover, upload, save, deadline }) {
     const m = media[0];
     const total = Number(m.size_bytes);
     if (!total) throw new PlatformError('YouTube: the video file size is unknown — re-upload it.');
@@ -162,9 +171,12 @@ export default {
           description: videoDescription(post),
           tags: o.tags?.length ? o.tags : undefined,
           categoryId: String(o.category_id || '22'),
+          defaultLanguage: o.language || undefined,
+          defaultAudioLanguage: o.language || undefined,
         },
         status: {
           privacyStatus: o.privacy || 'public',
+          license: o.license === 'creativeCommon' ? 'creativeCommon' : undefined,
           selfDeclaredMadeForKids: !!o.made_for_kids,
           containsSyntheticMedia: o.synthetic ? true : undefined,
           embeddable: true,
@@ -188,7 +200,7 @@ export default {
       upload.offset = 0;
     }
 
-    if (upload.video_id) return this.afterUpload({ post, token, cover, upload, save });
+    if (upload.video_id) return this.afterUpload({ post, account, token, cover, upload, save });
 
     // Upload chunks until done or out of time.
     let offset = Number(upload.offset || 0);
@@ -210,7 +222,7 @@ export default {
         const v = await readJson(res);
         await save({ video_id: v.id, offset: total });
         upload.video_id = v.id;
-        return this.afterUpload({ post, token, cover, upload, save });
+        return this.afterUpload({ post, account, token, cover, upload, save });
       }
       if (res.status === 404 || res.status === 410) {
         await save({ session_uri: null, offset: 0 }); // session expired — start again
@@ -228,7 +240,34 @@ export default {
     return { continue: true, progress: offset / total };
   },
 
-  async afterUpload({ post, token, cover, upload, save }) {
+  async afterUpload({ post, account, token, cover, upload, save }) {
+    const o = post.options || {};
+    const notes = [];
+    if (o.playlist_id && !upload.playlist_done) {
+      try {
+        await call(`${API}/playlistItems?part=snippet`, {
+          method: 'POST', headers: authed(token, { 'content-type': 'application/json' }),
+          body: JSON.stringify({ snippet: { playlistId: o.playlist_id, resourceId: { kind: 'youtube#video', videoId: upload.video_id } } }),
+        });
+      } catch (e) {
+        upload.playlist_error = hasManageScope(account) ? e.message : 'reconnect the channel to allow playlists';
+      }
+      await save({ playlist_done: true, playlist_error: upload.playlist_error || null });
+    }
+    const comment = String(o.first_comment || '').trim();
+    if (comment && !upload.comment_done) {
+      try {
+        await call(`${API}/commentThreads?part=snippet`, {
+          method: 'POST', headers: authed(token, { 'content-type': 'application/json' }),
+          body: JSON.stringify({ snippet: { videoId: upload.video_id, topLevelComment: { snippet: { textOriginal: comment } } } }),
+        });
+      } catch (e) {
+        upload.comment_error = hasManageScope(account) ? e.message : 'reconnect the channel to allow comments';
+      }
+      await save({ comment_done: true, comment_error: upload.comment_error || null });
+    }
+    if (upload.playlist_error) notes.push(`Not added to playlist: ${upload.playlist_error}`);
+    if (upload.comment_error) notes.push(`First comment not posted: ${upload.comment_error}`);
     if (cover && post.kind === 'video' && !upload.thumbnail_done) {
       try {
         const img = await fetchRange(cover.url, 0, Math.max(0, Number(cover.size_bytes || 2e6) - 1));
@@ -245,7 +284,7 @@ export default {
       done: true,
       externalId: id,
       permalink: post.kind === 'short' ? `https://www.youtube.com/shorts/${id}` : `https://youtu.be/${id}`,
-      note: upload.thumbnail_error ? `Thumbnail not set: ${upload.thumbnail_error}` : null,
+      note: [upload.thumbnail_error ? `Thumbnail not set: ${upload.thumbnail_error}` : null, ...notes].filter(Boolean).join(' · ') || null,
     };
   },
 
@@ -267,6 +306,19 @@ export default {
     const r = await call(`${API}/channels?part=statistics&id=${account.external_id}`, { headers: authed(token) });
     const s = r.items?.[0]?.statistics;
     return s && !s.hiddenSubscriberCount ? Number(s.subscriberCount) : null;
+  },
+
+  /** The channel's playlists, for the composer. */
+  async playlists({ token }) {
+    const out = [];
+    let pageToken = '';
+    for (let i = 0; i < 4; i++) {
+      const r = await call(`${API}/playlists?part=snippet,status&mine=true&maxResults=50${pageToken ? `&pageToken=${pageToken}` : ''}`, { headers: authed(token) });
+      for (const p of r.items || []) out.push({ id: p.id, title: p.snippet?.title, privacy: p.status?.privacyStatus });
+      if (!r.nextPageToken) break;
+      pageToken = r.nextPageToken;
+    }
+    return out;
   },
 
   permalinkFallback: (account) => account.profile_url,

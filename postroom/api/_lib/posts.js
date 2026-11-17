@@ -45,12 +45,14 @@ export async function checkTargets(input) {
     if (seen.has(account.id)) throw new HttpError(400, `@${account.username} is selected twice.`);
     seen.add(account.id);
     const p = platform(account.platform);
-    const kind = t.kind || p.defaultKind(media);
     const caption = t.caption ?? input.caption ?? '';
     const title = t.title ?? input.title ?? null;
     const options = { ...(input.options?.[account.platform] || {}), ...(t.options || {}) };
+    // A target can use its own media (e.g. YouTube gets a video made from the images Instagram posts).
+    const tMedia = t.media_ids?.length ? await loadMedia(t.media_ids) : media;
+    const kind = t.kind || p.defaultKind(tMedia);
     const r = p.kinds.includes(kind)
-      ? p.validate({ kind, caption, title, media, options, cover })
+      ? p.validate({ kind, caption, title, media: tMedia, options, cover, account })
       : { errors: [`${p.label} can't post a ${KIND_LABEL[kind] || kind}. Options: ${p.kinds.map((k) => KIND_LABEL[k]).join(', ')}.`], warnings: [] };
     if (account.status !== 'active') r.errors.unshift(`@${account.username} needs reconnecting first (Accounts).`);
     out.push({
@@ -60,6 +62,7 @@ export async function checkTargets(input) {
       caption,
       title,
       options,
+      media: tMedia,
       scheduled_at: t.scheduled_at ? parseWhen(t.scheduled_at, { allowPast: true }) : null,
       errors: r.errors,
       warnings: r.warnings,
@@ -111,7 +114,7 @@ export async function createPosts(input, { createdBy = 'app' } = {}) {
         kind: t.kind,
         caption: t.caption,
         title: t.title,
-        media_ids: check.media.map((m) => m.id),
+        media_ids: t.media.map((m) => m.id),
         cover_media_id: check.cover?.id || null,
         options: sql.json(t.options),
         scheduled_at: t.scheduled_at || when,

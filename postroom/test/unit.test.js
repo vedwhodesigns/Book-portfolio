@@ -47,7 +47,7 @@ test('Instagram validation', () => {
   assert.deepEqual(ig.validate({ kind: 'reel', caption: 'hi #a', media: [vid()] }).errors, []);
   assert.match(ig.validate({ kind: 'reel', caption: '', media: [vid({ duration_s: 2 })] }).errors[0], /3s–15m/);
   assert.match(ig.validate({ kind: 'image', caption: '', media: [img({ width: 1000, height: 2000 })] }).errors[0], /4:5/);
-  assert.match(ig.validate({ kind: 'carousel', caption: '', media: [img()] }).errors[0], /2–10/);
+  assert.match(ig.validate({ kind: 'carousel', caption: '', media: [img()] }).errors[0], /2–20/);
   const tags = Array.from({ length: 31 }, (_, i) => `#t${i}`).join(' ');
   assert.ok(ig.validate({ kind: 'reel', caption: tags, media: [vid()] }).errors.some((e) => /30/.test(e)));
 });

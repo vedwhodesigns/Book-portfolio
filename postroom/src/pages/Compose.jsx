@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo, useRef } from 'preact/hooks';
 import { api, uploadFile, wallTime, todayKey, addDays, getTz, fmtDur, fmtBytes, fmtDateTime } from '../api.js';
 import { useApp, Icon, PfMark, PF, KIND, Seg, Toggle, Spinner, Avatar, Empty } from '../ui.jsx';
 
+const YT_CATEGORIES = { 1: 'Film & Animation', 2: 'Autos & Vehicles', 10: 'Music', 15: 'Pets & Animals', 17: 'Sports', 19: 'Travel & Events', 20: 'Gaming', 22: 'People & Blogs', 23: 'Comedy', 24: 'Entertainment', 25: 'News & Politics', 26: 'Howto & Style', 27: 'Education', 28: 'Science & Technology', 29: 'Nonprofits & Activism' };
+
 const LIMITS = { instagram: 2200, youtube: 5000, tiktok: 2200 };
 const TT_PRIVACY = {
   PUBLIC_TO_EVERYONE: 'Everyone',
@@ -55,8 +57,8 @@ export default function Compose({ params }) {
   const [ytTitle, setYtTitle] = useState('');
   const [kinds, setKinds] = useState({});
   const [opts, setOpts] = useState({
-    instagram: { share_to_feed: true },
-    youtube: { privacy: 'public', made_for_kids: false, notify_subscribers: true, tags: [] },
+    instagram: { share_to_feed: true, collaborators: '', user_tags: '', alt_text: '', audio_name: '', trial: '', ai_generated: false, first_comment: '' },
+    youtube: { privacy: 'public', made_for_kids: false, notify_subscribers: true, tags: [], category_id: '22', synthetic: false, first_comment: '' },
     tiktok: { mode: 'direct', privacy_level: '', disable_comment: false, disable_duet: false, disable_stitch: false, brand_content: false, brand_organic: false, is_aigc: false },
   });
   const [tab, setTab] = useState(null);
@@ -70,12 +72,20 @@ export default function Compose({ params }) {
   const [creator, setCreator] = useState({}); // tiktok account id -> creator info
   const [importUrl, setImportUrl] = useState('');
   const [idea, setIdea] = useState(null); // research post this draft is inspired by
+  const [perAcct, setPerAcct] = useState({}); // account id -> { caption?, title?, playlist_id? }
+  const [playlists, setPlaylists] = useState({}); // youtube account id -> { playlists, can_manage } | { error }
   const fileRef = useRef();
 
   const active = accounts.filter((a) => a.status === 'active');
   const chosen = accounts.filter((a) => selected.includes(a.id));
   const platforms = [...new Set(chosen.map((a) => a.platform))];
+  const allImages = media.length > 0 && media.every((m) => m.kind === 'image');
   const pfKind = (pf) => (kindOptions(pf, media).includes(kinds[pf]) ? kinds[pf] : defaultKind(pf, media));
+  const setAcct = (id, k, v) => setPerAcct((s) => {
+    const n = { ...(s[id] || {}) };
+    if (v === undefined) delete n[k]; else n[k] = v;
+    return { ...s, [id]: n };
+  });
 
   useEffect(() => {
     api('media', { query: { limit: 40 } }).then(setLibrary).catch(() => {});
@@ -95,6 +105,12 @@ export default function Compose({ params }) {
     }
   }, []);
   useEffect(() => { if (!platforms.includes(tab)) setTab(platforms[0] || null); }, [platforms.join()]);
+  // Each channel has its own playlists.
+  useEffect(() => {
+    for (const a of chosen.filter((x) => x.platform === 'youtube' && !playlists[x.id])) {
+      api(`accounts/${a.id}/playlists`).then((r) => setPlaylists((p) => ({ ...p, [a.id]: r }))).catch((e) => setPlaylists((p) => ({ ...p, [a.id]: { error: e.message } })));
+    }
+  }, [selected.join()]);
 
   // TikTok requires showing the creator's current options before a direct post.
   useEffect(() => {
@@ -103,13 +119,17 @@ export default function Compose({ params }) {
     }
   }, [selected.join()]);
 
-  const targets = chosen.map((a) => ({
-    account_id: a.id,
-    kind: pfKind(a.platform),
-    caption: overrides[a.platform] ?? undefined,
-    title: a.platform === 'youtube' ? ytTitle || undefined : undefined,
-    options: opts[a.platform],
-  }));
+  const targets = chosen.map((a) => {
+    const pa = perAcct[a.id] || {};
+    const yt = a.platform === 'youtube';
+    return {
+      account_id: a.id,
+      kind: pfKind(a.platform),
+      caption: pa.caption ?? overrides[a.platform] ?? undefined,
+      title: yt ? (pa.title ?? ytTitle) || undefined : undefined,
+      options: yt ? { ...opts.youtube, playlist_id: pa.playlist_id || undefined } : opts[a.platform],
+    };
+  });
   const payload = { media_ids: media.map((m) => m.id), cover_media_id: cover || null, caption, targets };
 
   // Live rule check (debounced).
@@ -359,12 +379,73 @@ export default function Compose({ params }) {
                     />
                     {overrides[tab] != null && <textarea class="textarea" value={overrides[tab]} onInput={(e) => setOverrides({ ...overrides, [tab]: e.currentTarget.value })} />}
 
-                    {tab === 'instagram' && pfKind('instagram') === 'reel' && (
-                      <Toggle checked={opts.instagram.share_to_feed} onChange={(v) => setOpt('instagram', 'share_to_feed', v)} label="Also show in the main feed" />
+                    {chosen.filter((a) => a.platform === tab).length > 1 && (
+                      <div class="col" style={{ gap: 8 }}>
+                        <span class="label">Per account</span>
+                        {chosen.filter((a) => a.platform === tab).map((a) => {
+                          const pa = perAcct[a.id] || {};
+                          return (
+                            <div key={a.id} class="col" style={{ gap: 6 }}>
+                              <Toggle checked={pa.caption != null} onChange={(v) => setAcct(a.id, 'caption', v ? capFor(tab) : undefined)} label={<span class="row" style={{ gap: 6 }}><Avatar src={a.profile_picture_url} name={a.username} size={20} />Own caption for @{a.username}</span>} />
+                              {pa.caption != null && <textarea class="textarea" value={pa.caption} onInput={(e) => setAcct(a.id, 'caption', e.currentTarget.value)} />}
+                              {tab === 'youtube' && pa.caption != null && (
+                                <input class="input" placeholder={`Title for @${a.username} (empty = shared title)`} value={pa.title || ''} onInput={(e) => setAcct(a.id, 'title', e.currentTarget.value || undefined)} />
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {tab === 'instagram' && (
+                      <>
+                        {pfKind('instagram') === 'reel' && (
+                          <>
+                            <Toggle checked={opts.instagram.share_to_feed} onChange={(v) => setOpt('instagram', 'share_to_feed', v)} label="Also show in the main feed" />
+                            <div class="field">
+                              <label>Trial reel</label>
+                              <Seg value={opts.instagram.trial || ''} onChange={(v) => setOpt('instagram', 'trial', v)} options={[{ value: '', label: 'Off' }, { value: 'manual', label: 'Non-followers first' }, { value: 'auto', label: 'Auto-share if it does well' }]} />
+                              <span class="tiny faint">Trial reels are shown to non-followers first. "Auto-share" shares it with your followers if it performs well; otherwise share it yourself in the Instagram app.</span>
+                            </div>
+                            <div class="field"><label for="iga">Audio name (optional)</label><input id="iga" class="input" placeholder="e.g. The Crime Archives — original audio" value={opts.instagram.audio_name} onInput={(e) => setOpt('instagram', 'audio_name', e.currentTarget.value)} /><span class="tiny faint">Names your original audio. Can only be set once.</span></div>
+                          </>
+                        )}
+                        {pfKind('instagram') !== 'story' && (
+                          <div class="grid2">
+                            <div class="field"><label for="igc">Collaborators (up to 3)</label><input id="igc" class="input" placeholder="@account1, @account2" value={opts.instagram.collaborators} onInput={(e) => setOpt('instagram', 'collaborators', e.currentTarget.value)} /><span class="tiny faint">They get an invite; once accepted the post shows on both profiles.</span></div>
+                            <div class="field"><label for="igt">Tag people</label><input id="igt" class="input" placeholder="@person1, @person2" value={opts.instagram.user_tags} onInput={(e) => setOpt('instagram', 'user_tags', e.currentTarget.value)} /></div>
+                          </div>
+                        )}
+                        {pfKind('instagram') === 'story' && (
+                          <div class="field"><label for="igt">Mention people</label><input id="igt" class="input" placeholder="@person1, @person2" value={opts.instagram.user_tags} onInput={(e) => setOpt('instagram', 'user_tags', e.currentTarget.value)} /><span class="tiny faint">Stickers (links, polls, location) can't be added through Instagram's API.</span></div>
+                        )}
+                        {['image', 'carousel'].includes(pfKind('instagram')) && (
+                          pfKind('instagram') === 'carousel' ? (
+                            <div class="field">
+                              <label>Alt text (for screen readers)</label>
+                              {media.filter((m) => m.kind === 'image').map((m) => (
+                                <div key={m.id} class="row" style={{ gap: 8 }}>
+                                  {m.poster_url && <img src={m.poster_url} alt="" style={{ width: 34, height: 34, objectFit: 'cover', borderRadius: 6, flex: 'none' }} />}
+                                  <input class="input" placeholder={`Describe ${m.filename || 'this image'}`} value={opts.instagram.alt_texts?.[m.id] || ''} onInput={(e) => setOpt('instagram', 'alt_texts', { ...(opts.instagram.alt_texts || {}), [m.id]: e.currentTarget.value })} />
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div class="field"><label for="igalt">Alt text (for screen readers)</label><input id="igalt" class="input" placeholder="Describe the image" value={opts.instagram.alt_text} onInput={(e) => setOpt('instagram', 'alt_text', e.currentTarget.value)} /></div>
+                          )
+                        )}
+                        {pfKind('instagram') !== 'story' && (
+                          <>
+                            <div class="field"><label for="igfc">First comment (optional)</label><textarea id="igfc" class="textarea" style={{ minHeight: 60 }} placeholder="Posted as a comment right after publishing — e.g. extra hashtags or a link to the full story" value={opts.instagram.first_comment} onInput={(e) => setOpt('instagram', 'first_comment', e.currentTarget.value)} /></div>
+                            <Toggle checked={opts.instagram.ai_generated} onChange={(v) => setOpt('instagram', 'ai_generated', v)} label="Label as made with AI" hint="Adds Instagram's AI info label" />
+                          </>
+                        )}
+                      </>
                     )}
 
                     {tab === 'youtube' && (
                       <>
+                        {allImages && <div class="notice warn"><Icon name="alert" size={16} /><span>YouTube only accepts videos. Untick the YouTube channel for photo posts, or add a video.</span></div>}
                         <div class="field">
                           <div class="row between"><label for="ytt">Title</label><span class={`counter ${ytTitle.length > 100 ? 'over' : ''}`}>{ytTitle.length}/100</span></div>
                           <input id="ytt" class="input" placeholder={(caption.split('\n')[0] || 'Video title').slice(0, 100)} value={ytTitle} onInput={(e) => setYtTitle(e.currentTarget.value)} />
@@ -378,7 +459,30 @@ export default function Compose({ params }) {
                           <label for="ytg">Tags</label>
                           <input id="ytg" class="input" placeholder="comma, separated, tags" value={(opts.youtube.tags || []).join(', ')} onInput={(e) => setOpt('youtube', 'tags', e.currentTarget.value.split(',').map((s) => s.trim()).filter(Boolean))} />
                         </div>
+                        <div class="field">
+                          <label for="ytc">Category</label>
+                          <select id="ytc" class="select" value={opts.youtube.category_id} onChange={(e) => setOpt('youtube', 'category_id', e.currentTarget.value)}>
+                            {Object.entries(YT_CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                          </select>
+                        </div>
+                        {chosen.filter((a) => a.platform === 'youtube').map((a) => {
+                          const pl = playlists[a.id];
+                          return (
+                            <div key={a.id} class="field">
+                              <label>Playlist · @{a.username}</label>
+                              {pl?.error ? <span class="tiny" style={{ color: 'var(--bad)' }}>{pl.error}</span> : (
+                                <select class="select" value={perAcct[a.id]?.playlist_id || ''} onChange={(e) => setAcct(a.id, 'playlist_id', e.currentTarget.value || undefined)} disabled={!pl}>
+                                  <option value="">{pl ? 'No playlist' : 'Loading…'}</option>
+                                  {(pl?.playlists || []).map((x) => <option key={x.id} value={x.id}>{x.title}{x.privacy !== 'public' ? ` (${x.privacy})` : ''}</option>)}
+                                </select>
+                              )}
+                              {pl && !pl.error && !pl.can_manage && <span class="tiny faint">To add to playlists and post the first comment, reconnect this channel once (Accounts → Reconnect).</span>}
+                            </div>
+                          );
+                        })}
+                        <div class="field"><label for="ytfc">First comment (optional)</label><textarea id="ytfc" class="textarea" style={{ minHeight: 60 }} placeholder="Posted under the video right after upload" value={opts.youtube.first_comment} onInput={(e) => setOpt('youtube', 'first_comment', e.currentTarget.value)} /></div>
                         <Toggle checked={opts.youtube.notify_subscribers} onChange={(v) => setOpt('youtube', 'notify_subscribers', v)} label="Notify subscribers" />
+                        <Toggle checked={opts.youtube.synthetic} onChange={(v) => setOpt('youtube', 'synthetic', v)} label="Altered or synthetic content" hint="Required by YouTube when realistic-looking content was made or changed with AI" />
                         {!config.audited.youtube && opts.youtube.privacy !== 'private' && <div class="notice warn"><Icon name="alert" size={16} /><span>Until Google approves your project's YouTube audit, YouTube makes API uploads <b>private</b>. Switch it to public in YouTube Studio, or apply for the audit (SETUP.md).</span></div>}
                       </>
                     )}

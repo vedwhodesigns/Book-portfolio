@@ -207,6 +207,12 @@ export default async function handler(req, res) {
         if (a.platform !== 'tiktok') throw new HttpError(400, 'Only TikTok has creator info.');
         return send(res, 200, await platform('tiktok').creatorInfo(await accessToken(a)));
       }
+      if (seg[2] === 'playlists' && m === 'GET') {
+        const a = await getAccount(seg[1]);
+        if (a.platform !== 'youtube') throw new HttpError(400, 'Only YouTube has playlists.');
+        const yt = platform('youtube');
+        return send(res, 200, { playlists: await yt.playlists({ token: await accessToken(a) }), can_manage: String(a.scopes || '').includes('youtube.force-ssl') });
+      }
       if (!seg[2] && m === 'DELETE') return send(res, 200, await disconnectAccount(seg[1]));
     }
 

@@ -68,6 +68,28 @@ async function profile(token) {
   };
 }
 
+/** "@a, b" or ["a","@b"] → ["a","b"] */
+export const cleanNames = (v) => (Array.isArray(v) ? v : String(v || '').split(/[\s,]+/))
+  .map((x) => String(x).trim().replace(/^@/, '')).filter(Boolean);
+
+/** Optional extras shared by image, reel and carousel containers. Only sends what is set. */
+function extras(kind, o = {}) {
+  const p = {};
+  const collabs = cleanNames(o.collaborators);
+  if (collabs.length && kind !== 'story') p.collaborators = JSON.stringify(collabs.slice(0, 3));
+  const tags = cleanNames(o.user_tags);
+  if (tags.length && kind !== 'carousel') {
+    p.user_tags = JSON.stringify(tags.map((username) => (kind === 'image' ? { username, x: 0.5, y: 0.5 } : { username })));
+  }
+  if (o.ai_generated && kind !== 'story') p.is_ai_generated = true;
+  if (kind === 'reel') {
+    if (o.audio_name) p.audio_name = String(o.audio_name).slice(0, 100);
+    if (o.trial) p.trial_params = JSON.stringify({ graduation_strategy: o.trial === 'auto' ? 'SS_PERFORMANCE' : 'MANUAL' });
+  }
+  if (kind === 'image' && o.alt_text) p.alt_text = String(o.alt_text).slice(0, 1000);
+  return p;
+}
+
 export default {
   id: 'instagram',
   label: 'Instagram',
@@ -186,6 +208,7 @@ export default {
     else if (tags > 8) r.warn(`${tags} hashtags — 3–5 focused tags usually perform better.`);
     if (countMentions(caption) > 20) r.err('Instagram allows at most 20 @mentions.');
     if (!media.length) r.err('Add media.');
+    if (media.some((m) => m.kind === 'video' && /webm/.test(m.content_type || ''))) r.err('Instagram needs MP4 or MOV videos (this one is WebM).');
     const checkImage = (m) => {
       const ar = ratio(m);
       if (ar && (ar < 0.79 || ar > 1.92)) r.err(`${m.filename || 'An image'} is ${m.width}×${m.height}; feed images must be between 4:5 portrait and 1.91:1 landscape.`);
@@ -194,7 +217,7 @@ export default {
       if (media.length !== 1 || media[0].kind !== 'image') r.err('A single-image post needs exactly one image.');
       else checkImage(media[0]);
     } else if (kind === 'carousel') {
-      if (media.length < 2 || media.length > 10) r.err('A carousel needs 2–10 items.');
+      if (media.length < 2 || media.length > 20) r.err('A carousel needs 2–20 items.');
       for (const m of media) {
         if (m.kind === 'image') checkImage(m);
         else if (m.duration_s && (m.duration_s < 3 || m.duration_s > 60)) r.err(`Carousel videos must be 3–60s (${m.filename} is ${fmtDur(m.duration_s)}).`);
@@ -215,6 +238,18 @@ export default {
       if (caption.trim()) r.warn("Instagram doesn't show captions on stories.");
     } else r.err(`Instagram can't post a "${kind}".`);
     if (options.share_to_feed === false && kind !== 'reel') r.warn('"Share to feed" only applies to reels.');
+    const collabs = cleanNames(options.collaborators);
+    if (collabs.length > 3) r.err('Instagram allows up to 3 collaborators.');
+    if (collabs.length && kind === 'story') r.err("Stories can't have collaborators.");
+    const tagged = cleanNames(options.user_tags);
+    if (tagged.length > 20) r.err('Tag at most 20 people.');
+    if (tagged.length && kind === 'carousel') r.warn('People tags are added to the first image of a carousel.');
+    if (options.alt_text && String(options.alt_text).length > 1000) r.err('Alt text can be at most 1,000 characters.');
+    if (options.alt_text && !['image', 'carousel'].includes(kind)) r.warn('Alt text only applies to image posts and carousels.');
+    if (options.audio_name && kind !== 'reel') r.warn('Audio name only applies to reels.');
+    if (options.trial && kind !== 'reel') r.err('Only reels can be trial reels.');
+    if (options.first_comment && String(options.first_comment).length > 2200) r.err('The first comment can be at most 2,200 characters.');
+    if (options.first_comment && kind === 'story') r.warn("Stories can't have comments; the first comment will be skipped.");
     return r;
   },
 
@@ -234,17 +269,22 @@ export default {
       }
       let params;
       const m = media[0];
-      if (post.kind === 'image') params = { image_url: m.url, caption };
+      const o = post.options || {};
+      if (post.kind === 'image') params = { image_url: m.url, caption, ...extras('image', o) };
       else if (post.kind === 'reel') {
-        params = { media_type: 'REELS', video_url: m.url, caption, share_to_feed: post.options?.share_to_feed !== false };
+        params = { media_type: 'REELS', video_url: m.url, caption, share_to_feed: o.share_to_feed !== false, ...extras('reel', o) };
         if (cover) params.cover_url = cover.url;
-        else if (post.options?.thumb_offset_ms) params.thumb_offset = post.options.thumb_offset_ms;
-      } else if (post.kind === 'story') params = m.kind === 'video' ? { media_type: 'STORIES', video_url: m.url } : { media_type: 'STORIES', image_url: m.url };
+        else if (o.thumb_offset_ms) params.thumb_offset = o.thumb_offset_ms;
+      } else if (post.kind === 'story') params = { media_type: 'STORIES', ...(m.kind === 'video' ? { video_url: m.url } : { image_url: m.url }), ...extras('story', o) };
       if (post.kind === 'carousel') {
         const children = upload.children || [];
+        const tagged = cleanNames(o.user_tags);
         for (let i = children.length; i < media.length; i++) {
           const c = media[i];
           const p = c.kind === 'video' ? { media_type: 'VIDEO', video_url: c.url, is_carousel_item: true } : { image_url: c.url, is_carousel_item: true };
+          const alt = o.alt_texts?.[c.id] || (i === 0 ? o.alt_text : null);
+          if (c.kind === 'image' && alt) p.alt_text = String(alt).slice(0, 1000);
+          if (i === 0 && c.kind === 'image' && tagged.length) p.user_tags = JSON.stringify(tagged.map((username) => ({ username, x: 0.5, y: 0.5 })));
           const r = await igPost(`${uid}/media`, token, p, account);
           children.push(r.id);
           await save({ children });
@@ -266,7 +306,7 @@ export default {
           if (s.status_code === 'ERROR' || s.status_code === 'EXPIRED') throw new PlatformError(`Instagram couldn't process a carousel item: ${s.status || s.status_code}`);
           if (s.status_code !== 'FINISHED') return { waitSec: 20 };
         }
-        const parent = await igPost(`${uid}/media`, token, { media_type: 'CAROUSEL', children: upload.children.join(','), caption }, account);
+        const parent = await igPost(`${uid}/media`, token, { media_type: 'CAROUSEL', children: upload.children.join(','), caption, ...extras('carousel', post.options || {}) }, account);
         await save({ container_id: parent.id });
         upload.container_id = parent.id;
       }
@@ -277,14 +317,30 @@ export default {
       if (s.status_code !== 'FINISHED') return { waitSec: hasVideo ? 20 : 5 };
       const pub = await igPost(`${uid}/media_publish`, token, { creation_id: upload.container_id }, account);
       await save({ stage: 'published', media_id: pub.id });
-      let permalink = null;
-      try {
-        permalink = (await igGet(pub.id, token, { fields: 'permalink' }, account)).permalink || null;
-      } catch { /* not fatal */ }
-      return { done: true, externalId: pub.id, permalink };
+      upload.media_id = pub.id;
+      upload.stage = 'published';
     }
 
-    if (upload.stage === 'published') return { done: true, externalId: upload.media_id, permalink: post.permalink };
+    if (upload.stage === 'published') {
+      let permalink = upload.permalink || null;
+      if (!permalink) {
+        try {
+          permalink = (await igGet(upload.media_id, token, { fields: 'permalink' }, account)).permalink || null;
+          if (permalink) await save({ permalink });
+        } catch { /* not fatal */ }
+      }
+      let note = null;
+      const comment = String(post.options?.first_comment || '').trim();
+      if (comment && post.kind !== 'story' && !upload.comment_done) {
+        try {
+          await igPost(`${upload.media_id}/comments`, token, { message: comment }, account);
+        } catch (e) {
+          note = `First comment not posted: ${e.message}`;
+        }
+        await save({ comment_done: true, comment_error: note });
+      }
+      return { done: true, externalId: upload.media_id, permalink: permalink || post.permalink, note: note || upload.comment_error || null };
+    }
     throw new PlatformError(`Unknown Instagram upload stage "${upload.stage}".`);
   },
 

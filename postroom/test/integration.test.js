@@ -53,7 +53,8 @@ async function fakeFetch(input, init = {}) {
     if (p === 'me/assigned_instagram_accounts') return json({ data: [{ id: '17841400000000001', username: 'brand.one' }, { id: '17841400000000002', username: 'brand.two' }] });
     if (/^1784140000000000[12]$/.test(p)) return json({ id: p, username: p.endsWith('1') ? 'brand.one' : 'brand.two', name: 'Brand', followers_count: 1234 });
     if (p.endsWith('content_publishing_limit')) return json({ data: [{ quota_usage: 0, config: { quota_total: 100 } }] });
-    if (p.endsWith('/media') && method === 'POST') { state.fbPublish = true; return json({ id: 'fbcontainer' }); }
+    if (p.endsWith('/media') && method === 'POST') { state.fbPublish = true; (state.igCreates ||= []).push(Object.fromEntries(new URLSearchParams(String(init.body)))); return json({ id: 'fbcontainer' }); }
+    if (p.endsWith('/comments') && method === 'POST') { (state.igComments ||= []).push(new URLSearchParams(String(init.body)).get('message')); return json({ id: 'cm1' }); }
     if (p === 'fbcontainer') return json({ status_code: 'FINISHED' });
     if (p.endsWith('/media_publish')) return json({ id: 'fbmedia1' });
     if (p === 'fbmedia1') return json({ permalink: 'https://www.instagram.com/reel/unified/' });
@@ -71,9 +72,12 @@ async function fakeFetch(input, init = {}) {
     if (p === 'me') return json({ followers_count: 5100 });
   }
   // Google / YouTube
+  if (url.host === 'www.googleapis.com' && url.pathname === '/youtube/v3/playlistItems' && method === 'POST') { state.ytPlaylist = JSON.parse(init.body).snippet; return json({ id: 'pli1' }); }
+  if (url.host === 'www.googleapis.com' && url.pathname === '/youtube/v3/commentThreads' && method === 'POST') { state.ytComment = JSON.parse(init.body).snippet; return json({ id: 'ct1' }); }
   if (url.host === 'oauth2.googleapis.com') return json({ access_token: 'yt-new', expires_in: 3600 });
   if (url.host === 'www.googleapis.com' && url.pathname === '/upload/youtube/v3/videos') {
     const meta = JSON.parse(init.body);
+    state.ytMeta = meta;
     assert.equal(meta.status.selfDeclaredMadeForKids, false);
     assert.match(meta.snippet.description, /#Shorts/);
     assert.equal(h.authorization, 'Bearer yt-new', 'uses refreshed token');
@@ -511,4 +515,51 @@ test('Instagram inbox polling: works without webhooks, never auto-replies to his
   assert.equal(state.sent.length, 2, 'nothing is sent twice');
   const st = await inbox.inboxStatus();
   assert.ok(st.accounts.find((a) => a.username === 'brand.one').checked_at);
+});
+
+test('post styles: Instagram carousel extras + first comment, YouTube video with its own media, playlist and comment', { skip }, async () => {
+  const img = (n) => ({ id: `00000000-0000-0000-0000-0000000000${n}`, url: `https://media.test/${n}.jpg`, pathname: `${n}.jpg`, kind: 'image', content_type: 'image/jpeg', size_bytes: 1000, width: 1080, height: 1350, duration_s: null, filename: `${n}.jpg` });
+  await sql`insert into postroom.media ${sql([img('e2'), img('e3'),
+    { id: '00000000-0000-0000-0000-0000000000e4', url: 'https://media.test/s.mp4', pathname: 's.mp4', kind: 'video', content_type: 'video/mp4', size_bytes: VIDEO_SIZE, width: 1080, height: 1920, duration_s: 6, filename: 's.mp4' },
+  ], 'id', 'url', 'pathname', 'kind', 'content_type', 'size_bytes', 'width', 'height', 'duration_s', 'filename')}`;
+  await sql`update postroom.accounts set scopes = 'youtube.upload youtube.readonly youtube.force-ssl' where platform = 'youtube'`;
+  const images = ['00000000-0000-0000-0000-0000000000e2', '00000000-0000-0000-0000-0000000000e3'];
+  const yt = { account: 'youtube:crimearchivesyt', options: { privacy: 'public', made_for_kids: false, playlist_id: 'PL1', first_comment: 'Thanks for watching', category_id: '27' } };
+
+  const noVideo = await posts.checkTargets({ media_ids: images, caption: 'x', targets: [yt] });
+  assert.match(noVideo.targets[0].errors.join(' '), /only accepts videos/);
+  const badIg = await posts.checkTargets({ media_ids: images, caption: 'x', targets: [{ account: 'instagram:brand.one', options: { collaborators: 'a b c d', trial: 'manual' } }] });
+  assert.match(badIg.targets[0].errors.join(' '), /3 collaborators/);
+  assert.match(badIg.targets[0].errors.join(' '), /trial reels/);
+
+  state.igCreates = [];
+  state.igComments = [];
+  state.ytReceived = 0;
+  const r = await posts.createPosts({
+    mode: 'now', media_ids: images, caption: 'Case file #12\n\n#truecrime',
+    targets: [
+      { account: 'instagram:brand.one', options: { collaborators: '@partner, other', user_tags: '@detective', alt_texts: { [images[0]]: 'A case file on a desk' }, ai_generated: true, first_comment: 'Full story in bio' } },
+      { ...yt, media_ids: ['00000000-0000-0000-0000-0000000000e4'] },
+    ],
+  });
+  assert.deepEqual(r.posts.map((p) => p.kind).sort(), ['carousel', 'short']);
+  await drain();
+  const rows = await sql`select platform, status, error, note, media_ids from postroom.posts where group_id = ${r.group_id}`;
+  for (const row of rows) assert.equal(row.status, 'published', `${row.platform}: ${row.error}`);
+  const ytRow = rows.find((x) => x.platform === 'youtube');
+  assert.deepEqual(ytRow.media_ids, ['00000000-0000-0000-0000-0000000000e4'], 'YouTube used its own video');
+  assert.equal(ytRow.note, null, ytRow.note);
+
+  const [first, second, parent] = state.igCreates;
+  assert.equal(first.alt_text, 'A case file on a desk');
+  assert.deepEqual(JSON.parse(first.user_tags), [{ username: 'detective', x: 0.5, y: 0.5 }]);
+  assert.equal(second.alt_text, undefined);
+  assert.equal(parent.media_type, 'CAROUSEL');
+  assert.deepEqual(JSON.parse(parent.collaborators), ['partner', 'other']);
+  assert.equal(parent.is_ai_generated, 'true');
+  assert.deepEqual(state.igComments, ['Full story in bio']);
+
+  assert.equal(state.ytMeta.snippet.categoryId, '27');
+  assert.deepEqual([state.ytPlaylist.playlistId, state.ytPlaylist.resourceId.videoId], ['PL1', 'ytvid1']);
+  assert.equal(state.ytComment.topLevelComment.snippet.textOriginal, 'Thanks for watching');
 });

@@ -22,8 +22,9 @@ const target = {
     scheduled_at: { type: 'string', description: 'Overrides the shared time for this account.' },
     options: {
       type: 'object',
-      description: 'Platform options. YouTube: {privacy: public|unlisted|private, made_for_kids: boolean (required), tags: string[], category_id}. TikTok: {mode: direct|inbox, privacy_level: PUBLIC_TO_EVERYONE|MUTUAL_FOLLOW_FRIENDS|FOLLOWER_OF_CREATOR|SELF_ONLY (required for direct), disable_comment, disable_duet, disable_stitch, brand_content, brand_organic, is_aigc}. Instagram: {share_to_feed: boolean}.',
+      description: 'Platform options. YouTube: {privacy: public|unlisted|private, made_for_kids: boolean (required), tags: string[], category_id (e.g. "22" People & Blogs, "24" Entertainment, "25" News & Politics, "27" Education, "28" Science & Technology), playlist_id, first_comment, synthetic: boolean (AI-altered realistic content), notify_subscribers: boolean, language: e.g. "en"}. TikTok: {mode: direct|inbox, privacy_level: PUBLIC_TO_EVERYONE|MUTUAL_FOLLOW_FRIENDS|FOLLOWER_OF_CREATOR|SELF_ONLY (required for direct), disable_comment, disable_duet, disable_stitch, brand_content, brand_organic, is_aigc}. Instagram: {share_to_feed: boolean (reels), collaborators: up to 3 usernames, user_tags: usernames to tag, alt_text (image) or alt_texts: {media_id: text} (carousel), audio_name (reels), trial: "manual"|"auto" (trial reel), ai_generated: boolean, first_comment}.',
     },
+    media_ids: { type: 'array', items: { type: 'string' }, description: 'Optional: different media for this account only (e.g. a video for YouTube while Instagram gets images). YouTube only accepts videos.' },
   },
   required: ['account'],
 };
