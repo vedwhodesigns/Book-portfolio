@@ -19,6 +19,8 @@
 //   "kind": { "instagram": "reel" },                 // optional: image | carousel | reel | story | short | video
 //   "instagram_cover": "cover.jpg",                  // optional 9:16 reel cover
 //   "youtube_thumbnail": "thumb.jpg",                // optional 16:9 thumbnail
+//   "youtube_tags": ["titan submarine", "deep sea"], // optional hidden YouTube tags for this video (brand tags are added)
+//   "captions": { "youtube": "…", "instagram": "…" }, // optional per-platform (or per-account) captions
 //   "options": { "instagram": { "first_comment": "…" }, "youtube": { "tags": ["…"] } }
 // }
 import fs from 'node:fs';
@@ -198,7 +200,13 @@ async function buildPayload(cardPath, { dry }) {
       if (opts.made_for_kids === undefined) opts.made_for_kids = false;
       if (!opts.privacy) opts.privacy = 'public';
       if (!opts.category_id && a.brand?.defaults?.youtube_category_id) opts.category_id = a.brand.defaults.youtube_category_id;
+      // Hidden tags: the brand's standing tags + this video's own ("youtube_tags" in the card), max 500 chars.
+      const tags = [...new Set([...(a.brand?.defaults?.youtube_tags || []), ...(card.youtube_tags || []), ...(opts.tags || [])].map((t) => String(t).trim()).filter(Boolean))];
+      const kept = [];
+      for (const t of tags) if ([...kept, t].join(',').length <= 480) kept.push(t);
+      if (kept.length) opts.tags = kept;
     }
+    if (a.platform === 'instagram' && a.brand?.defaults?.instagram_ai_label && opts.ai_generated === undefined) opts.ai_generated = true;
     return {
       account_id: a.id,
       kind: card.kind?.[a.platform],
