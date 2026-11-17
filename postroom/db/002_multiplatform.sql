@@ -12,8 +12,19 @@ alter table postroom.accounts add column if not exists profile_url text;
 alter table postroom.accounts add column if not exists meta jsonb not null default '{}';
 
 update postroom.accounts set external_id = ig_user_id where external_id is null;
-alter table postroom.accounts alter column external_id set not null;
 alter table postroom.accounts alter column ig_user_id drop not null;
+
+-- Keep Postroom v1 working while both versions run: rows it inserts (no platform/external_id)
+-- get external_id from ig_user_id.
+create or replace function postroom.accounts_fill_external_id() returns trigger language plpgsql as $$
+begin
+  if new.external_id is null then new.external_id := new.ig_user_id; end if;
+  return new;
+end $$;
+drop trigger if exists accounts_fill_external_id on postroom.accounts;
+create trigger accounts_fill_external_id before insert or update on postroom.accounts
+  for each row execute function postroom.accounts_fill_external_id();
+alter table postroom.accounts alter column external_id set not null;
 
 do $$ begin
   alter table postroom.accounts add constraint accounts_platform_check

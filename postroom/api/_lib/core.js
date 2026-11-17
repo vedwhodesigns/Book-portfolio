@@ -3,7 +3,9 @@ import postgres from 'postgres';
 import crypto from 'node:crypto';
 
 export const env = (k, d = '') => (process.env[k] ?? d);
-export const APP_URL = () => env('APP_URL').replace(/\/$/, '');
+// Preview deployments use their own address so OAuth redirects come back to the preview.
+export const APP_URL = () =>
+  (process.env.VERCEL_ENV === 'preview' && process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : env('APP_URL')).replace(/\/$/, '');
 export const TZ = () => env('APP_TIMEZONE', 'Asia/Kolkata');
 
 // ---------- errors ----------
