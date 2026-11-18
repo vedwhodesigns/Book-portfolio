@@ -374,10 +374,14 @@ export async function ideaPublished(post) {
 
 /** One-call snapshot for Claude: brands, series, ideas by stage, boards, reference counts. */
 export async function overview({ brand = null } = {}) {
-  const [brands, series, ideas, boards, [refs]] = await Promise.all([
-    listBrands(), listSeries({ brand }), listIdeas({ brand }), listBoards({ brand }),
-    db()`select count(*) filter (where status = 'kept')::int as kept, count(*) filter (where status = 'suggested')::int as suggested from postroom.plan_refs ${brand ? db()`where brand = ${brand} or brand is null` : db()``}`,
-  ]);
+  // one after another: parallel queries can stall on the pooled serverless connection
+  const brands = await listBrands();
+  const series = await listSeries({ brand });
+  const ideas = await listIdeas({ brand });
+  const boards = await listBoards({ brand });
+  const [refs] = brand
+    ? await db()`select count(*) filter (where status = 'kept')::int as kept, count(*) filter (where status = 'suggested')::int as suggested from postroom.plan_refs where brand = ${brand} or brand is null`
+    : await db()`select count(*) filter (where status = 'kept')::int as kept, count(*) filter (where status = 'suggested')::int as suggested from postroom.plan_refs`;
   const byStage = Object.fromEntries(STAGES.map((s) => [s, ideas.filter((i) => i.stage === s).map((i) => ({ id: i.id, title: i.title, brand: i.brand, series: i.series_name, episode: i.episode, choice_result: i.choice_result, due_date: i.due_date }))]));
   return {
     brands,
