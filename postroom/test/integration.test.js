@@ -79,6 +79,10 @@ async function fakeFetch(input, init = {}) {
     if (p === 'igmedia1/insights') return json({ data: [{ name: 'views', values: [{ value: 1200 }] }, { name: 'likes', values: [{ value: 80 }] }, { name: 'reach', values: [{ value: 900 }] }] });
     if (p === 'me') return json({ followers_count: 5100 });
   }
+  // link previews for references
+  if (url.host === 'www.youtube.com' && url.pathname === '/oembed') return json({ title: 'How A Lock Works', author_name: 'Lockmaker', thumbnail_url: 'https://i.ytimg.test/lock.jpg' });
+  if (url.host === 'i.ytimg.test') return new Response(state.jpeg || Buffer.from('x'), { status: 200, headers: { 'content-type': 'image/jpeg' } });
+  if (url.host === 'example.test') return new Response('<html><head><meta property="og:title" content="A great frame"><meta property="og:image" content="https://i.ytimg.test/og.jpg"></head></html>', { status: 200, headers: { 'content-type': 'text/html' } });
   // Web Push service
   if (url.host === 'push.test') {
     (state.pushes ||= []).push({ auth: h.authorization, ttl: h.ttl });
@@ -151,7 +155,7 @@ before(async () => {
   if (skip) return;
   sql = postgres(URL_, { onnotice: () => {}, transform: { undefined: null } });
   await sql.unsafe('drop schema if exists postroom cascade');
-  for (const f of ['001_base.sql', '002_multiplatform.sql', '003_research.sql', '004_inbox.sql', '005_alerts_brand.sql']) await sql.unsafe(fs.readFileSync(new URL(`../db/${f}`, import.meta.url), 'utf8'));
+  for (const f of ['001_base.sql', '002_multiplatform.sql', '003_research.sql', '004_inbox.sql', '005_alerts_brand.sql', '006_planning.sql']) await sql.unsafe(fs.readFileSync(new URL(`../db/${f}`, import.meta.url), 'utf8'));
   globalThis.fetch = fakeFetch;
   core = await import('../api/_lib/core.js');
   posts = await import('../api/_lib/posts.js');
@@ -710,4 +714,69 @@ test('drafts: schedule a cross-post draft in one step (both platforms), at its o
   const s2 = await posts.schedulePost(d2.posts[0].id, { scheduled_at: later });
   assert.equal(s2.scheduled[0].status, 'scheduled');
   await sql`update postroom.posts set status = 'cancelled' where group_id = ${r.group_id} or id = ${d2.posts[0].id}`;
+});
+
+test('planner: references, mood boards, series, ideas and the idea → post → posted link', { skip }, async () => {
+  const planner = await import('../api/_lib/planner.js');
+  const login = await call('POST', 'login', { body: { password: 'pw' } });
+  const cookie = login.headers['set-cookie'].split(';')[0];
+  const h = { headers: { cookie } };
+
+  // references: link with preview, colour, note; Claude suggestion kept/discarded
+  const yt = (await call('POST', 'planner/refs', { ...h, body: { url: 'https://www.youtube.com/watch?v=abc', brand: 'The Crime Archives', tags: 'Hook, #pacing' } })).body;
+  assert.equal(yt.platform, 'youtube');
+  assert.equal(yt.title, 'How A Lock Works');
+  assert.deepEqual(yt.tags, ['hook', 'pacing']);
+  const web = await planner.createRef({ url: 'https://example.test/page' });
+  assert.equal(web.title, 'A great frame');
+  await assert.rejects(planner.createRef({ kind: 'color', color: 'nope' }), /colour/);
+  const col = await planner.createRef({ kind: 'color', color: '1a2b3c', brand: 'The Crime Archives' });
+  assert.equal(col.color, '#1a2b3c');
+  const sug = await planner.createRef({ kind: 'note', note: 'Open on the victim POV', status: 'suggested' }, { source: 'claude' });
+  assert.equal((await planner.listRefs({ status: 'suggested' })).length, 1);
+  await planner.updateRef(sug.id, { status: 'kept' });
+  assert.equal((await planner.listRefs({ status: 'suggested' })).length, 0);
+  assert.ok((await planner.listRefs({ tag: 'hook' })).some((r) => r.id === yt.id));
+  assert.ok((await planner.refTags()).some((t) => t.tag === 'pacing'));
+
+  // series + ideas
+  const s = (await call('POST', 'planner/series', { ...h, body: { brand: 'The Crime Archives', name: 'What Would You Do', cadence: 'Daily' } })).body;
+  const ep1 = await planner.createIdea({ title: 'Trunk of a car', series_id: s.id, choice_a: 'Kick the light', choice_b: 'Wait' }, { by: 'claude' });
+  const ep2 = await planner.createIdea({ title: 'Locked basement', series_id: s.id });
+  assert.deepEqual([ep1.episode, ep2.episode, ep1.brand], [1, 2, 'The Crime Archives'], 'episodes number themselves and inherit the brand');
+  await assert.rejects(planner.updateIdea(ep1.id, { stage: 'nope' }), /Stage/);
+  await planner.updateIdea(ep1.id, { stage: 'ready', choice_result: 'A (64%)', ref_ids: [yt.id] });
+  const full = await planner.getIdea(ep1.id);
+  assert.equal(full.refs.length, 1);
+
+  // mood board
+  const b = (await call('POST', 'planner/boards', { ...h, body: { name: 'WWYD night look', brand: 'The Crime Archives', idea_id: ep1.id } })).body;
+  await planner.addBoardItem(b.id, { kind: 'ref', ref_id: yt.id });
+  const note = await planner.addBoardItem(b.id, { kind: 'note', text: 'cold blue light' });
+  await planner.addBoardItem(b.id, { kind: 'color', color: '#0b1d33' });
+  const moved = (await call('PATCH', `planner/boards/${b.id}/items/${note.id}`, { ...h, body: { x: 500, y: 320, w: 30, content: { color: '#d9e8ff' } } })).body;
+  assert.deepEqual([moved.x, moved.y, moved.w, moved.content.text, moved.content.color], [500, 320, 60, 'cold blue light', '#d9e8ff'], 'min width enforced, content merged');
+  const board = await planner.getBoard(b.id);
+  assert.equal(board.items.length, 3);
+  assert.equal(board.items.find((i) => i.kind === 'ref').ref.title, 'How A Lock Works');
+  assert.equal((await planner.getIdea(ep1.id)).board_id, b.id);
+  const boards = await planner.listBoards({ brand: 'The Crime Archives' });
+  assert.equal(boards[0].items, 3);
+
+  // a post made from the idea moves it along
+  const r = await posts.createPosts({ mode: 'schedule', scheduled_at: new Date(Date.now() - 1000).toISOString(), idea_id: ep1.id,
+    media_ids: ['00000000-0000-0000-0000-0000000000f1'], caption: 'Trunk', targets: [{ account: 'instagram:brand.one' }] });
+  assert.equal((await planner.getIdea(ep1.id)).stage, 'scheduled');
+  await drain();
+  const [p] = await sql`select status from postroom.posts where id = ${r.posts[0].id}`;
+  assert.equal(p.status, 'published');
+  assert.equal((await planner.getIdea(ep1.id)).stage, 'posted');
+
+  // Claude's view
+  const ov = await planner.overview({ brand: 'The Crime Archives' });
+  assert.equal(ov.series[0].episodes, 2);
+  assert.equal(ov.ideas.posted[0].title, 'Trunk of a car');
+  assert.equal(ov.ideas.idea[0].title, 'Locked basement');
+  const mcpOut = await call('POST', 'mcp/mcpkey', { body: { jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'save_reference', arguments: { note: 'Use red-blue police light flicker', suggest: true, brand: 'The Crime Archives', tags: ['lighting'] } } } });
+  assert.equal(JSON.parse(mcpOut.body.result.content[0].text).status, 'suggested');
 });

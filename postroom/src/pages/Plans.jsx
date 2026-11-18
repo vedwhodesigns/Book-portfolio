@@ -23,12 +23,12 @@ export default function Plans() {
   return (
     <>
       <div class="page-head">
-        <h1>Plans</h1>
+        <h1>Approvals</h1>
         <span class="sub">Posts Claude proposed. Nothing goes out until you approve.</span>
       </div>
       {loading ? <Spinner /> : !data?.length ? (
         <div class="card">
-          <Empty icon="sparkle" title="No plans waiting" action={config.mcp_url ? <button class="btn" onClick={() => go('settings')}>How to connect Claude</button> : null}>
+          <Empty icon="sparkle" title="Nothing waiting for approval" action={config.mcp_url ? <button class="btn" onClick={() => go('settings')}>How to connect Claude</button> : null}>
             Connect Claude to Postroom (Settings → Claude) and ask it to plan your week, e.g. "Plan 5 reels for next week from my library and cross-post them to TikTok and YouTube Shorts."
           </Empty>
         </div>

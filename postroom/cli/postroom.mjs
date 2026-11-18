@@ -21,7 +21,8 @@
 //   "youtube_thumbnail": "thumb.jpg",                // optional 16:9 thumbnail
 //   "youtube_tags": ["titan submarine", "deep sea"], // optional hidden YouTube tags for this video (brand tags are added)
 //   "captions": { "youtube": "…", "instagram": "…" }, // optional per-platform (or per-account) captions
-//   "options": { "instagram": { "first_comment": "…" }, "youtube": { "tags": ["…"] } }
+//   "options": { "instagram": { "first_comment": "…" }, "youtube": { "tags": ["…"] } },
+//   "idea": "<planner idea id>"                     // optional: links the post to its Planner idea (moves it to Scheduled → Posted)
 // }
 import fs from 'node:fs';
 import path from 'node:path';
@@ -219,14 +220,14 @@ async function buildPayload(cardPath, { dry }) {
   });
   const when = card.when || 'next_slot';
   const mode = when === 'now' ? 'now' : when === 'draft' ? 'draft' : 'schedule';
-  return { media_ids: media.map((m) => m?.id).filter(Boolean), targets, scheduled_at: mode === 'draft' ? 'now' : when, mode, chosen, card };
+  return { media_ids: media.map((m) => m?.id).filter(Boolean), targets, scheduled_at: mode === 'draft' ? 'now' : when, mode, chosen, card, idea_id: card.idea || card.idea_id || undefined };
 }
 
 const fmt = (d) => new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(d));
 
 const [cmd, ...args] = process.argv.slice(2);
 if (!cmd || cmd === 'help') {
-  console.log('Usage: node postroom.mjs post|check <card.json> · drafts · schedule <post-id> [time|next_slot] · upload <files…> · queue · accounts');
+  console.log('Usage: node postroom.mjs post|check <card.json> · drafts · schedule <post-id> [time|next_slot] · ref <image|link…> [--brand --tags --note --board --idea] · upload <files…> · queue · accounts');
   process.exit(0);
 }
 await login();
@@ -245,6 +246,31 @@ if (cmd === 'accounts') {
   const rows = await api('posts?status=scheduled,processing&limit=60');
   for (const p of rows) console.log(`${fmt(p.scheduled_at)}  ${p.platform}:@${p.username}  ${p.kind}  ${(p.title || p.caption || '').split('\n')[0].slice(0, 60)}`);
   if (!rows.length) console.log('Nothing scheduled.');
+} else if (cmd === 'ref') {
+  // node postroom.mjs ref <file|url…> [--brand "The Crime Archives"] [--tags hook,lighting] [--note "…"] [--board <id>] [--idea <id>]
+  const opts = {};
+  const items = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a.startsWith('--')) opts[a.slice(2)] = args[++i];
+    else items.push(a);
+  }
+  if (!items.length) die('Usage: node postroom.mjs ref <image-file | link> … [--brand "…"] [--tags a,b] [--note "…"] [--board <board-id>] [--idea <idea-id>]');
+  for (const x of items) {
+    const base = { brand: opts.brand || null, tags: opts.tags || '', note: opts.note || undefined, board_id: opts.board || undefined, idea_id: opts.idea || undefined };
+    let r;
+    if (/^https?:\/\//.test(x)) r = await api('planner/refs', { method: 'POST', body: { ...base, kind: 'link', url: x } });
+    else {
+      if (!fs.existsSync(x)) die(`File not found: ${x}`);
+      const ext = path.extname(x).toLowerCase();
+      if (!['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) die(`${x}: references can be JPEG, PNG or WebP images (or links).`);
+      const type = TYPES[ext];
+      const name = `ref-${Date.now().toString(36)}-${path.basename(x).replace(/[^\w.\-]+/g, '-')}`;
+      const up = await upload(`media/${name}`, fs.readFileSync(x), { access: 'public', handleUploadUrl: `${BASE}/api/media/upload`, headers: { cookie }, contentType: type });
+      r = await api('planner/refs', { method: 'POST', body: { ...base, kind: 'image', url: up.url, title: path.basename(x).replace(/\.\w+$/, '') } });
+    }
+    console.log(`✓ reference saved: ${r.title || r.url}${r.tags.length ? ` [${r.tags.join(', ')}]` : ''}${opts.board ? ' (pinned on the board)' : ''}  [ref ${r.id}]`);
+  }
 } else if (cmd === 'schedule') {
   // node postroom.mjs schedule <post-id> [time|next_slot]   — schedule a draft (and its other platforms)
   if (!args[0]) die('Usage: node postroom.mjs schedule <post-id> [2026-11-20T22:00 | next_slot]');
@@ -271,7 +297,7 @@ if (cmd === 'accounts') {
     }
   } else {
     try {
-      const r = await api('posts', { method: 'POST', body: { media_ids: p.media_ids, targets: p.targets, scheduled_at: p.scheduled_at, mode: p.mode } });
+      const r = await api('posts', { method: 'POST', body: { media_ids: p.media_ids, targets: p.targets, scheduled_at: p.scheduled_at, mode: p.mode, idea_id: p.idea_id } });
       for (const x of r.posts) {
         const a = p.chosen.find((c) => c.platform === x.platform);
         console.log(`✓ ${x.platform} ${x.kind} → ${p.mode === 'now' ? 'publishing now' : p.mode === 'draft' ? 'saved as draft' : fmt(x.scheduled_at)}${a ? ` (@${a.username})` : ''}  [post ${x.id}]`);

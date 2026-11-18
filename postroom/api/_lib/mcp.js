@@ -2,6 +2,7 @@
 // URL: {APP_URL}/api/mcp/{MCP_KEY}. Anything Claude schedules lands as a *plan* that you
 // approve in the app, unless you set MCP_AUTO_APPROVE=true.
 import { updateBrand } from './brand.js';
+import * as planner from './planner.js';
 import { send, body, env, localLabel, TZ } from './core.js';
 import { listAccounts } from './accounts.js';
 import { listMedia, importFromUrl } from './media.js';
@@ -33,6 +34,7 @@ const target = {
 const postInput = {
   media_ids: { type: 'array', items: { type: 'string' }, description: 'Media library ids, in order (carousel order).' },
   cover_media_id: { type: 'string', description: 'Optional image used as reel cover / YouTube thumbnail.' },
+  idea_id: { type: 'string', description: 'Optional planner idea this post comes from; the idea moves to Scheduled, then Posted.' },
   caption: { type: 'string', description: 'Shared caption used for every account unless overridden.' },
   title: { type: 'string', description: 'Shared YouTube title.' },
   scheduled_at: { type: 'string', description: `When to post: ISO time with offset, wall-clock "YYYY-MM-DDTHH:mm" in ${TZ()}, or "next_slot" for each account's next free posting slot.` },
@@ -104,6 +106,52 @@ const TOOLS = [
   { name: 'research_post', description: 'Full detail of one researched post: transcript, the full teardown (idea, hook, script beats, edit, sound, recipe) and measured pacing/loudness, plus an inspiration brief.', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
   { name: 'research_youtube_channel', description: 'Analyse any public YouTube channel (by @handle, URL or channel id) through the official API: subscribers and its latest videos with views/likes/comments. Saved as a research project.', inputSchema: { type: 'object', properties: { channel: { type: 'string' }, limit: { type: 'number' } }, required: ['channel'] } },
   { name: 'research_instagram_account', description: 'Analyse any public Instagram Business/Creator account (by @username) through the official Business Discovery API: followers, its latest posts with likes/comments, and its most-used hashtags with average engagement. Saved as a research project.', inputSchema: { type: 'object', properties: { username: { type: 'string' }, limit: { type: 'number' } }, required: ['username'] } },
+  // ---- Planner: references, mood boards, ideas, series ----
+  { name: 'plan_overview', description: 'Planning snapshot: brands (with their accounts), series (episodes, what comes next), ideas grouped by stage (idea → scripting → producing → ready → scheduled → posted), mood boards and reference counts. Start here when planning content.', inputSchema: { type: 'object', properties: { brand: { type: 'string', description: 'e.g. "The Crime Archives"' } } } },
+  {
+    name: 'save_reference',
+    description: 'Save a reference to the planner library: a link (Instagram/YouTube/TikTok/web — title and thumbnail are fetched), a post found with the research tools (research_post_id), a colour, or a note. Set suggest=true when YOU are proposing it (it lands in "Suggested by Claude" for the owner to keep or discard); leave it false when the owner asked you to save it. Tags describe why it is useful: hook, pacing, edit, lighting, thumbnail, cover, caption, colour, font, sound, format, transition…',
+    inputSchema: { type: 'object', properties: {
+      url: { type: 'string' }, research_post_id: { type: 'string' }, note: { type: 'string', description: 'Why it is a good reference / what to take from it' },
+      color: { type: 'string', description: 'Hex colour for a palette swatch' }, title: { type: 'string' }, brand: { type: 'string' },
+      tags: { type: 'array', items: { type: 'string' } }, suggest: { type: 'boolean' }, board_id: { type: 'string', description: 'Also pin it on this mood board' }, idea_id: { type: 'string', description: 'Attach it to this idea' },
+    } },
+  },
+  { name: 'list_references', description: 'Search the reference library (kept by default; status "suggested" for pending suggestions).', inputSchema: { type: 'object', properties: { brand: { type: 'string' }, tag: { type: 'string' }, q: { type: 'string' }, status: { type: 'string', enum: ['kept', 'suggested', 'all'] }, limit: { type: 'number' } } } },
+  { name: 'create_board', description: 'Create a mood board (for a brand, a series or one idea).', inputSchema: { type: 'object', properties: { name: { type: 'string' }, brand: { type: 'string' }, description: { type: 'string' }, series_id: { type: 'string' }, idea_id: { type: 'string', description: 'Make this the idea\'s board' } }, required: ['name'] } },
+  { name: 'get_board', description: 'Read a mood board and everything pinned on it.', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
+  {
+    name: 'add_to_board',
+    description: 'Pin things on a mood board: saved references (ref_ids), a sticky note, a colour swatch, or a link.',
+    inputSchema: { type: 'object', properties: { board_id: { type: 'string' }, ref_ids: { type: 'array', items: { type: 'string' } }, note: { type: 'string' }, color: { type: 'string' }, link: { type: 'string' } }, required: ['board_id'] },
+  },
+  { name: 'list_ideas', description: 'List ideas, optionally by brand, stage (comma-separated) or series.', inputSchema: { type: 'object', properties: { brand: { type: 'string' }, stage: { type: 'string' }, series_id: { type: 'string' }, q: { type: 'string' } } } },
+  { name: 'get_idea', description: 'One idea with its hook, script notes, references, board and linked posts.', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
+  {
+    name: 'create_idea',
+    description: 'File a new post idea in the pipeline. For a What Would You Do episode give choice_a/choice_b. Episode numbers fill in automatically within a series.',
+    inputSchema: { type: 'object', properties: {
+      title: { type: 'string' }, brand: { type: 'string' }, series_id: { type: 'string' }, episode: { type: 'number' },
+      stage: { type: 'string', enum: ['idea', 'scripting', 'producing', 'ready'] }, hook: { type: 'string' }, notes: { type: 'string', description: 'Script, beats, shot list' },
+      choice_a: { type: 'string' }, choice_b: { type: 'string' }, formats: { type: 'array', items: { type: 'string' } }, due_date: { type: 'string', description: 'YYYY-MM-DD' },
+      board_id: { type: 'string' }, ref_ids: { type: 'array', items: { type: 'string' } },
+    }, required: ['title'] },
+  },
+  {
+    name: 'update_idea',
+    description: 'Update an idea: move its stage, edit hook/notes, record which choice the comments picked (choice_result), attach references or a board.',
+    inputSchema: { type: 'object', properties: {
+      id: { type: 'string' }, title: { type: 'string' }, stage: { type: 'string', enum: ['idea', 'scripting', 'producing', 'ready', 'scheduled', 'posted', 'dropped'] },
+      hook: { type: 'string' }, notes: { type: 'string' }, choice_a: { type: 'string' }, choice_b: { type: 'string' }, choice_result: { type: 'string' },
+      series_id: { type: 'string' }, episode: { type: 'number' }, due_date: { type: 'string' }, board_id: { type: 'string' }, ref_ids: { type: 'array', items: { type: 'string' } },
+    }, required: ['id'] },
+  },
+  { name: 'list_series', description: 'Series per brand with episode counts and what the next episode should be.', inputSchema: { type: 'object', properties: { brand: { type: 'string' } } } },
+  {
+    name: 'save_series',
+    description: 'Create a series (give brand + name) or update one (give id): description, format, cadence, status, next_note (what the next episode should be / what the audience chose).',
+    inputSchema: { type: 'object', properties: { id: { type: 'string' }, brand: { type: 'string' }, name: { type: 'string' }, description: { type: 'string' }, format: { type: 'string' }, cadence: { type: 'string' }, status: { type: 'string', enum: ['active', 'paused', 'ended'] }, next_note: { type: 'string' } } },
+  },
   // ---- Instagram DMs ----
   { name: 'inbox_threads', description: 'List Instagram DM conversations across the connected accounts (newest first), with unread counts and whether a reply is still allowed (Instagram only allows replies within 24h of their last message).', inputSchema: { type: 'object', properties: { account_id: { type: 'string' }, q: { type: 'string', description: 'Search username or last message' } } } },
   { name: 'inbox_thread', description: 'Read one DM conversation (messages oldest → newest).', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
@@ -137,6 +185,32 @@ const short = (p) => ({
 async function callTool(name, a = {}) {
   switch (name) {
     case 'list_accounts': return listAccounts({ platform: a.platform });
+    case 'plan_overview': return planner.overview({ brand: a.brand || null });
+    case 'save_reference': {
+      const { suggest, ...rest } = a;
+      const kind = rest.url || rest.research_post_id ? 'link' : rest.color ? 'color' : 'note';
+      return planner.createRef({ ...rest, kind, status: suggest ? 'suggested' : 'kept' }, { source: 'claude' });
+    }
+    case 'list_references': return planner.listRefs({ brand: a.brand, tag: a.tag, q: a.q, status: a.status || 'kept', limit: a.limit || 50 });
+    case 'create_board': return planner.createBoard(a, { by: 'claude' });
+    case 'get_board': return planner.getBoard(a.id);
+    case 'add_to_board': {
+      const added = [];
+      for (const id of a.ref_ids || []) added.push(await planner.addBoardItem(a.board_id, { kind: 'ref', ref_id: id }));
+      if (a.note) added.push(await planner.addBoardItem(a.board_id, { kind: 'note', text: a.note }));
+      if (a.color) added.push(await planner.addBoardItem(a.board_id, { kind: 'color', color: a.color }));
+      if (a.link) {
+        const r = await planner.createRef({ url: a.link, kind: 'link' }, { source: 'claude' });
+        added.push(await planner.addBoardItem(a.board_id, { kind: 'ref', ref_id: r.id }));
+      }
+      return { added: added.length };
+    }
+    case 'list_ideas': return planner.listIdeas(a);
+    case 'get_idea': return planner.getIdea(a.id);
+    case 'create_idea': return planner.createIdea(a, { by: 'claude' });
+    case 'update_idea': { const { id, ...patch } = a; return planner.updateIdea(id, patch); }
+    case 'list_series': return planner.listSeries({ brand: a.brand || null });
+    case 'save_series': { const { id, ...rest } = a; return id ? planner.updateSeries(id, rest) : planner.createSeries(rest); }
     case 'update_brand_kit': {
       const acct = await findAccount(a.account);
       return updateBrand(acct.id, { brand: a.brand ? { ...(acct.brand || {}), ...a.brand } : undefined, slots: a.slots });

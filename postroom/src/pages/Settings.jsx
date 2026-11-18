@@ -110,7 +110,8 @@ export default function Settings() {
         <section class="card pad mobile-links">
           <div class="row wrap">
             <a class="btn" href="#/accounts"><Icon name="users" size={16} /> Accounts{needs ? ` (${needs} need attention)` : ''}</a>
-            <a class="btn" href="#/plans"><Icon name="sparkle" size={16} /> Plans</a>
+            <a class="btn" href="#/planner"><Icon name="board" size={16} /> Planner</a>
+            <a class="btn" href="#/plans"><Icon name="sparkle" size={16} /> Approvals</a>
             <a class="btn" href="#/library"><Icon name="image" size={16} /> Library</a>
             <a class="btn" href="#/research"><Icon name="layers" size={16} /> Research</a>
             <a class="btn" href="#/inbox"><Icon name="inbox" size={16} /> Inbox</a>

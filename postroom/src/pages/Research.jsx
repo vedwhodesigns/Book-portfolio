@@ -2,7 +2,7 @@ import { useState, useEffect } from 'preact/hooks';
 import { api, fmtNum, fmtDur, relTime } from '../api.js';
 import { useApp, useAsync, Icon, Seg, Empty, Spinner, Drawer, PfMark, CopyField } from '../ui.jsx';
 
-const SOURCE = { 'ig-research': { label: 'Instagram research', pf: 'instagram' }, youtube: { label: 'YouTube channel', pf: 'youtube' } };
+const SOURCE = { 'ig-research': { label: 'Instagram research', pf: 'instagram' }, youtube: { label: 'YouTube channel', pf: 'youtube' }, 'instagram-api': { label: 'Instagram account', pf: 'instagram' } };
 
 function Section({ title, children }) {
   if (!children) return null;
@@ -16,7 +16,15 @@ function Section({ title, children }) {
 const KV = ({ k, v }) => (v ? <div><b>{k}:</b> {v}</div> : null);
 
 function ResearchDrawer({ id, onClose }) {
-  const { go } = useApp();
+  const { go, toast } = useApp();
+  const saveRef = async (r) => {
+    const tags = prompt('Save as a reference. Tags (comma separated), e.g. hook, pacing, thumbnail:', 'hook');
+    if (tags === null) return;
+    try {
+      await api('planner/refs', { method: 'POST', body: { research_post_id: r.id, tags, note: typeof r.teardown?.hook === 'string' ? r.teardown.hook : null } });
+      toast('Saved to Planner → References');
+    } catch (e) { toast(e.message, 'bad'); }
+  };
   const { data: r, loading } = useAsync(() => api(`research/posts/${id}`), [id]);
   const [showTx, setShowTx] = useState(false);
   if (loading || !r) return <Drawer onClose={onClose} title="Research"><Spinner /></Drawer>;
@@ -29,6 +37,7 @@ function ResearchDrawer({ id, onClose }) {
       foot={
         <>
           <button class="btn primary" onClick={() => { onClose(); go(`compose?idea=${r.id}`); }}><Icon name="sparkle" size={16} /> Make a post like this</button>
+          <button class="btn" onClick={() => saveRef(r)}><Icon name="board" size={16} /> Save as reference</button>
           {r.url && <a class="btn" href={r.url} target="_blank" rel="noreferrer"><Icon name="external" size={16} /> Open original</a>}
         </>
       }

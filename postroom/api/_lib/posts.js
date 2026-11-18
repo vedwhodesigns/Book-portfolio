@@ -5,6 +5,7 @@ import { platform, KIND_LABEL } from './platforms/index.js';
 import { loadMedia, mediaRow } from './media.js';
 import { accountRow } from './accounts.js';
 import { nextSlot } from './brand.js';
+import { linkIdeaToPosts } from './planner.js';
 
 export const MISSED_SLOT_HOURS = 6;
 const EDITABLE = ['draft', 'scheduled', 'failed'];
@@ -137,7 +138,10 @@ export async function createPosts(input, { createdBy = 'app' } = {}) {
       await sql`insert into postroom.events (post_id, account_id, message) values (${p.id}, ${t.account.id},
         ${`${mode === 'plan' ? 'Planned' : mode === 'draft' ? 'Saved draft' : 'Scheduled'} ${KIND_LABEL[t.kind]} for ${localLabel(p.scheduled_at)} (by ${createdBy})`})`;
     }
-    return { batch_id: batchId, group_id: groupId, posts: created.map((p) => ({ id: p.id, platform: p.platform, kind: p.kind, status: p.status, scheduled_at: p.scheduled_at })) };
+    return { batch_id: batchId, group_id: groupId, posts: created.map((p) => ({ id: p.id, group_id: p.group_id, platform: p.platform, kind: p.kind, status: p.status, scheduled_at: p.scheduled_at })) };
+  }).then(async (out) => {
+    if (input.idea_id) await linkIdeaToPosts(input.idea_id, out.posts, mode);
+    return out;
   });
 }
 

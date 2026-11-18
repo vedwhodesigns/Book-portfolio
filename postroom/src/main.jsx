@@ -14,6 +14,7 @@ import Settings from './pages/Settings.jsx';
 import Research from './pages/Research.jsx';
 import Inbox from './pages/Inbox.jsx';
 import Alerts from './pages/Alerts.jsx';
+import Planner from './pages/Planner.jsx';
 import { backfillPosters } from './posters.js';
 import PostDrawer from './pages/PostDrawer.jsx';
 
@@ -22,14 +23,15 @@ const NAV = [
   { path: 'queue', label: 'Queue', icon: 'list' },
   { path: 'inbox', label: 'Inbox', icon: 'inbox' },
   { path: 'alerts', label: 'Alerts', icon: 'bell' },
-  { path: 'plans', label: 'Plans', icon: 'sparkle' },
+  { path: 'planner', label: 'Planner', icon: 'board' },
+  { path: 'plans', label: 'Approvals', icon: 'sparkle' },
   { path: 'analytics', label: 'Analytics', icon: 'chart' },
   { path: 'accounts', label: 'Accounts', icon: 'users' },
   { path: 'library', label: 'Library', icon: 'image' },
   { path: 'research', label: 'Research', icon: 'layers', ext: true },
   { path: 'settings', label: 'Settings', icon: 'settings' },
 ];
-const PAGES = { calendar: Calendar, compose: Compose, queue: Queue, plans: Plans, analytics: Analytics, accounts: Accounts, library: Library, settings: Settings, research: Research, inbox: Inbox, alerts: Alerts };
+const PAGES = { calendar: Calendar, compose: Compose, queue: Queue, plans: Plans, analytics: Analytics, accounts: Accounts, library: Library, settings: Settings, research: Research, inbox: Inbox, alerts: Alerts, planner: Planner };
 
 function parseHash() {
   const h = location.hash.replace(/^#\/?/, '');
@@ -165,7 +167,7 @@ function App() {
         </main>
         <nav class="tabbar" aria-label="Main">
           {[['calendar', 'Calendar', 'calendar'], ['queue', 'Queue', 'list'], ['compose', 'New', 'plus'], ['alerts', 'Alerts', 'bell'], ['settings', 'More', 'more']].map(([p, l, i]) => (
-            <a key={p} href={`#/${p}`} class={`${route.path === p || (p === 'settings' && ['accounts', 'plans', 'library', 'research', 'inbox', 'analytics'].includes(route.path)) ? 'on' : ''} ${p === 'compose' ? 'plus' : ''}`}>
+            <a key={p} href={`#/${p}`} class={`${route.path === p || (p === 'settings' && ['accounts', 'plans', 'library', 'research', 'inbox', 'analytics', 'planner'].includes(route.path)) ? 'on' : ''} ${p === 'compose' ? 'plus' : ''}`}>
               <span class="ic"><Icon name={i} size={20} /></span>{l}
               {p === 'settings' && (plansCount > 0 || needsAttention > 0 || unread > 0) && <span class="badge">{plansCount + needsAttention + unread}</span>}
               {p === 'alerts' && alerts > 0 && <span class="badge">{alerts}</span>}

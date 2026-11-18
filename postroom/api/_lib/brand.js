@@ -2,7 +2,7 @@
 import { db, HttpError, TZ, zonedToUtc } from './core.js';
 
 const DAYS = [1, 2, 3, 4, 5, 6, 7]; // 1 = Monday … 7 = Sunday
-const TEXT = ['tone', 'audience', 'signoff', 'dos', 'donts', 'notes', 'cta', 'language'];
+const TEXT = ['name', 'tone', 'audience', 'signoff', 'dos', 'donts', 'notes', 'cta', 'language'];
 
 function cleanBrand(b = {}) {
   const out = {};

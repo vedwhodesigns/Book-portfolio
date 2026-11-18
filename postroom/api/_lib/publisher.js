@@ -8,6 +8,7 @@ import { loadMedia } from './media.js';
 import { MISSED_SLOT_HOURS } from './posts.js';
 import { pollInbox } from './inbox.js';
 import { notify } from './notify.js';
+import { ideaPublished } from './planner.js';
 import { deleteMedia } from './media.js';
 
 const MAX_ATTEMPTS = 6;
@@ -104,6 +105,7 @@ export async function advance(post, deadline) {
           next_attempt_at = null, upload = ${sql.json({ ...upload, progress: 1 })}, updated_at = now()
         where id = ${post.id}`;
       await logEvent({ postId: post.id, accountId: account.id, message: `Published${r.permalink ? `: ${r.permalink}` : ''}${r.note ? ` — ${r.note}` : ''}` });
+      await ideaPublished(post).catch(() => {});
       await notify({
         kind: 'published', postId: post.id, accountId: account.id, url: r.permalink || '/#/queue',
         image: cover?.url || media[0]?.poster_url || (media[0]?.kind === 'image' ? media[0].url : null),

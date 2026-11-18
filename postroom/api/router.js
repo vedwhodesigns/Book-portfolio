@@ -13,6 +13,7 @@ import { writeCaptions, aiEnabled, draftDMReply } from './_lib/ai.js';
 import * as inbox from './_lib/inbox.js';
 import * as notifyLib from './_lib/notify.js';
 import { updateBrand } from './_lib/brand.js';
+import * as planner from './_lib/planner.js';
 import { handleMcp } from './_lib/mcp.js';
 import { platform } from './_lib/platforms/index.js';
 import { storageMode, LOCAL_DIR } from './_lib/storage.js';
@@ -197,6 +198,45 @@ export default async function handler(req, res) {
       for (const k of Object.keys(patch)) if (!EDITABLE_SETTINGS.includes(k)) throw new HttpError(400, `${k} can't be changed here.`);
       await saveSettings(patch);
       return send(res, 200, { ok: true, settings: Object.fromEntries(EDITABLE_SETTINGS.map((k) => [k, settingSource(k)])) });
+    }
+
+    // planner: references, mood boards, ideas, series
+    if (seg[0] === 'planner') {
+      const q = query(req);
+      const [, what, id, sub, subId] = seg;
+      if (what === 'overview' && m === 'GET') return send(res, 200, await planner.overview(q));
+      if (what === 'brands' && m === 'GET') return send(res, 200, await planner.listBrands());
+      if (what === 'preview' && m === 'GET') return send(res, 200, await planner.linkPreview(String(q.url || '')));
+      if (what === 'tags' && m === 'GET') return send(res, 200, await planner.refTags());
+      if (what === 'refs') {
+        if (!id && m === 'GET') return send(res, 200, await planner.listRefs(q));
+        if (!id && m === 'POST') return send(res, 200, await planner.createRef(await body(req)));
+        if (id && m === 'PATCH') return send(res, 200, await planner.updateRef(id, await body(req)));
+        if (id && m === 'DELETE') return send(res, 200, await planner.deleteRef(id));
+      }
+      if (what === 'boards') {
+        if (!id && m === 'GET') return send(res, 200, await planner.listBoards(q));
+        if (!id && m === 'POST') return send(res, 200, await planner.createBoard(await body(req)));
+        if (id && !sub && m === 'GET') return send(res, 200, await planner.getBoard(id));
+        if (id && !sub && m === 'PATCH') return send(res, 200, await planner.updateBoard(id, await body(req)));
+        if (id && !sub && m === 'DELETE') return send(res, 200, await planner.deleteBoard(id));
+        if (id && sub === 'items' && !subId && m === 'POST') return send(res, 200, await planner.addBoardItem(id, await body(req)));
+        if (id && sub === 'items' && subId && m === 'PATCH') return send(res, 200, await planner.updateBoardItem(subId, await body(req)));
+        if (id && sub === 'items' && subId && m === 'DELETE') return send(res, 200, await planner.deleteBoardItem(subId));
+      }
+      if (what === 'series') {
+        if (!id && m === 'GET') return send(res, 200, await planner.listSeries(q));
+        if (!id && m === 'POST') return send(res, 200, await planner.createSeries(await body(req)));
+        if (id && m === 'PATCH') return send(res, 200, await planner.updateSeries(id, await body(req)));
+        if (id && m === 'DELETE') return send(res, 200, await planner.deleteSeries(id));
+      }
+      if (what === 'ideas') {
+        if (!id && m === 'GET') return send(res, 200, await planner.listIdeas(q));
+        if (!id && m === 'POST') return send(res, 200, await planner.createIdea(await body(req)));
+        if (id && m === 'GET') return send(res, 200, await planner.getIdea(id));
+        if (id && m === 'PATCH') return send(res, 200, await planner.updateIdea(id, await body(req)));
+        if (id && m === 'DELETE') return send(res, 200, await planner.deleteIdea(id));
+      }
     }
 
     // phone notifications

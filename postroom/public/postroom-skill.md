@@ -1,6 +1,6 @@
 ---
 name: postroom
-description: Upload and schedule videos and images on Postroom (the owner's Instagram + YouTube posting app at vwd-postroom.vercel.app). Use whenever the user says to post, upload, schedule, queue or publish something on Instagram, YouTube, Postroom, The Crime Archives, How It Clicks or Bonbec, or asks what is scheduled.
+description: Upload and schedule videos and images on Postroom (the owner's Instagram + YouTube posting app at vwd-postroom.vercel.app), and use its Planner (ideas pipeline, series, mood boards, reference library). Use whenever the user says to post, upload, schedule, queue or publish something on Instagram, YouTube, Postroom, The Crime Archives, How It Clicks or Bonbec, asks what is scheduled, or wants to save a reference, build a mood board, file an idea or plan a series/episode.
 ---
 
 # Postroom: upload and schedule posts
@@ -95,3 +95,26 @@ Changing captions or times, or cancelling a post, happens in the Postroom app: Q
   - Write captions with the `how-it-clicks-captions` skill if installed.
   - Headline in Title Case plus one emoji, then a 2–4 sentence fact story, then 3–4 hashtags.
   - Never mention 3D, Blender or AI.
+
+## Planner (ideas, series, mood boards, references)
+
+Postroom also holds the content plan.
+
+**From any chat with the Postroom connector,** use these tools:
+- `plan_overview`: the plan at a glance
+- `save_reference`: save a link, a researched post, a colour or a note as a reference
+- `create_board` / `add_to_board`: build mood boards
+- `create_idea` / `update_idea`: file ideas and move them through *idea → scripting → producing → ready → scheduled → posted*
+- `save_series`: create or update a series
+
+**From this computer:** to save local images or links as references, run:
+```
+node "$HOME/postroom/postroom.mjs" ref <image-or-link…> --brand "The Crime Archives" --tags hook,lighting --note "…" [--board <board-id>] [--idea <idea-id>]
+```
+
+**Rules:**
+- When the owner says "save this as a reference", save it as kept.
+- When **you** are proposing references (e.g. after studying a competitor), pass `suggest: true`. They go to "Suggested by Claude" for the owner to keep or discard.
+- Tag references by what they're useful for: hook, pacing, edit, transition, lighting, colour, thumbnail, cover, caption, font, sound, format, story.
+- When a finished video comes from a planned idea, add `"idea": "<idea id>"` to its post card. The idea then moves to Scheduled, and to Posted when it goes live.
+- For What Would You Do episodes, record the two choices on the idea (`choice_a`, `choice_b`). Once the comments decide, set `choice_result`, then update the series' `next_note` so the next episode follows the audience.
