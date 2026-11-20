@@ -4,6 +4,7 @@
 #   %USERPROFILE%\postroom\postroom.mjs                        the command that uploads and schedules posts
 #   %USERPROFILE%\.claude\skills\postroom\SKILL.md             every Claude Code chat learns how to use it
 #   %USERPROFILE%\.claude\skills\how-it-clicks-captions\SKILL.md
+#   %USERPROFILE%\.claude\skills\stream-clip-repeat\SKILL.md
 #   %USERPROFILE%\.postroom.json                               your Postroom sign-in (asked once, hidden)
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
@@ -15,13 +16,14 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
   return
 }
 
-$dirs = @("$HomeDir\postroom", "$HomeDir\.claude\skills\postroom", "$HomeDir\.claude\skills\how-it-clicks-captions")
+$dirs = @("$HomeDir\postroom", "$HomeDir\.claude\skills\postroom", "$HomeDir\.claude\skills\how-it-clicks-captions", "$HomeDir\.claude\skills\stream-clip-repeat")
 foreach ($d in $dirs) { New-Item -ItemType Directory -Force -Path $d | Out-Null }
 Invoke-WebRequest -UseBasicParsing "$Base/postroom.mjs" -OutFile "$HomeDir\postroom\postroom.mjs"
 Invoke-WebRequest -UseBasicParsing "$Base/postroom-skill.md" -OutFile "$HomeDir\.claude\skills\postroom\SKILL.md"
 Invoke-WebRequest -UseBasicParsing "$Base/how-it-clicks-captions-skill.md" -OutFile "$HomeDir\.claude\skills\how-it-clicks-captions\SKILL.md"
+Invoke-WebRequest -UseBasicParsing "$Base/stream-clip-repeat-skill.md" -OutFile "$HomeDir\.claude\skills\stream-clip-repeat\SKILL.md"
 Write-Host 'OK  Postroom command: ~\postroom\postroom.mjs' -ForegroundColor Green
-Write-Host 'OK  Claude Code skills: postroom, how-it-clicks-captions' -ForegroundColor Green
+Write-Host 'OK  Claude Code skills: postroom, how-it-clicks-captions, stream-clip-repeat' -ForegroundColor Green
 
 $conf = "$HomeDir\.postroom.json"
 if (-not (Test-Path $conf)) {
