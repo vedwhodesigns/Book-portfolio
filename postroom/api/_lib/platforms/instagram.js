@@ -359,6 +359,24 @@ export default {
         const r = await igGet(`${p.external_id}/insights`, token, { metric }, account);
         const v = Object.fromEntries((r.data || []).map((d) => [d.name, d.values?.[0]?.value ?? d.total_value?.value ?? null]));
         out[p.id] = { views: v.views, reach: v.reach, likes: v.likes, comments: v.comments, shares: v.shares, saves: v.saved };
+        // Reel watch metrics (some are marked "in development" by Meta, so fetched separately and best effort)
+        if (p.kind === 'reel') {
+          const ins = {};
+          for (const m of ['ig_reels_avg_watch_time', 'reels_skip_rate', 'ig_reels_video_view_total_time', 'total_interactions', 'reposts']) {
+            try {
+              const x = await igGet(`${p.external_id}/insights`, token, { metric: m }, account);
+              const val = x.data?.[0]?.values?.[0]?.value ?? x.data?.[0]?.total_value?.value;
+              if (val != null) ins[m] = Number(val);
+            } catch (e2) { if (e2.tokenInvalid) throw e2; }
+          }
+          const insights = {};
+          if (ins.ig_reels_avg_watch_time != null) insights.avg_watch_s = Math.round(ins.ig_reels_avg_watch_time / 10) / 100; // ms → s
+          if (ins.ig_reels_video_view_total_time != null) insights.total_watch_s = Math.round(ins.ig_reels_video_view_total_time / 1000);
+          if (ins.reels_skip_rate != null) insights.skip_rate = Math.round(ins.reels_skip_rate * 10) / 10;
+          if (ins.total_interactions != null) insights.interactions = ins.total_interactions;
+          if (ins.reposts != null) insights.reposts = ins.reposts;
+          if (Object.keys(insights).length) out[p.id]._insights = insights;
+        }
       } catch (e) {
         if (e.tokenInvalid) throw e;
         try {
@@ -368,6 +386,45 @@ export default {
       }
     }
     return out;
+  },
+
+  /** Who follows / engages: age, gender, country, city (Instagram needs 100+ followers / engagements). */
+  async fetchAudience({ account, token }) {
+    const id = isUnified(account) ? account.external_id : 'me';
+    const out = { followers: {}, engaged: {}, notes: [] };
+    for (const [key, metric] of [['followers', 'follower_demographics'], ['engaged', 'engaged_audience_demographics']]) {
+      for (const b of ['age', 'gender', 'country', 'city']) {
+        try {
+          const r = await igGet(`${id}/insights`, token, { metric, period: 'lifetime', timeframe: 'this_month', metric_type: 'total_value', breakdown: b }, account);
+          const rows = r.data?.[0]?.total_value?.breakdowns?.[0]?.results || [];
+          out[key][b] = rows.map((x) => ({ key: x.dimension_values?.[x.dimension_values.length - 1], value: Number(x.value) }))
+            .sort((a, z) => z.value - a.value).slice(0, 15);
+        } catch (e) {
+          if (e.tokenInvalid) throw e;
+          out.notes.push(`${metric}/${b}: ${e.message}`);
+        }
+      }
+    }
+    try {
+      const r = await igGet(`${id}/insights`, token, { metric: 'online_followers', period: 'lifetime' }, account);
+      const vals = r.data?.[0]?.values || [];
+      const hours = Array(24).fill(0);
+      let days = 0;
+      for (const v of vals) { if (v.value && typeof v.value === 'object') { days++; for (const [h, n] of Object.entries(v.value)) hours[Number(h)] += Number(n); } }
+      if (days) out.online_hours_utc = hours.map((n) => Math.round(n / days));
+    } catch (e) { if (e.tokenInvalid) throw e; out.notes.push(`online_followers: ${e.message}`); }
+    out.locked = !Object.values(out.followers).some((x) => x?.length);
+    return out;
+  },
+
+  /** Daily reach for the last 30 days. */
+  async fetchDaily({ account, token }) {
+    const id = isUnified(account) ? account.external_id : 'me';
+    const until = Math.floor(Date.now() / 1000);
+    const since = until - 29 * 86400;
+    const r = await igGet(`${id}/insights`, token, { metric: 'reach', period: 'day', metric_type: 'time_series', since, until }, account);
+    const rows = (r.data?.[0]?.values || []).map((v) => ({ day: String(v.end_time || '').slice(0, 10), reach: Number(v.value || 0) }));
+    return { days: rows };
   },
 
   async fetchFollowers({ account, token }) {

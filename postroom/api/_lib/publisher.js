@@ -9,6 +9,7 @@ import { MISSED_SLOT_HOURS } from './posts.js';
 import { pollInbox } from './inbox.js';
 import { notify } from './notify.js';
 import { ideaPublished } from './planner.js';
+import { collectPostInsights, collectAccountInsights } from './insights.js';
 import { deleteMedia } from './media.js';
 
 const MAX_ATTEMPTS = 6;
@@ -161,6 +162,9 @@ export async function housekeeping(deadline = Date.now() + 60000) {
   // Stats: checked every ~10 min; each post is refreshed on an age-based schedule (see collectMetrics).
   if (Date.now() < deadline - 20000) out.metrics = await throttle('metrics', 9 * 60, () => collectMetrics({ deadline }));
   if (Date.now() < deadline - 20000) out.followers = await throttle('followers', 2 * 3600, collectFollowers);
+  if (Date.now() < deadline - 25000) out.postInsights = await throttle('post-insights', 3 * 3600, () => collectPostInsights({ deadline }));
+  if (Date.now() < deadline - 25000) out.daily = await throttle('account-daily', 3 * 3600, () => collectAccountInsights({ kinds: ['daily'] }));
+  if (Date.now() < deadline - 25000) out.audience = await throttle('account-audience', 12 * 3600, () => collectAccountInsights({ kinds: ['audience'] }));
   out.reminders = await sendReminders().catch((e) => ({ error: e.message }));
   out.cleanup = await throttle('media-cleanup', 6 * 3600, cleanupMedia);
   out.prune = await throttle('prune', 86400, async () => {
@@ -279,9 +283,12 @@ export async function collectMetrics({ deadline = Date.now() + 120000, force = f
           await db()`update postroom.posts set metrics_at = now() where id = ${p.id}`;
           continue;
         }
-        const clean = Object.fromEntries(Object.entries(v).filter(([, x]) => x != null).map(([k, x]) => [k, Number(x)]));
+        const { _insights, ...core } = v;
+        const clean = Object.fromEntries(Object.entries(core).filter(([, x]) => x != null).map(([k, x]) => [k, Number(x)]));
         await db()`insert into postroom.post_metrics ${db()({ post_id: p.id, ...clean })}`;
-        await db()`update postroom.posts set metrics = ${db().json(clean)}, metrics_at = now() where id = ${p.id}`;
+        await db()`update postroom.posts set metrics = ${db().json(clean)}, metrics_at = now(),
+            insights = insights || ${db().json(_insights || {})}, insights_at = case when ${!!_insights} then now() else insights_at end
+          where id = ${p.id}`;
         updated++;
       }
     } catch (e) {

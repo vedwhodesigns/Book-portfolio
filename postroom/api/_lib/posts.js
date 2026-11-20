@@ -171,6 +171,8 @@ function postRow(p, extra = {}) {
     created_by: p.created_by,
     metrics: p.metrics || {},
     metrics_at: p.metrics_at,
+    insights: p.insights || {},
+    insights_at: p.insights_at || null,
     ...extra,
   };
 }

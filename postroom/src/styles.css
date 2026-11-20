@@ -521,3 +521,16 @@ a.btn, a.btn:hover { text-decoration: none; }
 .b-color span { background: rgb(255 255 255 / .85); color: #222; font: 600 12px/1 ui-monospace, monospace; padding: 4px 6px; border-radius: 6px; }
 @media (max-width: 700px) { .board-page { height: calc(100vh - 140px); } .board-link { width: 100%; order: 10; } }
 .modal-head { margin-bottom: 12px; }
+
+/* ---------- deeper analytics ---------- */
+.hbar2 { display: grid; grid-template-columns: minmax(80px, 34%) 1fr auto; gap: 8px; align-items: center; }
+.hbar2 .track { height: 10px; background: var(--surface-2); border-radius: 99px; overflow: hidden; }
+.hbar2 .fill { display: block; height: 100%; border-radius: 0 4px 4px 0; }
+.aud-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px 22px; }
+.hour-strip { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; }
+.hour-strip .hcell { height: 26px; border-radius: 4px; }
+.kv-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.kv-chip { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; min-width: 110px; }
+ul.tight { margin: 4px 0 0; padding-left: 18px; }
+ul.tight li { margin: 2px 0; }
+@media (max-width: 640px) { .table .hide-sm { display: none; } }

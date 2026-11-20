@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'preact/hooks';
 import { api, fmtNum, fmtDate, addDays, todayKey, relTime } from '../api.js';
 import { useApp, useAsync, Seg, PF, PfMark, Avatar, Empty, Spinner, KIND, Icon } from '../ui.jsx';
+import { HooksTab, AudienceTab } from './Insights.jsx';
 
 function Delta({ cur, prev }) {
   if (!prev) return <span class="delta faint">—</span>;
@@ -80,7 +81,39 @@ function Spark({ points }) {
   );
 }
 
-export default function Analytics() {
+const TABS = [{ value: 'overview', label: 'Overview' }, { value: 'hooks', label: 'Hooks' }, { value: 'audience', label: 'Audience' }];
+
+function RefreshButton({ onDone }) {
+  const { toast } = useApp();
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    setBusy(true);
+    try {
+      const r = await api('analytics/refresh', { method: 'POST', body: {} });
+      toast(`Updated ${r.metrics.updated} post${r.metrics.updated === 1 ? '' : 's'}, audience and daily stats from Instagram & YouTube`);
+      onDone?.();
+    } catch (e) { toast(e.message, 'bad'); } finally { setBusy(false); }
+  };
+  return <button class="btn sm" disabled={busy} onClick={run}>{busy ? <Spinner /> : <Icon name="refresh" size={14} />} Refresh now</button>;
+}
+
+export default function Analytics({ params = {} }) {
+  const { accounts } = useApp();
+  const tab = TABS.some((t) => t.value === params.tab) ? params.tab : 'overview';
+  const [bump, setBump] = useState(0);
+  const tabs = <Seg value={tab} onChange={(v) => { location.hash = `#/analytics?tab=${v}`; }} options={TABS} />;
+  if (tab === 'overview') return <Overview tabs={tabs} />;
+  const brands = [...new Set(accounts.map((a) => a.brand?.name).filter(Boolean))];
+  return (
+    <>
+      <div class="page-head"><h1>Analytics</h1>{tabs}<div class="grow" /><RefreshButton onDone={() => setBump((b) => b + 1)} /></div>
+      {tab === 'hooks' && <HooksTab key={bump} brands={brands} />}
+      {tab === 'audience' && <AudienceTab key={bump} />}
+    </>
+  );
+}
+
+function Overview({ tabs }) {
   const { accounts, openPost, toast } = useApp();
   const [days, setDays] = useState(30);
   const [pf, setPf] = useState('');
@@ -99,6 +132,7 @@ export default function Analytics() {
   const head = (
     <div class="page-head">
       <h1>Analytics</h1>
+      {tabs}
       {loading && <Spinner />}
       <div class="grow" />
       {data?.updated_at && <span class="tiny faint" title="New posts refresh every 10 min for 6 hours, hourly for 2 days, then every 3–12 hours">Updated {relTime(data.updated_at)}</span>}

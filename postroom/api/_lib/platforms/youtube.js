@@ -5,8 +5,21 @@ import { fetchRange } from '../storage.js';
 import { result, isVertical, fmtDur, byteLen, firstLine } from './common.js';
 
 // youtube.force-ssl lets Postroom add videos to playlists and post the first comment.
-const SCOPES = ['https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube.readonly', 'https://www.googleapis.com/auth/youtube.force-ssl'];
+const SCOPES = ['https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube.readonly', 'https://www.googleapis.com/auth/youtube.force-ssl', 'https://www.googleapis.com/auth/yt-analytics.readonly'];
 export const hasManageScope = (account) => String(account?.scopes || '').includes('youtube.force-ssl');
+export const hasAnalyticsScope = (account) => String(account?.scopes || '').includes('yt-analytics');
+const YTA = 'https://youtubeanalytics.googleapis.com/v2/reports';
+const ymd = (d) => new Date(d).toISOString().slice(0, 10);
+/** YouTube Analytics API report → array of row objects. */
+async function report(token, params) {
+  const qs = new URLSearchParams({ ids: 'channel==MINE', ...params });
+  const r = await call(`${YTA}?${qs}`, { headers: authed(token) });
+  const cols = (r.columnHeaders || []).map((c) => c.name);
+  return (r.rows || []).map((row) => Object.fromEntries(row.map((v, i) => [cols[i], v])));
+}
+const needAnalytics = (account) => {
+  if (!hasAnalyticsScope(account)) throw new PlatformError('YouTube: reconnect this channel (Accounts → Reconnect) to allow YouTube Analytics.');
+};
 export const CATEGORIES = { 1: 'Film & Animation', 2: 'Autos & Vehicles', 10: 'Music', 15: 'Pets & Animals', 17: 'Sports', 19: 'Travel & Events', 20: 'Gaming', 22: 'People & Blogs', 23: 'Comedy', 24: 'Entertainment', 25: 'News & Politics', 26: 'Howto & Style', 27: 'Education', 28: 'Science & Technology', 29: 'Nonprofits & Activism' };
 const API = 'https://www.googleapis.com/youtube/v3';
 const UPLOAD = 'https://www.googleapis.com/upload/youtube/v3';
@@ -312,6 +325,83 @@ export default {
       }
     }
     return out;
+  },
+
+  /** Watch time, average view %, subs gained per video, plus the retention curve (hook: % still watching at 3 s). */
+  async fetchInsights({ account, token, posts, withRetention = true }) {
+    needAnalytics(account);
+    const out = {};
+    const start = ymd(Math.min(...posts.map((p) => new Date(p.published_at || Date.now()))) - 864e5);
+    for (let i = 0; i < posts.length; i += 20) {
+      const batch = posts.slice(i, i + 20);
+      const rows = await report(token, {
+        startDate: start, endDate: ymd(Date.now()), dimensions: 'video',
+        metrics: 'views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,subscribersGained,shares',
+        filters: `video==${batch.map((p) => p.external_id).join(',')}`, maxResults: '50',
+      });
+      for (const r of rows) {
+        const p = batch.find((x) => x.external_id === r.video);
+        if (p) out[p.id] = { insights: { avg_watch_s: num(r.averageViewDuration), avg_view_pct: r.averageViewPercentage == null ? null : Math.round(r.averageViewPercentage * 10) / 10, watch_min: num(r.estimatedMinutesWatched), subs_gained: num(r.subscribersGained) } };
+      }
+    }
+    if (withRetention) {
+      for (const p of posts) {
+        try {
+          const rows = await report(token, {
+            startDate: ymd(new Date(p.published_at || Date.now()) - 864e5), endDate: ymd(Date.now()),
+            dimensions: 'elapsedVideoTimeRatio', metrics: 'audienceWatchRatio,relativeRetentionPerformance', filters: `video==${p.external_id}`,
+          });
+          if (!rows.length) continue;
+          const curve = rows.map((r) => [Number(r.elapsedVideoTimeRatio), Math.round(Number(r.audienceWatchRatio) * 1000) / 1000]);
+          const dur = Number(p.duration_s) || null;
+          let hold3 = null;
+          if (dur) {
+            const at = Math.min(1, 3 / dur);
+            const pt = curve.find(([x]) => x >= at) || curve[curve.length - 1];
+            hold3 = Math.round(Math.min(pt[1], 1.5) * 1000) / 10; // % of starting viewers still watching at 3 s (Shorts can loop past 100%)
+          }
+          out[p.id] = { ...(out[p.id] || { insights: {} }), retention: curve };
+          if (hold3 != null) out[p.id].insights.hold_3s = hold3;
+        } catch (e) { if (e.tokenInvalid) throw e; }
+      }
+    }
+    return out;
+  },
+
+  /** Audience: age & gender, top countries, where views come from, devices (last 90 days). */
+  async fetchAudience({ account, token }) {
+    needAnalytics(account);
+    const range = { startDate: ymd(Date.now() - 90 * 864e5), endDate: ymd(Date.now()) };
+    const safe = async (fn) => { try { return await fn(); } catch (e) { if (e.tokenInvalid) throw e; return { error: e.message }; } };
+    const ageGender = await safe(() => report(token, { ...range, dimensions: 'ageGroup,gender', metrics: 'viewerPercentage' }));
+    const country = await safe(() => report(token, { ...range, dimensions: 'country', metrics: 'views,estimatedMinutesWatched', sort: '-views', maxResults: '15' }));
+    const traffic = await safe(() => report(token, { ...range, dimensions: 'insightTrafficSourceType', metrics: 'views', sort: '-views' }));
+    const device = await safe(() => report(token, { ...range, dimensions: 'deviceType', metrics: 'views', sort: '-views' }));
+    const out = { notes: [] };
+    if (Array.isArray(ageGender)) {
+      const age = {};
+      const gender = {};
+      for (const r of ageGender) {
+        const a = String(r.ageGroup).replace('age', '').replace('-', '–');
+        age[a] = (age[a] || 0) + Number(r.viewerPercentage);
+        gender[r.gender] = (gender[r.gender] || 0) + Number(r.viewerPercentage);
+      }
+      out.age = Object.entries(age).map(([key, value]) => ({ key, value: Math.round(value * 10) / 10 })).sort((x, y) => x.key.localeCompare(y.key));
+      out.gender = Object.entries(gender).map(([key, value]) => ({ key: key.toLowerCase(), value: Math.round(value * 10) / 10 }));
+    } else out.notes.push(`age/gender: ${ageGender.error}`);
+    if (Array.isArray(country)) out.country = country.map((r) => ({ key: r.country, value: num(r.views) }));
+    else out.notes.push(`country: ${country.error}`);
+    if (Array.isArray(traffic)) out.traffic = traffic.map((r) => ({ key: r.insightTrafficSourceType, value: num(r.views) }));
+    if (Array.isArray(device)) out.device = device.map((r) => ({ key: r.deviceType, value: num(r.views) }));
+    out.locked = !out.age?.length && !out.country?.length;
+    return out;
+  },
+
+  /** Daily views, watch time and subscribers for the last 30 days. */
+  async fetchDaily({ account, token }) {
+    needAnalytics(account);
+    const rows = await report(token, { startDate: ymd(Date.now() - 30 * 864e5), endDate: ymd(Date.now()), dimensions: 'day', metrics: 'views,estimatedMinutesWatched,subscribersGained,subscribersLost', sort: 'day' });
+    return { days: rows.map((r) => ({ day: r.day, views: num(r.views), watch_min: num(r.estimatedMinutesWatched), subs: num(r.subscribersGained) - num(r.subscribersLost) })) };
   },
 
   async fetchFollowers({ account, token }) {

@@ -1,6 +1,7 @@
 import { useState } from 'preact/hooks';
 import { api, fmtDateTime, wallTime, relTime, fmtNum, fmtDur } from '../api.js';
 import { useApp, useAsync, Drawer, Icon, Avatar, StatusPill, PF, KIND, Spinner, PfMark } from '../ui.jsx';
+import { PostGrowth } from './Insights.jsx';
 
 export default function PostDrawer({ id, onClose }) {
   const { toast, refresh, openPost, go } = useApp();
@@ -90,6 +91,8 @@ export default function PostDrawer({ id, onClose }) {
             </div>
           </div>
         )}
+
+        {p.status === 'published' && <PostGrowth id={id} platform={p.platform} key={p.metrics_at || 'x'} />}
 
         <div class="media-strip">
           {p.cover && (

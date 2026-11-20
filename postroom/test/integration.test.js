@@ -76,6 +76,13 @@ async function fakeFetch(input, init = {}) {
     if (p === 'container1') return json({ status_code: ++state.igStatusPolls < 2 ? 'IN_PROGRESS' : 'FINISHED' });
     if (p.endsWith('/media_publish')) return json({ id: 'igmedia1' });
     if (p === 'igmedia1') return json({ permalink: 'https://www.instagram.com/reel/abc/' });
+    if (p === 'igmedia1/insights' && url.searchParams.get('metric') === 'reels_skip_rate') return json({ data: [{ name: 'reels_skip_rate', values: [{ value: 32.5 }] }] });
+    if (p === 'igmedia1/insights' && url.searchParams.get('metric') === 'ig_reels_avg_watch_time') return json({ data: [{ name: 'ig_reels_avg_watch_time', values: [{ value: 8400 }] }] });
+    if (p === 'igmedia1/insights' && !url.searchParams.get('metric').includes(',')) return json({ data: [] });
+    if (p === '1789/insights' && url.searchParams.get('metric') === 'reach') return json({ data: [{ name: 'reach', values: [{ value: 40, end_time: '2026-11-01T08:00:00+0000' }, { value: 55, end_time: '2026-11-02T08:00:00+0000' }] }] });
+    if (p === '1789/insights') return json({ error: { message: 'Not enough followers', code: 100 } }, 400);
+    if (p === 'me/insights' && url.searchParams.get('metric') === 'reach') return json({ data: [{ name: 'reach', values: [{ value: 40, end_time: '2026-11-01T08:00:00+0000' }, { value: 55, end_time: '2026-11-02T08:00:00+0000' }] }] });
+    if (p === 'me/insights') return json({ error: { message: '(#100) Not enough followers', code: 100 } }, 400);
     if (p === 'igmedia1/insights') return json({ data: [{ name: 'views', values: [{ value: 1200 }] }, { name: 'likes', values: [{ value: 80 }] }, { name: 'reach', values: [{ value: 900 }] }] });
     if (p === 'me') return json({ followers_count: 5100 });
   }
@@ -89,6 +96,17 @@ async function fakeFetch(input, init = {}) {
     return new Response('', { status: url.pathname === '/gone' ? 410 : 201 });
   }
   // Google / YouTube
+  if (url.host === 'youtubeanalytics.googleapis.com') {
+    const dims = url.searchParams.get('dimensions');
+    const H = (names) => names.map((name) => ({ name }));
+    if (dims === 'video') return json({ columnHeaders: H(['video', 'views', 'estimatedMinutesWatched', 'averageViewDuration', 'averageViewPercentage', 'subscribersGained', 'shares']), rows: [['ytvid1', 3000, 50, 21, 47.8, 3, 4]] });
+    if (dims === 'elapsedVideoTimeRatio') return json({ columnHeaders: H(['elapsedVideoTimeRatio', 'audienceWatchRatio', 'relativeRetentionPerformance']), rows: [[0.01, 1.0, 0.5], [0.1, 0.82, 0.5], [0.5, 0.55, 0.5], [1, 0.31, 0.5]] });
+    if (dims === 'day') return json({ columnHeaders: H(['day', 'views', 'estimatedMinutesWatched', 'subscribersGained', 'subscribersLost']), rows: [['2026-11-01', 120, 40, 3, 1], ['2026-11-02', 300, 90, 5, 0]] });
+    if (dims === 'ageGroup,gender') return json({ columnHeaders: H(['ageGroup', 'gender', 'viewerPercentage']), rows: [['age18-24', 'male', 40], ['age18-24', 'female', 20], ['age25-34', 'male', 40]] });
+    if (dims === 'country') return json({ columnHeaders: H(['country', 'views', 'estimatedMinutesWatched']), rows: [['IN', 900, 300], ['US', 400, 160]] });
+    if (dims === 'insightTrafficSourceType') return json({ columnHeaders: H(['insightTrafficSourceType', 'views']), rows: [['SHORTS', 1000], ['YT_SEARCH', 200]] });
+    if (dims === 'deviceType') return json({ columnHeaders: H(['deviceType', 'views']), rows: [['MOBILE', 1100]] });
+  }
   if (url.host === 'www.googleapis.com' && url.pathname === '/upload/youtube/v3/thumbnails/set') {
     const meta = await (await import('sharp')).default(Buffer.from(init.body)).metadata();
     state.ytThumb = { videoId: url.searchParams.get('videoId'), width: meta.width, height: meta.height, bytes: init.body.length };
@@ -155,7 +173,7 @@ before(async () => {
   if (skip) return;
   sql = postgres(URL_, { onnotice: () => {}, transform: { undefined: null } });
   await sql.unsafe('drop schema if exists postroom cascade');
-  for (const f of ['001_base.sql', '002_multiplatform.sql', '003_research.sql', '004_inbox.sql', '005_alerts_brand.sql', '006_planning.sql']) await sql.unsafe(fs.readFileSync(new URL(`../db/${f}`, import.meta.url), 'utf8'));
+  for (const f of ['001_base.sql', '002_multiplatform.sql', '003_research.sql', '004_inbox.sql', '005_alerts_brand.sql', '006_planning.sql', '007_insights.sql']) await sql.unsafe(fs.readFileSync(new URL(`../db/${f}`, import.meta.url), 'utf8'));
   globalThis.fetch = fakeFetch;
   core = await import('../api/_lib/core.js');
   posts = await import('../api/_lib/posts.js');
@@ -779,4 +797,54 @@ test('planner: references, mood boards, series, ideas and the idea → post → 
   assert.equal(ov.ideas.idea[0].title, 'Locked basement');
   const mcpOut = await call('POST', 'mcp/mcpkey', { body: { jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'save_reference', arguments: { note: 'Use red-blue police light flicker', suggest: true, brand: 'The Crime Archives', tags: ['lighting'] } } } });
   assert.equal(JSON.parse(mcpOut.body.result.content[0].text).status, 'suggested');
+});
+
+test('deep insights: reel skip rate & watch time, YouTube retention/hook, audience, daily, hook ranking', { skip }, async () => {
+  const insights = await import('../api/_lib/insights.js');
+  const hooks = await import('../api/_lib/hooks.js');
+  // Instagram reel watch metrics (legacy-login crimearchives reel → igmedia1)
+  await sql`update postroom.posts set metrics_at = null where external_id = 'igmedia1'`;
+  await publisher.collectMetrics({ force: true });
+  const [ig] = await sql`select insights from postroom.posts where external_id = 'igmedia1'`;
+  assert.deepEqual([ig.insights.skip_rate, ig.insights.avg_watch_s], [32.5, 8.4]);
+  assert.equal(hooks.hookScore(ig), 68, '100 − skip rate');
+
+  // YouTube: needs the analytics scope; without it a clear message
+  await sql`update postroom.accounts set scopes = 'youtube.upload youtube.readonly youtube.force-ssl' where username = 'crimearchivesyt'`;
+  const [ytp] = await sql`select id from postroom.posts where external_id = 'ytvid1' and media_ids[1] = '00000000-0000-0000-0000-0000000000f1' and status = 'published' limit 1`;
+  await insights.collectPostInsights({ postIds: [ytp.id] });
+  const [ev] = await sql`select message from postroom.events where message like 'YouTube analytics:%' order by at desc limit 1`;
+  assert.match(ev.message, /reconnect/i);
+  await sql`update postroom.accounts set scopes = 'youtube.upload youtube.readonly youtube.force-ssl yt-analytics.readonly' where username = 'crimearchivesyt'`;
+  const r = await insights.collectPostInsights({ postIds: [ytp.id] });
+  assert.equal(r.updated, 1);
+  const [yt] = await sql`select insights, retention from postroom.posts where id = ${ytp.id}`;
+  assert.equal(yt.insights.avg_view_pct, 47.8);
+  assert.equal(yt.insights.hold_3s, 82, 'retention at 3 s of a 45 s video');
+  assert.equal(yt.retention.length, 4);
+
+  // account audience + daily
+  const acc = await insights.collectAccountInsights({ kinds: ['audience', 'daily'] });
+  assert.equal(acc['crimearchivesyt/audience'], 'ok');
+  const rows = await insights.getAccountInsights();
+  const ytAud = rows.find((x) => x.username === 'crimearchivesyt' && x.kind === 'audience').data;
+  assert.deepEqual(ytAud.age.map((a) => a.key), ['18–24', '25–34']);
+  assert.equal(ytAud.age[0].value, 60);
+  assert.equal(ytAud.traffic[0].key, 'SHORTS');
+  const ytDaily = rows.find((x) => x.username === 'crimearchivesyt' && x.kind === 'daily').data;
+  assert.equal(ytDaily.days[1].subs, 5);
+  const igAud = rows.find((x) => x.username === 'crimearchives' && x.kind === 'audience').data;
+  assert.equal(igAud.locked, true, 'Instagram demographics locked under 100 followers');
+  const igDaily = rows.find((x) => x.username === 'crimearchives' && x.kind === 'daily').data;
+  assert.deepEqual(igDaily.days.map((d) => d.reach), [40, 55]);
+
+  // hook ranking
+  const list = await hooks.listHooks({});
+  const top = list.find((h) => h.score != null);
+  assert.ok(top.score >= 68);
+  assert.ok(list.some((h) => h.platform === 'youtube' && h.hold_3s === 82));
+
+  // growth curve
+  const g = await insights.postGrowth(ytp.id);
+  assert.equal(g.retention.length, 4);
 });

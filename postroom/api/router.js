@@ -369,7 +369,27 @@ export default async function handler(req, res) {
       const { collectMetrics, collectFollowers } = await import('./_lib/publisher.js');
       const metrics = await collectMetrics({ force: true, postIds: ids, deadline: Date.now() + 200000 });
       const followers = ids ? null : await collectFollowers();
-      return send(res, 200, { metrics, followers });
+      const ins = await import('./_lib/insights.js');
+      const deep = await ins.collectPostInsights({ postIds: ids, deadline: Date.now() + 120000 }).catch((e) => ({ error: e.message }));
+      const accounts = ids ? null : await ins.collectAccountInsights({ kinds: ['daily', 'audience'] }).catch((e) => ({ error: e.message }));
+      return send(res, 200, { metrics, followers, insights: deep, accounts });
+    }
+    if (p === 'analytics/hooks' && m === 'GET') {
+      const hk = await import('./_lib/hooks.js');
+      const q = query(req);
+      return send(res, 200, { hooks: await hk.listHooks(q), report: await hk.latestHookReport({ brand: q.brand || null }) });
+    }
+    if (p === 'analytics/hooks/analyze' && m === 'POST') {
+      const hk = await import('./_lib/hooks.js');
+      return send(res, 200, await hk.analyzeHooks(await body(req)));
+    }
+    if (p === 'analytics/accounts' && m === 'GET') {
+      const ins = await import('./_lib/insights.js');
+      return send(res, 200, await ins.getAccountInsights(query(req)));
+    }
+    if (seg[0] === 'analytics' && seg[1] === 'posts' && seg[2] && m === 'GET') {
+      const ins = await import('./_lib/insights.js');
+      return send(res, 200, await ins.postGrowth(seg[2]));
     }
     if (p === 'ai/captions' && m === 'POST') return send(res, 200, await writeCaptions(await body(req)));
     if (p === 'run' && m === 'POST') return send(res, 200, await tick({ budgetMs: 200000 }));

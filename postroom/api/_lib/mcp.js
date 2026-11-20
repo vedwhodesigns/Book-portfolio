@@ -152,6 +152,10 @@ const TOOLS = [
     description: 'Create a series (give brand + name) or update one (give id): description, format, cadence, status, next_note (what the next episode should be / what the audience chose).',
     inputSchema: { type: 'object', properties: { id: { type: 'string' }, brand: { type: 'string' }, name: { type: 'string' }, description: { type: 'string' }, format: { type: 'string' }, cadence: { type: 'string' }, status: { type: 'string', enum: ['active', 'paused', 'ended'] }, next_note: { type: 'string' } } },
   },
+  // ---- Deeper analytics ----
+  { name: 'hook_report', description: 'Hook learning: every published video with its hook (first line / idea hook) and hook score = % of viewers who stayed past the first 3 seconds (Instagram: 100 − skip rate; YouTube: retention at 3 s), average % watched, views and views vs the account median; plus the latest saved hook analysis. Use it to explain what kind of hooks work and to write better ones.', inputSchema: { type: 'object', properties: { brand: { type: 'string' }, days: { type: 'number' } } } },
+  { name: 'audience_report', description: 'Audience and trend data per account: Instagram follower/engaged demographics (age, gender, country, city — needs 100+ followers), online hours, daily reach; YouTube age & gender, top countries, traffic sources (Shorts feed, search, suggested…), devices, daily views/watch time/subscribers.', inputSchema: { type: 'object', properties: { account: { type: 'string', description: 'Optional: platform:username' } } } },
+  { name: 'post_insights', description: 'One published post: its stats over time (growth curve), watch metrics (avg watch time, skip rate / hold at 3 s, avg % viewed, subs gained) and, for YouTube, the audience retention curve.', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
   // ---- Instagram DMs ----
   { name: 'inbox_threads', description: 'List Instagram DM conversations across the connected accounts (newest first), with unread counts and whether a reply is still allowed (Instagram only allows replies within 24h of their last message).', inputSchema: { type: 'object', properties: { account_id: { type: 'string' }, q: { type: 'string', description: 'Search username or last message' } } } },
   { name: 'inbox_thread', description: 'Read one DM conversation (messages oldest → newest).', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
@@ -185,6 +189,19 @@ const short = (p) => ({
 async function callTool(name, a = {}) {
   switch (name) {
     case 'list_accounts': return listAccounts({ platform: a.platform });
+    case 'hook_report': {
+      const hk = await import('./hooks.js');
+      return { hooks: (await hk.listHooks({ brand: a.brand || null, days: a.days || 120 })).slice(0, 80), latest_analysis: await hk.latestHookReport({ brand: a.brand || null }) };
+    }
+    case 'audience_report': {
+      const ins = await import('./insights.js');
+      const acct = a.account ? await findAccount(a.account) : null;
+      return ins.getAccountInsights({ account_id: acct?.id || null });
+    }
+    case 'post_insights': {
+      const ins = await import('./insights.js');
+      return { post: await getPost(a.id), growth: await ins.postGrowth(a.id) };
+    }
     case 'plan_overview': return planner.overview({ brand: a.brand || null });
     case 'save_reference': {
       const { suggest, ...rest } = a;
