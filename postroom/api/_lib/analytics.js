@@ -72,5 +72,6 @@ export async function overview({ days = 30, platform: pf = null, account_id = nu
     followers: followers.map((r) => ({ account_id: r.account_id, day: r.day, followers: n(r.followers) })),
     top_posts: top,
     best_hours: bestHours.map((r) => ({ hour: r.hour, posts: n(r.posts), avg_views: n(r.avg_views) })),
+    updated_at: (await db()`select max(metrics_at) as t from postroom.posts where status = 'published'`)[0]?.t || null,
   };
 }

@@ -81,10 +81,19 @@ function Spark({ points }) {
 }
 
 export default function Analytics() {
-  const { accounts, openPost } = useApp();
+  const { accounts, openPost, toast } = useApp();
   const [days, setDays] = useState(30);
   const [pf, setPf] = useState('');
-  const { data, loading } = useAsync(() => api('analytics', { query: { days, platform: pf || null } }), [days, pf]);
+  const { data, loading, reload } = useAsync(() => api('analytics', { query: { days, platform: pf || null } }), [days, pf]);
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshNow = async () => {
+    setRefreshing(true);
+    try {
+      const r = await api('analytics/refresh', { method: 'POST', body: {} });
+      toast(`Updated ${r.metrics.updated} post${r.metrics.updated === 1 ? '' : 's'} from Instagram & YouTube`);
+      await reload();
+    } catch (e) { toast(e.message, 'bad'); } finally { setRefreshing(false); }
+  };
   const pfs = [...new Set(accounts.map((a) => a.platform))];
 
   const head = (
@@ -92,6 +101,8 @@ export default function Analytics() {
       <h1>Analytics</h1>
       {loading && <Spinner />}
       <div class="grow" />
+      {data?.updated_at && <span class="tiny faint" title="New posts refresh every 10 min for 6 hours, hourly for 2 days, then every 3–12 hours">Updated {relTime(data.updated_at)}</span>}
+      <button class="btn sm" disabled={refreshing} onClick={refreshNow}>{refreshing ? <Spinner /> : <Icon name="refresh" size={14} />} Refresh now</button>
       {pfs.length > 1 && <Seg value={pf} onChange={setPf} options={[{ value: '', label: 'All' }, ...pfs.map((p) => ({ value: p, label: PF[p].label }))]} />}
       <Seg value={days} onChange={setDays} options={[{ value: 7, label: '7d' }, { value: 30, label: '30d' }, { value: 90, label: '90d' }]} />
     </div>
@@ -99,7 +110,7 @@ export default function Analytics() {
   if (!data) return <>{head}<div class="skeleton" style={{ height: 300 }} /></>;
   const t = data.totals, pv = data.previous;
   if (!t.posts && !data.by_account.some((a) => a.followers_count)) {
-    return <>{head}<div class="card"><Empty icon="chart" title="No published posts yet">Views, likes and follower growth appear here a few hours after your first post goes out. Postroom refreshes stats every 3 hours.</Empty></div></>;
+    return <>{head}<div class="card"><Empty icon="chart" title="No published posts yet">Views, likes and follower growth appear here a few hours after your first post goes out. New posts refresh every 10 minutes for their first 6 hours, hourly for 2 days, then every few hours — or tap Refresh now.</Empty></div></>;
   }
   const maxPf = Math.max(1, ...data.by_platform.map((r) => r.views));
   const followersBy = (id) => data.followers.filter((f) => f.account_id === id);

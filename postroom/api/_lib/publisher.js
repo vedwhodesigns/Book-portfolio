@@ -158,8 +158,9 @@ export async function housekeeping(deadline = Date.now() + 60000) {
   // Instagram DMs every minute, comments every ~3 minutes (works while the Meta app is unpublished).
   out.inbox = await throttle('inbox-dms', 50, () => pollInbox({ dms: true, comments: false, deadline: deadline - 15000 }));
   if (Date.now() < deadline - 25000) out.comments = await throttle('inbox-comments', 170, () => pollInbox({ dms: false, comments: true, deadline: deadline - 15000 }));
-  if (Date.now() < deadline - 20000) out.metrics = await throttle('metrics', 3 * 3600, () => collectMetrics(deadline));
-  if (Date.now() < deadline - 20000) out.followers = await throttle('followers', 12 * 3600, collectFollowers);
+  // Stats: checked every ~10 min; each post is refreshed on an age-based schedule (see collectMetrics).
+  if (Date.now() < deadline - 20000) out.metrics = await throttle('metrics', 9 * 60, () => collectMetrics({ deadline }));
+  if (Date.now() < deadline - 20000) out.followers = await throttle('followers', 2 * 3600, collectFollowers);
   out.reminders = await sendReminders().catch((e) => ({ error: e.message }));
   out.cleanup = await throttle('media-cleanup', 6 * 3600, cleanupMedia);
   out.prune = await throttle('prune', 86400, async () => {
@@ -245,12 +246,23 @@ async function refreshTokens() {
   return { refreshed };
 }
 
-export async function collectMetrics(deadline = Date.now() + 120000) {
+/**
+ * Refresh post stats. Fresh posts are refreshed most often:
+ *   first 6 hours → every 10 min · first 2 days → hourly · first week → every 3 h · up to 45 days → every 12 h.
+ * force = refresh now regardless of schedule (optionally only postIds).
+ */
+export async function collectMetrics({ deadline = Date.now() + 120000, force = false, postIds = null } = {}) {
+  if (typeof arguments[0] === 'number') deadline = arguments[0];
   const posts = await db()`select * from postroom.posts
     where status = 'published' and external_id is not null and coalesce((upload->>'inbox')::boolean, false) = false
       and published_at > now() - interval '45 days'
-      and (metrics_at is null or metrics_at < now() - interval '3 hours')
-    order by metrics_at nulls first limit 150`;
+      ${postIds?.length ? db()`and id = any(${postIds}::uuid[])` : db()``}
+      ${force ? db()`` : db()`and (metrics_at is null or metrics_at < now() - case
+        when published_at > now() - interval '6 hours' then interval '9 minutes'
+        when published_at > now() - interval '48 hours' then interval '55 minutes'
+        when published_at > now() - interval '7 days' then interval '3 hours'
+        else interval '12 hours' end)`}
+    order by published_at desc limit 150`;
   const byAccount = new Map();
   for (const p of posts) byAccount.set(p.account_id, [...(byAccount.get(p.account_id) || []), p]);
   let updated = 0;

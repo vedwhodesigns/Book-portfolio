@@ -362,6 +362,15 @@ export default async function handler(req, res) {
 
     // analytics, AI, manual publish run
     if (p === 'analytics' && m === 'GET') return send(res, 200, await overview(query(req)));
+    if (p === 'analytics/refresh' && m === 'POST') {
+      // "Refresh now": pull the latest numbers from Instagram/YouTube immediately
+      const b = await body(req);
+      const ids = Array.isArray(b.post_ids) ? b.post_ids : b.post_id ? [b.post_id] : null;
+      const { collectMetrics, collectFollowers } = await import('./_lib/publisher.js');
+      const metrics = await collectMetrics({ force: true, postIds: ids, deadline: Date.now() + 200000 });
+      const followers = ids ? null : await collectFollowers();
+      return send(res, 200, { metrics, followers });
+    }
     if (p === 'ai/captions' && m === 'POST') return send(res, 200, await writeCaptions(await body(req)));
     if (p === 'run' && m === 'POST') return send(res, 200, await tick({ budgetMs: 200000 }));
 

@@ -75,6 +75,12 @@ export default function PostDrawer({ id, onClose }) {
           </div>
         )}
 
+        {p.status === 'published' && (
+          <div class="row tiny faint" style={{ gap: 8 }}>
+            <span>{p.metrics_at ? `Stats updated ${relTime(p.metrics_at)}` : 'No stats yet'}</span>
+            <button class="btn ghost sm" disabled={busy} onClick={() => act(() => api('analytics/refresh', { method: 'POST', body: { post_id: id } }).then(reload), 'Stats updated')}><Icon name="refresh" size={13} /> Refresh</button>
+          </div>
+        )}
         {hasMetrics && (
           <div class="acct-card" style={{ padding: 0 }}>
             <div class="stats" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
