@@ -105,7 +105,7 @@ Save it next to the video as `<video-name>.card.json` and also show it in the ch
     "youtube": "In April 1945, the German submarine U-1206 was cruising off Scotland when its captain tried the new high-pressure toilet. Something went wrong, seawater flooded in, and it reached the batteries below, releasing chlorine gas. The crew had to surface, were spotted, and scuttled the boat.\n\n#HowItClicks #howitworks #history #learnwithshorts\n\nThe animation is illustrative: parts are simplified to show the idea, and every number is real or labelled as an estimate."
   },
   "youtube_tags": ["u-1206", "submarine toilet", "ww2 submarine", "submarine history"],
-  "when": "draft"
+  "when": "next_slot"
 }
 ```
 
@@ -113,9 +113,9 @@ The facts in this example are only there to show the format. Always use the fact
 
 **Fields:**
 - `"when"`:
-  - `"draft"`: the default for now. The owner wants 3 videos ready before anything posts.
-  - `"next_slot"`: once the posting slots are set.
-  - Or an exact India time like `"2026-11-25T22:00"`.
+  - `"next_slot"`: the default. Every video goes live at **8:30 pm India time**, one per day; Postroom picks the next free 8:30 pm.
+  - `"draft"`: only if the owner says to hold it.
+  - Or an exact India time like `"2026-11-25T20:30"`.
 - **Optional:**
   - `"instagram_cover": "<file>.jpg"` (9:16, 1080×1920)
   - `"youtube_thumbnail": "<file>.jpg"` (16:9, 1280×720)

@@ -248,7 +248,7 @@ Save the card next to the video as `<video-name>.card.json` and show it in the c
   },
   "youtube_tags": ["xqc", "xqcow", "felix lengyel", "xqc clips", "xqc highlights", "xqc funny moments", "xqc reacts", "streamer clips", "kick clips"],
   "options": { "youtube": { "category_id": "20" } },
-  "when": "draft"
+  "when": "next_slot"
 }
 ```
 The clip in this example is made up to show the format. Always use the uploader's brief.
@@ -262,9 +262,9 @@ The clip in this example is made up to show the format. Always use the uploader'
 ### Fields
 - **`"accounts"`:** change these to the real handles once the accounts are connected in Postroom. Run `node "$HOME/postroom/postroom.mjs" accounts` to see them.
 - **`"when"`:**
-  - `"draft"` (safe default)
-  - `"next_slot"`, once posting slots are set
-  - an exact India time, like `"2026-11-25T21:30"`
+  - `"next_slot"`: the default. Every video goes live at **8:30 pm India time**, one per day; Postroom picks the next free 8:30 pm.
+  - `"draft"`: only if the uploader says to hold it
+  - an exact India time, like `"2026-11-25T20:30"`
 - **Optional:**
   - `"instagram_cover": "<file>.jpg"` (9:16, 1080×1920): the streamer's reaction frame with 2–3 words of text
   - `"options": { "instagram": { "first_comment": "Full stream link on our YouTube 🔗" } }`

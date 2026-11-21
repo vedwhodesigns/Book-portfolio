@@ -55,7 +55,7 @@ Never ask for the password in chat, never print it, and never put it in a file o
      - `"next_slot"`: the account's next free posting slot
      - `"now"`
      - `"draft"`: saved, not posted
-     - or an India time like `"2026-11-25T22:00"`
+     - or an India time like `"2026-11-25T20:30"`
    - **Postroom adds automatically:**
      - the brand's must-use hashtags if they're missing (add `"hashtags": "none"` to stop this)
      - the brand's hidden YouTube tags
@@ -78,7 +78,7 @@ Never ask for the password in chat, never print it, and never put it in a file o
 
 - `node "$HOME/postroom/postroom.mjs" queue`: what's scheduled
 - `node "$HOME/postroom/postroom.mjs" drafts`: drafts with their post ids
-- `node "$HOME/postroom/postroom.mjs" schedule <post-id> [2026-11-20T22:00 | next_slot]`: schedule a draft. Its other platforms in the same cross-post are scheduled too. Leave out the time to keep the draft's time. Never re-post a card to schedule a draft; that uploads duplicates.
+- `node "$HOME/postroom/postroom.mjs" schedule <post-id> [2026-11-20T20:30 | next_slot]`: schedule a draft. Its other platforms in the same cross-post are scheduled too. Leave out the time to keep the draft's time. Never re-post a card to schedule a draft; that uploads duplicates.
 - `node "$HOME/postroom/postroom.mjs" upload <files…>`: put files in the library only
 
 Changing captions or times, or cancelling a post, happens in the Postroom app: Queue → open the post. The Postroom connector's `update_post`, `schedule_post` and `cancel_post` tools do the same.
