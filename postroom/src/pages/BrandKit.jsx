@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import { api } from '../api.js';
-import { useApp, Drawer, Icon, Spinner, Avatar } from '../ui.jsx';
+import { useApp, Drawer, Icon, Spinner, Avatar, Toggle } from '../ui.jsx';
 
 const DAY = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const FIELDS = [
@@ -59,6 +59,17 @@ export default function BrandKit({ account, onClose }) {
           </div>
         ))}
         <button type="button" class="btn sm" style={{ alignSelf: 'flex-start' }} onClick={() => setSlots([...slots, { time: '19:00', days: [1, 2, 3, 4, 5, 6, 7] }])}><Icon name="plus" size={14} /> Add slot</button>
+
+        <h3 style={{ margin: '10px 0 0' }}>Every upload</h3>
+        {account.platform === 'instagram' && (
+          <Toggle checked={!!b.defaults?.instagram_ai_label} onChange={(v) => setB({ ...b, defaults: { ...(b.defaults || {}), instagram_ai_label: v } })} label="Label as made with AI" hint="Instagram's AI info label, switched on for every post" />
+        )}
+        {account.platform === 'youtube' && (
+          <>
+            <Toggle checked={!!b.defaults?.youtube_synthetic} onChange={(v) => setB({ ...b, defaults: { ...(b.defaults || {}), youtube_synthetic: v } })} label="Altered or synthetic content" hint="YouTube's AI disclosure, switched on for every upload" />
+            <Toggle checked={!!b.defaults?.link_previous_video} onChange={(v) => setB({ ...b, defaults: { ...(b.defaults || {}), link_previous_video: v } })} label="Link the previous video" hint="Each upload links the channel's last video in its description and first comment" />
+          </>
+        )}
 
         <h3 style={{ margin: '10px 0 0' }}>Brand kit</h3>
         {FIELDS.map(([k, label, ph]) => (

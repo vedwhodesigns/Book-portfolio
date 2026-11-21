@@ -98,7 +98,7 @@ export default function Compose({ params }) {
   const [kinds, setKinds] = useState({});
   const [opts, setOpts] = useState({
     instagram: { share_to_feed: true, collaborators: '', user_tags: '', alt_text: '', audio_name: '', trial: '', ai_generated: false, first_comment: '' },
-    youtube: { privacy: 'public', made_for_kids: false, notify_subscribers: true, tags: [], category_id: '22', synthetic: false, first_comment: '' },
+    youtube: { privacy: 'public', made_for_kids: false, notify_subscribers: true, tags: [], category_id: '22', synthetic: false, link_previous: false, first_comment: '' },
     tiktok: { mode: 'direct', privacy_level: '', disable_comment: false, disable_duet: false, disable_stitch: false, brand_content: false, brand_organic: false, is_aigc: false },
   });
   const [tab, setTab] = useState(null);
@@ -146,6 +146,16 @@ export default function Compose({ params }) {
     }
   }, []);
   useEffect(() => { if (!platforms.includes(tab)) setTab(platforms[0] || null); }, [platforms.join()]);
+  // Brand kit defaults for the chosen accounts: AI labels and "link the previous video" switch on by themselves.
+  useEffect(() => {
+    const d = (pf) => chosen.filter((a) => a.platform === pf).map((a) => a.brand?.defaults || {});
+    const ig = d('instagram'), yt = d('youtube');
+    setOpts((o) => ({
+      ...o,
+      instagram: { ...o.instagram, ai_generated: ig.some((x) => x.instagram_ai_label) },
+      youtube: { ...o.youtube, synthetic: yt.some((x) => x.youtube_synthetic), link_previous: yt.some((x) => x.link_previous_video) },
+    }));
+  }, [selected.join()]);
   // Each channel has its own playlists.
   useEffect(() => {
     for (const a of chosen.filter((x) => x.platform === 'youtube' && !playlists[x.id])) {
@@ -539,7 +549,8 @@ export default function Compose({ params }) {
                         })}
                         <div class="field"><label for="ytfc">First comment (optional)</label><textarea id="ytfc" class="textarea" style={{ minHeight: 60 }} placeholder="Posted under the video right after upload" value={opts.youtube.first_comment} onInput={(e) => setOpt('youtube', 'first_comment', e.currentTarget.value)} /></div>
                         <Toggle checked={opts.youtube.notify_subscribers} onChange={(v) => setOpt('youtube', 'notify_subscribers', v)} label="Notify subscribers" />
-                        <Toggle checked={opts.youtube.synthetic} onChange={(v) => setOpt('youtube', 'synthetic', v)} label="Altered or synthetic content" hint="Required by YouTube when realistic-looking content was made or changed with AI" />
+                        <Toggle checked={opts.youtube.synthetic} onChange={(v) => setOpt('youtube', 'synthetic', v)} label="Altered or synthetic content" hint="YouTube's AI disclosure label" />
+                        <Toggle checked={opts.youtube.link_previous} onChange={(v) => setOpt('youtube', 'link_previous', v)} label="Link the previous video" hint="Adds the channel's last video to the description and first comment" />
                         {!config.audited.youtube && opts.youtube.privacy !== 'private' && <div class="notice warn"><Icon name="alert" size={16} /><span>Until Google approves your project's YouTube audit, YouTube makes API uploads <b>private</b>. Switch it to public in YouTube Studio, or apply for the audit (SETUP.md).</span></div>}
                       </>
                     )}

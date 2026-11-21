@@ -1,6 +1,6 @@
 // YouTube via the official YouTube Data API v3 with Google OAuth.
 // Uploads use the resumable protocol so big files survive across cron ticks.
-import { env, fetchT, readJson, form, PlatformError } from '../core.js';
+import { env, fetchT, readJson, form, PlatformError, db } from '../core.js';
 import { fetchRange } from '../storage.js';
 import { result, isVertical, fmtDur, byteLen, firstLine } from './common.js';
 
@@ -88,6 +88,15 @@ export function videoDescription(post) {
   if (post.kind === 'short' && !/#shorts\b/i.test(`${d} ${post.title || ''}`)) d = `${d}\n\n#Shorts`.trim();
   return d;
 }
+
+/** The channel's most recent published video before this one (for "link the previous video"). */
+export async function previousVideo(post) {
+  const [r] = await db()`select title, caption, permalink from postroom.posts
+    where account_id = ${post.account_id} and platform = 'youtube' and status = 'published' and permalink is not null and id <> ${post.id}
+    order by published_at desc limit 1`;
+  return r ? { url: r.permalink, title: r.title || firstLine(r.caption) } : null;
+}
+const previousLine = (prev) => `▶ Previous video: ${prev.title ? `${prev.title.replace(/#\w+/g, '').trim()} ` : ''}${prev.url}`;
 
 export default {
   id: 'youtube',
@@ -184,10 +193,15 @@ export default {
 
     if (!upload.session_uri) {
       const o = post.options || {};
+      let description = videoDescription(post);
+      if (o.link_previous) {
+        const prev = await previousVideo(post).catch(() => null);
+        if (prev && !description.includes(prev.url)) description = `${description}\n\n${previousLine(prev)}`.slice(0, 5000);
+      }
       const meta = {
         snippet: {
           title: videoTitle(post),
-          description: videoDescription(post),
+          description,
           tags: o.tags?.length ? o.tags : undefined,
           categoryId: String(o.category_id || '22'),
           defaultLanguage: o.language || undefined,
@@ -290,7 +304,8 @@ export default {
       }
       await save({ playlist_done: true, playlist_error: upload.playlist_error || null });
     }
-    const comment = String(o.first_comment || '').trim();
+    const prev = o.link_previous && !upload.comment_done ? await previousVideo(post).catch(() => null) : null;
+    const comment = [String(o.first_comment || '').trim(), prev && `▶ Watch the previous one: ${prev.url}`].filter(Boolean).join('\n\n');
     if (comment && !upload.comment_done) {
       try {
         await call(`${API}/commentThreads?part=snippet`, {

@@ -56,6 +56,11 @@ export async function checkTargets(input) {
     const caption = t.caption ?? input.caption ?? '';
     const title = t.title ?? input.title ?? null;
     const options = { ...(input.options?.[account.platform] || {}), ...(t.options || {}) };
+    // Brand kit defaults (Accounts → Brand kit): AI labels and "link the previous video", unless this post says otherwise.
+    const dfl = account.brand?.defaults || {};
+    if (account.platform === 'instagram' && options.ai_generated === undefined && dfl.instagram_ai_label) options.ai_generated = true;
+    if (account.platform === 'youtube' && options.synthetic === undefined && dfl.youtube_synthetic) options.synthetic = true;
+    if (account.platform === 'youtube' && options.link_previous === undefined && dfl.link_previous_video) options.link_previous = true;
     // A target can use its own media (e.g. YouTube gets a video made from the images Instagram posts).
     const tMedia = t.media_ids?.length ? await loadMedia(t.media_ids) : media;
     // Each account can have its own cover/thumbnail (Instagram 9:16 cover, YouTube 16:9 thumbnail).

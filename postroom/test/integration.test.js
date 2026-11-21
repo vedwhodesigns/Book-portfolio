@@ -944,3 +944,34 @@ test('weekly reports: week numbers vs last week, Claude analysis with carried-fo
   assert.equal(one.brand, 'Test Brand');
   assert.equal((await call('GET', 'reports/learnings?brand=Test%20Brand', h)).body[0].learning, 'Evening beats morning');
 });
+
+test('brand defaults: AI labels on every upload; YouTube links the channel\'s previous video', { skip }, async () => {
+  const defaults = { instagram_ai_label: true, youtube_synthetic: true, link_previous_video: true };
+  await sql`update postroom.accounts set brand = ${sql.json({ name: 'Defaults Test', defaults })}, status = 'active', status_detail = null
+    where username = 'brand.one' or id = '00000000-0000-0000-0000-00000000000b'`;
+  const [prev] = await sql`select title, caption, permalink from postroom.posts where account_id = '00000000-0000-0000-0000-00000000000b'
+    and status = 'published' and permalink is not null order by published_at desc limit 1`;
+  assert.ok(prev, 'an earlier published YouTube video exists');
+  state.ytComment = null;
+  state.igCreates = [];
+  state.ytReceived = 0;
+  const r = await posts.createPosts({
+    mode: 'now', media_ids: ['00000000-0000-0000-0000-0000000000f1'], caption: 'Next episode', title: 'Episode 2',
+    targets: [{ account: 'instagram:brand.one' }, { account_id: '00000000-0000-0000-0000-00000000000b', options: { made_for_kids: false } }],
+  });
+  const opts = Object.fromEntries((await sql`select platform, options from postroom.posts where group_id = ${r.group_id}`).map((x) => [x.platform, x.options]));
+  assert.equal(opts.instagram.ai_generated, true);
+  assert.equal(opts.youtube.synthetic, true);
+  assert.equal(opts.youtube.link_previous, true);
+  await drain();
+  assert.equal(state.ytMeta.status.containsSyntheticMedia, true);
+  assert.ok(state.ytMeta.snippet.description.includes(`▶ Previous video:`), state.ytMeta.snippet.description);
+  assert.ok(state.ytMeta.snippet.description.includes(prev.permalink));
+  assert.equal(state.ytComment.topLevelComment.snippet.textOriginal, `▶ Watch the previous one: ${prev.permalink}`);
+  assert.equal(state.igCreates.at(-1).is_ai_generated, 'true');
+
+  // a post can still switch them off
+  const off = await posts.checkTargets({ media_ids: ['00000000-0000-0000-0000-0000000000f1'], caption: 'x', title: 'y', targets: [{ account_id: '00000000-0000-0000-0000-00000000000b', options: { made_for_kids: false, synthetic: false, link_previous: false } }] });
+  assert.deepEqual([off.targets[0].options.synthetic, off.targets[0].options.link_previous], [false, false]);
+  await sql`update postroom.accounts set brand = '{}'::jsonb where username = 'brand.one' or id = '00000000-0000-0000-0000-00000000000b'`;
+});
