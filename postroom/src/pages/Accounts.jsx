@@ -68,6 +68,11 @@ export default function Accounts() {
                     {a.status === 'active' ? <span class="pill good"><span class="dot" />Connected</span> : <span class="pill bad"><span class="dot" />Reconnect</span>}
                   </div>
                   {a.status !== 'active' && <div class="notice bad small">{a.status_detail || 'The login expired.'}</div>}
+                  {a.status === 'active' && a.missing_permissions?.length > 0 && (
+                    <div class="notice warn small">
+                      Postroom can't read this channel's {a.missing_permissions.join(' or ')} yet. Tap <b>Reconnect</b>, pick this channel's Google account and <b>tick every box</b> on Google's screen, including “See YouTube Analytics reports”.
+                    </div>
+                  )}
                   <div class="stats">
                     <div class="stat"><b class="num">{fmtNum(a.followers_count)}</b><span>{a.platform === 'youtube' ? 'subscribers' : 'followers'}</span></div>
                     <div class="stat"><b class="num">{a.upcoming}</b><span>upcoming</span></div>
@@ -80,7 +85,7 @@ export default function Accounts() {
                   </button>
                   {a.failed > 0 && <a class="small" href="#/queue?tab=failed" style={{ color: 'var(--bad)' }}>{a.failed} failed post{a.failed > 1 ? 's' : ''} →</a>}
                   <div class="actions">
-                    {a.status !== 'active'
+                    {a.status !== 'active' || a.missing_permissions?.length > 0
                       ? <a class="btn primary sm" href={`/api/connect/${a.platform}`}>Reconnect</a>
                       : <a class="btn sm" href={`#/compose?account=${a.id}`}><Icon name="plus" size={14} /> Post</a>}
                     <button class="btn ghost sm" disabled={busy === a.id} onClick={() => act(a.id, () => api(`accounts/${a.id}/sync`, { method: 'POST' }), 'Profile refreshed')}>{busy === a.id ? <Spinner /> : <Icon name="refresh" size={14} />} Refresh</button>

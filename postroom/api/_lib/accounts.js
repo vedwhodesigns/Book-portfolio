@@ -4,6 +4,16 @@ import { PLATFORMS, platform } from './platforms/index.js';
 
 export const redirectUri = (id) => `${APP_URL()}/api/connect/${id}/callback`;
 
+/** Permissions this login is missing (YouTube: analytics, playlists/first comment). Fixed by reconnecting. */
+export function missingPermissions(a) {
+  if (a.platform !== 'youtube' || a.status !== 'active') return [];
+  const s = String(a.scopes || '');
+  const out = [];
+  if (!s.includes('yt-analytics')) out.push('analytics');
+  if (!s.includes('youtube.force-ssl')) out.push('playlists and first comments');
+  return out;
+}
+
 export function accountRow(a, extra = {}) {
   return {
     id: a.id,
@@ -21,6 +31,7 @@ export function accountRow(a, extra = {}) {
     connected_at: a.connected_at,
     brand: a.brand || {},
     slots: a.slots || [],
+    missing_permissions: missingPermissions(a),
     ...extra,
   };
 }
