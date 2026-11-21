@@ -227,7 +227,7 @@ const fmt = (d) => new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', 
 
 const [cmd, ...args] = process.argv.slice(2);
 if (!cmd || cmd === 'help') {
-  console.log('Usage: node postroom.mjs post|check <card.json> · drafts · schedule <post-id> [time|next_slot] · ref <image|link…> [--brand --tags --note --board --idea] · upload <files…> · queue · accounts');
+  console.log('Usage: node postroom.mjs post|check <card.json> · drafts · schedule <post-id> [time|next_slot] · ref <image|link…> [--brand --tags --note --board --idea] · report "<brand>" [--new] [--json] · upload <files…> · queue · accounts');
   process.exit(0);
 }
 await login();
@@ -271,6 +271,34 @@ if (cmd === 'accounts') {
     }
     console.log(`✓ reference saved: ${r.title || r.url}${r.tags.length ? ` [${r.tags.join(', ')}]` : ''}${opts.board ? ' (pinned on the board)' : ''}  [ref ${r.id}]`);
   }
+} else if (cmd === 'report') {
+  // node postroom.mjs report "The Crime Archives" [--new] [--json]   — latest weekly report (--new writes one for the last 7 days)
+  const brand = args.find((a) => !a.startsWith('--'));
+  if (!brand) die('Usage: node postroom.mjs report "<brand name>" [--new] [--json]');
+  let r;
+  if (args.includes('--new')) { console.error('Writing a fresh report for the last 7 days (about a minute)…'); r = await api('reports/generate', { method: 'POST', body: { brand, days: 7 } }); }
+  else {
+    const list = await api(`reports?brand=${encodeURIComponent(brand)}`);
+    if (!list.length) die(`No reports yet for ${brand}. Run with --new to write one now.`);
+    r = await api(`reports/${list[0].id}`);
+  }
+  if (args.includes('--json')) { console.log(JSON.stringify(r, null, 2)); process.exit(0); }
+  const d = r.data, rep = r.report, t = d.totals, c = d.change;
+  const pc = (v) => (v == null ? '' : ` (${v >= 0 ? '+' : ''}${Math.round(v)}% vs last week)`);
+  console.log(`${brand} · ${d.period.label}${r.kind === 'manual' ? ' (on demand)' : ''}`);
+  console.log(`Posts ${t.posts}${pc(c.posts)} · views ${t.views}${pc(c.views)} · median 24h views ${t.median_views_24h ?? '–'}${pc(c.median_views_24h)} · hook score ${t.avg_hook_score ?? '–'} · engagement ${t.engagement_rate ?? '–'}%${d.followers_change != null ? ` · followers ${d.followers_change >= 0 ? '+' : ''}${d.followers_change}` : ''}`);
+  console.log('\nPosts:');
+  for (const p of d.posts) console.log(`  ${p.ref} ${p.account} ${p.kind} ${p.posted}  24h ${p.views_24h ?? '?'} · now ${p.views ?? '?'} · hook ${p.hook_score ?? '–'}  "${p.hook}"`);
+  if (!rep) { console.log(`\n${r.error}`); process.exit(0); }
+  const list = (title, xs, f) => { if (xs?.length) { console.log(`\n${title}:`); for (const x of xs) console.log(`  - ${f(x)}`); } };
+  console.log(`\n${rep.headline}\n${rep.summary}`);
+  list('What worked', rep.what_worked, (x) => `${x.finding} — ${x.evidence}${x.refs?.length ? ` [${x.refs.join(', ')}]` : ''}`);
+  list("What didn't", rep.what_didnt, (x) => `${x.finding} — ${x.evidence}${x.refs?.length ? ` [${x.refs.join(', ')}]` : ''}`);
+  list('Learnings', rep.learnings, (x) => `${x.learning} (${x.status}, ${x.confidence} confidence) — ${x.evidence}`);
+  list("Last week's experiments", rep.experiment_review, (x) => `${x.experiment}: ${x.verdict} — ${x.evidence}`);
+  list('Decisions for next week', rep.decisions, (x) => `[${x.priority}] ${x.decision} — ${x.why}`);
+  list('Experiments to run', rep.experiments, (x) => `${x.test} — ${x.how} (judge by: ${x.success_metric})`);
+  if (rep.caveats) console.log(`\nKeep in mind: ${rep.caveats}`);
 } else if (cmd === 'schedule') {
   // node postroom.mjs schedule <post-id> [time|next_slot]   — schedule a draft (and its other platforms)
   if (!args[0]) die('Usage: node postroom.mjs schedule <post-id> [2026-11-20T22:00 | next_slot]');

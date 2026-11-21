@@ -2,6 +2,7 @@ import { useState, useMemo } from 'preact/hooks';
 import { api, fmtNum, fmtDate, addDays, todayKey, relTime } from '../api.js';
 import { useApp, useAsync, Seg, PF, PfMark, Avatar, Empty, Spinner, KIND, Icon } from '../ui.jsx';
 import { HooksTab, AudienceTab } from './Insights.jsx';
+import { ReportsTab } from './Reports.jsx';
 
 function Delta({ cur, prev }) {
   if (!prev) return <span class="delta faint">—</span>;
@@ -81,7 +82,7 @@ function Spark({ points }) {
   );
 }
 
-const TABS = [{ value: 'overview', label: 'Overview' }, { value: 'hooks', label: 'Hooks' }, { value: 'audience', label: 'Audience' }];
+const TABS = [{ value: 'overview', label: 'Overview' }, { value: 'reports', label: 'Weekly report' }, { value: 'hooks', label: 'Hooks' }, { value: 'audience', label: 'Audience' }];
 
 function RefreshButton({ onDone }) {
   const { toast } = useApp();
@@ -109,6 +110,7 @@ export default function Analytics({ params = {} }) {
       <div class="page-head"><h1>Analytics</h1>{tabs}<div class="grow" /><RefreshButton onDone={() => setBump((b) => b + 1)} /></div>
       {tab === 'hooks' && <HooksTab key={bump} brands={brands} />}
       {tab === 'audience' && <AudienceTab key={bump} />}
+      {tab === 'reports' && <ReportsTab key={bump} brands={brands} params={params} />}
     </>
   );
 }

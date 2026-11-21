@@ -173,7 +173,7 @@ before(async () => {
   if (skip) return;
   sql = postgres(URL_, { onnotice: () => {}, transform: { undefined: null } });
   await sql.unsafe('drop schema if exists postroom cascade');
-  for (const f of ['001_base.sql', '002_multiplatform.sql', '003_research.sql', '004_inbox.sql', '005_alerts_brand.sql', '006_planning.sql', '007_insights.sql']) await sql.unsafe(fs.readFileSync(new URL(`../db/${f}`, import.meta.url), 'utf8'));
+  for (const f of ['001_base.sql', '002_multiplatform.sql', '003_research.sql', '004_inbox.sql', '005_alerts_brand.sql', '006_planning.sql', '007_insights.sql', '008_reports.sql']) await sql.unsafe(fs.readFileSync(new URL(`../db/${f}`, import.meta.url), 'utf8'));
   globalThis.fetch = fakeFetch;
   core = await import('../api/_lib/core.js');
   posts = await import('../api/_lib/posts.js');
@@ -847,4 +847,100 @@ test('deep insights: reel skip rate & watch time, YouTube retention/hook, audien
   // growth curve
   const g = await insights.postGrowth(ytp.id);
   assert.equal(g.retention.length, 4);
+});
+
+test('weekly reports: week numbers vs last week, Claude analysis with carried-forward learnings, Monday auto-run, API', { skip }, async () => {
+  const reports = await import('../api/_lib/reports.js');
+  const H = 3600e3, D = 864e5;
+  const { start, end } = reports.lastWeek(new Date());
+  const brand = { name: 'Test Brand', tone: 'Fun and quick' };
+  const daily = [{ days: [1, 2, 3, 4, 5, 6, 7], time: '20:30' }];
+  await sql`insert into postroom.accounts ${sql([
+    { id: '00000000-0000-0000-0000-0000000000d1', platform: 'instagram', external_id: 'tb1', ig_user_id: 'tb1', username: 'tb.ig', access_token_enc: core.encrypt('t'), brand, slots: daily },
+    { id: '00000000-0000-0000-0000-0000000000d2', platform: 'youtube', external_id: 'tb2', username: 'tbyt', access_token_enc: core.encrypt('t'), brand, slots: daily },
+  ], 'id', 'platform', 'external_id', 'ig_user_id', 'username', 'access_token_enc', 'brand', 'slots')}`;
+  const at = (ms) => new Date(start.getTime() + ms);
+  const mk = async (acct, platform, kind, publishedAt, caption, metrics, insights, pm) => {
+    const [p] = await sql`insert into postroom.posts (account_id, platform, kind, caption, title, scheduled_at, status, published_at, metrics, insights)
+      values (${acct}, ${platform}, ${kind}, ${caption}, ${platform === 'youtube' ? caption.split('\n')[0] : null}, ${publishedAt}, 'published', ${publishedAt}, ${sql.json(metrics)}, ${sql.json(insights)}) returning id`;
+    for (const [h, views] of pm) await sql`insert into postroom.post_metrics (post_id, at, views) values (${p.id}, ${new Date(publishedAt.getTime() + h * H)}, ${views})`;
+    return p.id;
+  };
+  const igA = '00000000-0000-0000-0000-0000000000d1', ytA = '00000000-0000-0000-0000-0000000000d2';
+  // this week: two IG reels (20:30 and 06:00 IST) and one YouTube Short (20:30 IST)
+  await mk(igA, 'instagram', 'reel', at(D + 20.5 * H), 'Why Old Mice Had A Ball 🤔\n\nStory. #TestTag #fyp', { views: 2000, likes: 100, comments: 10, shares: 30, saves: 20 }, { skip_rate: 28 }, [[6, 800], [24, 1500], [72, 2000]]);
+  await mk(igA, 'instagram', 'reel', at(3 * D + 6 * H), 'How A Clock Knows ⏰', { views: 200, likes: 5, comments: 0, shares: 0, saves: 0 }, { skip_rate: 55 }, [[6, 120], [24, 150]]);
+  await mk(ytA, 'youtube', 'short', at(D + 20.5 * H), 'Why Old Mice Had A Ball 🤔', { views: 1200, likes: 40, comments: 4 }, { hold_3s: 80, avg_view_pct: 70 }, [[6, 600], [24, 1000]]);
+  // last week: one IG reel
+  await mk(igA, 'instagram', 'reel', new Date(start.getTime() - 5 * D), 'Old Post', { views: 500, likes: 10, comments: 1, shares: 0, saves: 0 }, {}, [[24, 400]]);
+  const day = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(d);
+  await sql`insert into postroom.account_metrics (account_id, day, followers) values (${igA}, ${day(start)}, 10), (${igA}, ${day(new Date(end - 1))}, 25)`;
+
+  const d = await reports.weekData({ brand: 'Test Brand', start, end });
+  assert.equal(d.posts.length, 3);
+  assert.equal(d.previous_posts.length, 1);
+  assert.equal(d.totals.views, 3400);
+  assert.equal(d.totals.median_views_24h, 1000);
+  assert.equal(d.change.posts, 200, '3 posts vs 1 = +200%');
+  assert.equal(d.posts.find((p) => p.ref === d.best[0]).views_24h, 1500);
+  assert.equal(d.posts.find((p) => p.views_24h === 1500).views_6h, 800);
+  assert.equal(d.posts.find((p) => p.views_24h === 150).hook_score, 45, '100 − 55% skip');
+  const ig = d.accounts.find((a) => a.account === 'instagram:tb.ig');
+  assert.equal(ig.followers_change, 15);
+  assert.equal(ig.days_without_a_post, 5);
+  assert.equal(ig.planned_slots, 7);
+  assert.deepEqual(d.by_hour.map((b) => [b.label, b.avg_views_24h]), [['20:00', 1250], ['06:00', 150]]);
+  assert.ok(d.posts[0].hashtags.includes('#testtag'));
+
+  // Claude's analysis (faked): the prompt carries the numbers and the brand kit; the auto report is stored once per week
+  const prompts = [];
+  const fake = (headline, extra = {}) => async (prompt) => {
+    prompts.push(prompt);
+    return { headline, summary: 'S', what_worked: [{ finding: '20:30 posts did best', evidence: '1250 vs 150', refs: ['P1'] }], what_didnt: [], learnings: [{ learning: 'Evening beats morning', status: 'new', confidence: 'low', evidence: 'P1 vs P2' }], experiment_review: [], decisions: [{ decision: 'Post at 20:30', why: 'x', priority: 'high' }], experiments: [{ test: 'Question hooks on 3 posts', how: 'x', success_metric: 'hook score > 70' }], caveats: 'Small sample', ...extra };
+  };
+  const r1 = await reports.generateReport({ brand: 'Test Brand', start, end, kind: 'weekly', ask: fake('Week one') });
+  assert.equal(r1.report.headline, 'Week one');
+  assert.match(prompts[0], /P1 \[instagram:tb\.ig reel/);
+  assert.match(prompts[0], /hook score 72 \(skip 28%\)/);
+  assert.match(prompts[0], /Fun and quick/);
+  assert.match(prompts[0], /This is the first report/);
+  await reports.generateReport({ brand: 'Test Brand', start, end, kind: 'weekly', ask: fake('Week one again') });
+  const [{ n }] = await sql`select count(*)::int as n from postroom.weekly_reports where brand = 'Test Brand' and kind = 'weekly'`;
+  assert.equal(n, 1, 're-running the same week replaces it');
+
+  // next week's report sees last week's learnings and experiments
+  const r2 = await reports.generateReport({ brand: 'Test Brand', start: end, end: new Date(end.getTime() + 7 * D), kind: 'weekly', ask: fake('Week two') });
+  assert.match(prompts.at(-1), /Earlier reports/);
+  assert.match(prompts.at(-1), /Question hooks on 3 posts \(judge by: hook score > 70\)/);
+  assert.match(prompts.at(-1), /Evening beats morning \[low, new\]/);
+  assert.equal(r2.data.previous_posts.length, 3, 'the week before is the first week');
+  assert.equal((await reports.learningLog({ brand: 'Test Brand' })).length, 1, 'same learning is listed once');
+
+  // Monday auto-run: waits until 10:00 IST, then writes the missing week and sends a phone alert
+  await sql`delete from postroom.weekly_reports where brand = 'Test Brand'`;
+  assert.ok((await reports.runWeeklyReports({ now: new Date(end.getTime() + 2 * H), ask: fake('x') })).waiting);
+  const run = await reports.runWeeklyReports({ now: new Date(end.getTime() + 10.5 * H), ask: fake('Auto') });
+  assert.deepEqual(run.done.map((x) => [x.brand, x.ok]), [['Test Brand', true]]);
+  const [alert] = await sql`select title, body, url from postroom.notifications where kind = 'report' order by created_at desc limit 1`;
+  assert.equal(alert.title, 'Weekly report · Test Brand');
+  assert.equal(alert.body, 'Auto');
+  assert.match(alert.url, /tab=reports&id=/);
+  assert.equal((await reports.runWeeklyReports({ now: new Date(end.getTime() + 11 * H), ask: fake('x') })).done.length, 0, 'not written twice');
+
+  // without a Claude key the numbers are still saved, with a clear note
+  delete process.env.ANTHROPIC_API_KEY;
+  const plain = await reports.generateReport({ brand: 'Test Brand', start, end });
+  assert.equal(plain.report, null);
+  assert.match(plain.error, /Claude API key/);
+  assert.equal(plain.data.totals.posts, 3);
+
+  // API
+  const login = await call('POST', 'login', { body: { password: 'pw' } });
+  const h = { headers: { cookie: login.headers['set-cookie'].split(';')[0] } };
+  const list = (await call('GET', 'reports?brand=Test%20Brand', h)).body;
+  assert.ok(list.length >= 2);
+  assert.ok(list.some((x) => x.headline === 'Auto'));
+  const one = (await call('GET', `reports/${list[0].id}`, h)).body;
+  assert.equal(one.brand, 'Test Brand');
+  assert.equal((await call('GET', 'reports/learnings?brand=Test%20Brand', h)).body[0].learning, 'Evening beats morning');
 });

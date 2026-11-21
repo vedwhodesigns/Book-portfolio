@@ -155,6 +155,9 @@ const TOOLS = [
   // ---- Deeper analytics ----
   { name: 'hook_report', description: 'Hook learning: every published video with its hook (first line / idea hook) and hook score = % of viewers who stayed past the first 3 seconds (Instagram: 100 − skip rate; YouTube: retention at 3 s), average % watched, views and views vs the account median; plus the latest saved hook analysis. Use it to explain what kind of hooks work and to write better ones.', inputSchema: { type: 'object', properties: { brand: { type: 'string' }, days: { type: 'number' } } } },
   { name: 'audience_report', description: 'Audience and trend data per account: Instagram follower/engaged demographics (age, gender, country, city — needs 100+ followers), online hours, daily reach; YouTube age & gender, top countries, traffic sources (Shorts feed, search, suggested…), devices, daily views/watch time/subscribers.', inputSchema: { type: 'object', properties: { account: { type: 'string', description: 'Optional: platform:username' } } } },
+  { name: 'weekly_report', description: 'The weekly content report for a brand: every post of the week with views (6h/24h/now), hook score, watch %, engagement, plus totals vs the previous week, follower change, posting consistency, breakdowns by hour/weekday/format/series, and Claude\'s analysis (what worked, what didn\'t, learnings, review of last week\'s experiments, decisions and experiments for next week). Also returns the running learning log. Reports are written automatically every Monday 10:00 India time for Mon–Sun. Use this before planning next week\'s content.', inputSchema: { type: 'object', properties: { brand: { type: 'string', description: 'Brand kit name, e.g. "The Crime Archives"' }, id: { type: 'string', description: 'A specific report id (from list_reports)' } }, required: ['brand'] } },
+  { name: 'list_reports', description: 'List saved weekly reports (newest first) with their headline and totals.', inputSchema: { type: 'object', properties: { brand: { type: 'string' } } } },
+  { name: 'generate_report', description: 'Write a fresh report now for the last N days (default 7) for one brand: pulls the latest numbers and asks Claude for the analysis. Takes about a minute.', inputSchema: { type: 'object', properties: { brand: { type: 'string' }, days: { type: 'number' } }, required: ['brand'] } },
   { name: 'post_insights', description: 'One published post: its stats over time (growth curve), watch metrics (avg watch time, skip rate / hold at 3 s, avg % viewed, subs gained) and, for YouTube, the audience retention curve.', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
   // ---- Instagram DMs ----
   { name: 'inbox_threads', description: 'List Instagram DM conversations across the connected accounts (newest first), with unread counts and whether a reply is still allowed (Instagram only allows replies within 24h of their last message).', inputSchema: { type: 'object', properties: { account_id: { type: 'string' }, q: { type: 'string', description: 'Search username or last message' } } } },
@@ -197,6 +200,21 @@ async function callTool(name, a = {}) {
       const ins = await import('./insights.js');
       const acct = a.account ? await findAccount(a.account) : null;
       return ins.getAccountInsights({ account_id: acct?.id || null });
+    }
+    case 'weekly_report': {
+      const rp = await import('./reports.js');
+      const r = a.id ? await rp.getReport(a.id) : await rp.latestReport({ brand: a.brand });
+      if (!r) return { report: null, note: `No report yet for ${a.brand}. Use generate_report to write one now.`, learning_log: [] };
+      return { ...r, learning_log: await rp.learningLog({ brand: r.brand }) };
+    }
+    case 'list_reports': {
+      const rp = await import('./reports.js');
+      return rp.listReports({ brand: a.brand || null });
+    }
+    case 'generate_report': {
+      const rp = await import('./reports.js');
+      const days = Math.min(Math.max(Number(a.days) || 7, 1), 90);
+      return rp.generateReport({ brand: a.brand, end: new Date(), start: new Date(Date.now() - days * 864e5) });
     }
     case 'post_insights': {
       const ins = await import('./insights.js');

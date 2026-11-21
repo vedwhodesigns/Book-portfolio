@@ -166,6 +166,13 @@ export async function housekeeping(deadline = Date.now() + 60000) {
   if (Date.now() < deadline - 25000) out.daily = await throttle('account-daily', 3 * 3600, () => collectAccountInsights({ kinds: ['daily'] }));
   if (Date.now() < deadline - 25000) out.audience = await throttle('account-audience', 12 * 3600, () => collectAccountInsights({ kinds: ['audience'] }));
   out.reminders = await sendReminders().catch((e) => ({ error: e.message }));
+  // Weekly report (Monday 10:00 IST onward): needs ~2 minutes per brand, so only when the tick has room.
+  if (Date.now() < deadline - 150000) {
+    out.weekly = await throttle('weekly-reports', 9 * 60, async () => {
+      const { runWeeklyReports } = await import('./reports.js');
+      return runWeeklyReports({ deadline });
+    }).catch((e) => ({ error: e.message }));
+  }
   out.cleanup = await throttle('media-cleanup', 6 * 3600, cleanupMedia);
   out.prune = await throttle('prune', 86400, async () => {
     const r = await db()`delete from postroom.events where at < now() - interval '90 days'`;

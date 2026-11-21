@@ -391,6 +391,19 @@ export default async function handler(req, res) {
       const ins = await import('./_lib/insights.js');
       return send(res, 200, await ins.postGrowth(seg[2]));
     }
+    // weekly content reports
+    if (seg[0] === 'reports') {
+      const rp = await import('./_lib/reports.js');
+      if (p === 'reports' && m === 'GET') return send(res, 200, await rp.listReports(query(req)));
+      if (p === 'reports/generate' && m === 'POST') {
+        const b = await body(req);
+        const days = Math.min(Math.max(Number(b.days) || 7, 1), 90);
+        return send(res, 200, await rp.generateReport({ brand: b.brand, end: new Date(), start: new Date(Date.now() - days * 864e5) }));
+      }
+      if (p === 'reports/learnings' && m === 'GET') return send(res, 200, await rp.learningLog({ brand: query(req).brand }));
+      if (seg[1] && seg[2] === 'rewrite' && m === 'POST') return send(res, 200, await rp.rewriteReport(seg[1]));
+      if (seg[1] && !seg[2] && m === 'GET') return send(res, 200, await rp.getReport(seg[1]));
+    }
     if (p === 'ai/captions' && m === 'POST') return send(res, 200, await writeCaptions(await body(req)));
     if (p === 'run' && m === 'POST') return send(res, 200, await tick({ budgetMs: 200000 }));
 
