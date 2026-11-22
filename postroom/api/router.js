@@ -377,7 +377,7 @@ export default async function handler(req, res) {
       const metrics = await collectMetrics({ force: true, postIds: ids, deadline: Date.now() + 200000 });
       const followers = ids ? null : await collectFollowers();
       const ins = await import('./_lib/insights.js');
-      const deep = await ins.collectPostInsights({ postIds: ids, deadline: Date.now() + 120000 }).catch((e) => ({ error: e.message }));
+      const deep = await ins.collectPostInsights({ postIds: ids, force: !ids, deadline: Date.now() + 120000 }).catch((e) => ({ error: e.message }));
       const accounts = ids ? null : await ins.collectAccountInsights({ kinds: ['daily', 'audience'] }).catch((e) => ({ error: e.message }));
       return send(res, 200, { metrics, followers, insights: deep, accounts });
     }
