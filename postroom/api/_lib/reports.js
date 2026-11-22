@@ -259,7 +259,7 @@ async function askClaude(prompt) {
   const client = new Anthropic({ timeout: 170000, maxRetries: 1 });
   const res = await client.beta.messages.parse({
     model: MODEL(),
-    max_tokens: 8000,
+    max_tokens: 16000,
     betas: ['server-side-fallback-2026-07-01'],
     fallbacks: 'default',
     output_config: { effort: 'medium', format: jsonSchemaOutputFormat(REPORT_SCHEMA) },

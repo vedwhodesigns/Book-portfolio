@@ -65,7 +65,7 @@ async function brandContext(brand) {
   return `Our brands (write the adaptation for whichever fits best, and name it):\n${rows.map((r) => `- ${r.brand.name}: ${r.brand.tone || ''} ${r.brand.audience ? `Audience: ${r.brand.audience}` : ''}`.trim()).join('\n')}`;
 }
 
-async function callClaude({ content, schema, maxTokens = 12000 }) {
+async function callClaude({ content, schema, maxTokens = 16000 }) {
   if (!env('ANTHROPIC_API_KEY')) throw new HttpError(400, 'Add a Claude API key in Settings → Claude first.');
   const client = new Anthropic({ timeout: 200000, maxRetries: 1 });
   const res = await client.beta.messages.parse({
@@ -130,7 +130,7 @@ export async function analyzeChannel(projectId, { brand = null, ask = null } = {
     await brandContext(brand),
     'Compare posts against the channel\'s own median, quote numbers, separate correlation from cause, and say when the sample is too small. Opportunities must be original ideas for our brands that borrow what works here, never copies.',
   ].filter(Boolean).join('\n\n');
-  const { out, model } = ask ? await ask([{ type: 'text', text }], CHANNEL_SCHEMA) : await callClaude({ content: [{ type: 'text', text }], schema: CHANNEL_SCHEMA, maxTokens: 8000 });
+  const { out, model } = ask ? await ask([{ type: 'text', text }], CHANNEL_SCHEMA) : await callClaude({ content: [{ type: 'text', text }], schema: CHANNEL_SCHEMA, maxTokens: 16000 });
   const meta = { analysis: out, analysis_model: `claude:${model}`, analyzed_at: new Date().toISOString(), analysis_brand: brand };
   const [row] = await db()`update postroom.research_projects set meta = meta || ${db().json(meta)}, updated_at = now() where id = ${projectId} returning id, name, meta`;
   return { id: row.id, name: row.name, ...meta };
