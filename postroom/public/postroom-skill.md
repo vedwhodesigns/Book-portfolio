@@ -10,7 +10,7 @@ Postroom posts to these accounts:
 | Brand | Instagram | YouTube |
 |---|---|---|
 | The Crime Archives | `instagram:crimearchives.media` | `youtube:thecrimearchivesmedia` |
-| How It Clicks | `instagram:howitclicks.ai` | `youtube:howitclicksai` |
+| How It Clicks | `instagram:howitclicks.media` | `youtube:howitclicksai` |
 | Bonbec | `instagram:bonbec.in` | none |
 
 Everything goes through one command on this computer: `node "$HOME/postroom/postroom.mjs"` (works in PowerShell, Git Bash, macOS and Linux).

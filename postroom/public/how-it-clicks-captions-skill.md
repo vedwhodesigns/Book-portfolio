@@ -8,7 +8,7 @@ description: Write the Instagram caption, YouTube title, YouTube description and
 How It Clicks makes short animated videos about how things work. Brand line: **"How it works. How it's made. How it went horribly wrong."**
 
 For each finished video, produce **one post card** (JSON) that Postroom uses to post the same video to:
-- Instagram **@howitclicks.ai** (reel)
+- Instagram **@howitclicks.media** (reel)
 - YouTube **@howitclicksai** (Short)
 
 ## 1. Get the facts first
@@ -63,7 +63,7 @@ Before writing, collect from the user or the script:
 
 ## 6. Never
 
-- **Never mention how the videos are made:** no "3D", "Blender", "AI", "rendered", "animated by". (Postroom adds the Instagram AI label automatically.)
+- **Never mention how the videos are made:** no "3D", "Blender", "AI", "rendered", "animated by". How It Clicks posts carry no AI label and never say "AI" anywhere.
 - **Never write a hashtag wall,** emojis in the story, or ALL CAPS.
 - **Never use a call to action** like "Like and subscribe".
 
@@ -98,7 +98,7 @@ Save it next to the video as `<video-name>.card.json` and also show it in the ch
 ```json
 {
   "media": ["titan-toilet.mp4"],
-  "accounts": ["instagram:howitclicks.ai", "youtube:howitclicksai"],
+  "accounts": ["instagram:howitclicks.media", "youtube:howitclicksai"],
   "title": "The Sub That Sank Because Of A Toilet 😨",
   "captions": {
     "instagram": "The Sub That Sank Because Of A Toilet 😨\n\nIn April 1945, the German submarine U-1206 was cruising off Scotland when its captain tried the new high-pressure toilet. Something went wrong, seawater flooded in, and it reached the batteries below, releasing chlorine gas. The crew had to surface, were spotted, and scuttled the boat.\n\n#HowItClicks #howitworks #history #engineering",
