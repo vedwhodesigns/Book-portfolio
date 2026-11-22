@@ -47,6 +47,7 @@ async function fakeFetch(input, init = {}) {
     }
     if (p.endsWith('/replies') && method === 'POST') { state.publicReplies = (state.publicReplies || 0) + 1; return json({ id: 'reply1' }); }
     if (p === '17841400000000001/conversations') return json({ data: state.convs || [] });
+    if (p === '17841400000000001/media' && method === 'GET' && state.ghost?.published) return json({ data: [{ id: 'fbghost1', caption: state.ghost.caption, timestamp: new Date().toISOString().replace('Z', '+0000') }, { id: 'pmedia1', caption: 'older', timestamp: '2026-11-01T00:00:00+0000' }] });
     if (p === '17841400000000001/media' && method === 'GET') return json({ data: [{ id: 'pmedia1', timestamp: '2026-11-01T00:00:00+0000', comments: { data: state.comments || [] } }] });
     if (/\/(conversations|media)$/.test(p) && method === 'GET') return json({ data: [] });
     if (p.endsWith('/subscribed_apps') && method === 'POST') { state.subscribed = (state.subscribed || 0) + 1; return json({ success: true }); }
@@ -63,8 +64,10 @@ async function fakeFetch(input, init = {}) {
     if (p.endsWith('content_publishing_limit')) return json({ data: [{ quota_usage: 0, config: { quota_total: 100 } }] });
     if (p.endsWith('/media') && method === 'POST') { state.fbPublish = true; (state.igCreates ||= []).push(Object.fromEntries(new URLSearchParams(String(init.body)))); return json({ id: 'fbcontainer' }); }
     if (p.endsWith('/comments') && method === 'POST') { (state.igComments ||= []).push(new URLSearchParams(String(init.body)).get('message')); return json({ id: 'cm1' }); }
-    if (p === 'fbcontainer') return json({ status_code: 'FINISHED' });
+    if (p === 'fbcontainer') return json({ status_code: state.ghost?.published ? 'PUBLISHED' : 'FINISHED' });
+    if (p.endsWith('/media_publish') && state.ghost) { state.ghost.published = true; state.ghost.calls = (state.ghost.calls || 0) + 1; return json({ error: { message: 'An unexpected error has occurred. Please retry your request later.', type: 'OAuthException', code: 2, is_transient: true } }, 500); }
     if (p.endsWith('/media_publish')) return json({ id: 'fbmedia1' });
+    if (p === 'fbghost1') return json({ permalink: 'https://www.instagram.com/reel/ghost/' });
     if (p === 'fbmedia1') return json({ permalink: 'https://www.instagram.com/reel/unified/' });
   }
   // Instagram
@@ -1012,4 +1015,17 @@ test('Video Lab: grabbed video is stored with frames; Claude breaks it down; cha
   const ov = await research.projectOverview(r.project_id);
   assert.equal(ov.project.meta.analysis.summary, 'S');
   assert.equal(ov.project.meta.analysis_brand, 'How It Clicks');
+});
+
+test('Instagram publishes but answers with an error: Postroom finds the live post instead of posting twice', { skip }, async () => {
+  const caption = 'Ghost publish test caption';
+  state.ghost = { caption };
+  const r = await posts.createPosts({ mode: 'now', media_ids: ['00000000-0000-0000-0000-0000000000f1'], caption, targets: [{ account: 'instagram:brand.one' }] });
+  await drain();
+  const [row] = await sql`select status, external_id, permalink, error from postroom.posts where id = ${r.posts[0].id}`;
+  assert.equal(row.status, 'published', row.error);
+  assert.equal(row.external_id, 'fbghost1');
+  assert.equal(row.permalink, 'https://www.instagram.com/reel/ghost/');
+  assert.equal(state.ghost.calls, 1, 'media_publish is called only once');
+  state.ghost = null;
 });

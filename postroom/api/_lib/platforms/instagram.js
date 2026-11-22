@@ -90,6 +90,16 @@ function extras(kind, o = {}) {
   return p;
 }
 
+const capKey = (c) => String(c || '').replace(/\s+/g, ' ').trim().slice(0, 80).toLowerCase();
+/** Find the account's live post for this Postroom post (by caption, newest first) after a publish that errored. */
+export async function findPublished({ uid, token, account, post }) {
+  const r = await igGet(`${uid}/media`, token, { fields: 'id,caption,timestamp', limit: 12 }, account);
+  const since = new Date(post.processing_started_at || post.scheduled_at || 0).getTime() - 10 * 60e3;
+  const want = capKey(post.caption);
+  const recent = (r.data || []).filter((m) => !m.timestamp || new Date(String(m.timestamp).replace(/([+-]\d\d)(\d\d)$/, '$1:$2')).getTime() >= since);
+  return (recent.find((m) => want && capKey(m.caption) === want) || (want ? null : recent[0]))?.id || null;
+}
+
 export default {
   id: 'instagram',
   label: 'Instagram',
@@ -321,10 +331,23 @@ export default {
       if (s.status_code === 'ERROR' || s.status_code === 'EXPIRED') {
         throw new PlatformError(`Instagram couldn't process the media: ${s.status || s.status_code}. Check the format (H.264/AAC MP4, ≤300 MB) and try again.`);
       }
-      if (s.status_code !== 'FINISHED') return { waitSec: hasVideo ? 20 : 5 };
-      const pub = await igPost(`${uid}/media_publish`, token, { creation_id: upload.container_id }, account);
-      await save({ stage: 'published', media_id: pub.id });
-      upload.media_id = pub.id;
+      // Instagram sometimes publishes and still answers with an error; the container then reads PUBLISHED.
+      // Never publish twice: recover the live post instead.
+      let mediaId = null;
+      if (s.status_code === 'PUBLISHED') mediaId = await findPublished({ uid, token, account, post });
+      else if (s.status_code !== 'FINISHED') return { waitSec: hasVideo ? 20 : 5 };
+      if (!mediaId) {
+        try {
+          mediaId = (await igPost(`${uid}/media_publish`, token, { creation_id: upload.container_id }, account)).id;
+        } catch (e) {
+          const again = await status(upload.container_id).catch(() => null);
+          if (again?.status_code !== 'PUBLISHED') throw e;
+          mediaId = await findPublished({ uid, token, account, post });
+        }
+      }
+      if (!mediaId) throw new PlatformError('Instagram published the post but did not say which one it is yet — checking again shortly.', { transient: true });
+      await save({ stage: 'published', media_id: mediaId });
+      upload.media_id = mediaId;
       upload.stage = 'published';
     }
 
