@@ -104,6 +104,8 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: { project_id: { type: 'string' }, q: { type: 'string' }, author: { type: 'string' }, hook_type: { type: 'string' }, format: { type: 'string' }, type: { type: 'string', enum: ['reel', 'image', 'short', 'video'] }, teardown_only: { type: 'boolean' }, sort: { type: 'string', enum: ['views', 'likes', 'comments', 'recent', 'pace'] }, limit: { type: 'number' } } },
   },
   { name: 'research_post', description: 'Full detail of one researched post: transcript, the full teardown (idea, hook, script beats, edit, sound, recipe) and measured pacing/loudness, plus an inspiration brief.', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
+  { name: 'analyze_video', description: 'Video Lab: have Claude break down a video that was grabbed with "postroom.mjs grab <link>" (frames, measured cuts/pacing, transcript): idea, hook, structure, edit, sound, retention, packaging and a recipe + adaptation for our brand. Saved on the research post (see research_post). Takes about a minute.', inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'Research post id' }, brand: { type: 'string', description: 'Optional: adapt it for this brand' } }, required: ['id'] } },
+  { name: 'analyze_channel', description: 'Video Lab: have Claude analyse a whole researched channel/account (every post\'s numbers plus any video breakdowns): positioning, content pillars, what performs and flops, titles, hooks, formats, cadence and opportunities for our brands. Saved on the project (research_overview shows it).', inputSchema: { type: 'object', properties: { project_id: { type: 'string' }, brand: { type: 'string' } }, required: ['project_id'] } },
   { name: 'research_youtube_channel', description: 'Analyse any public YouTube channel (by @handle, URL or channel id) through the official API: subscribers and its latest videos with views/likes/comments. Saved as a research project.', inputSchema: { type: 'object', properties: { channel: { type: 'string' }, limit: { type: 'number' } }, required: ['channel'] } },
   { name: 'research_instagram_account', description: 'Analyse any public Instagram Business/Creator account (by @username) through the official Business Discovery API: followers, its latest posts with likes/comments, and its most-used hashtags with average engagement. Saved as a research project.', inputSchema: { type: 'object', properties: { username: { type: 'string' }, limit: { type: 'number' } }, required: ['username'] } },
   // ---- Planner: references, mood boards, ideas, series ----
@@ -215,6 +217,14 @@ async function callTool(name, a = {}) {
       const rp = await import('./reports.js');
       const days = Math.min(Math.max(Number(a.days) || 7, 1), 90);
       return rp.generateReport({ brand: a.brand, end: new Date(), start: new Date(Date.now() - days * 864e5) });
+    }
+    case 'analyze_video': {
+      const vl = await import('./videolab.js');
+      return vl.analyzeVideo(a.id, { brand: a.brand || null });
+    }
+    case 'analyze_channel': {
+      const vl = await import('./videolab.js');
+      return vl.analyzeChannel(a.project_id, { brand: a.brand || null });
     }
     case 'post_insights': {
       const ins = await import('./insights.js');

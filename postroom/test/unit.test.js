@@ -75,3 +75,29 @@ test('TikTok validation', () => {
   assert.ok(tt.validate({ caption: '', media: [img()], options: { mode: 'inbox' } }).errors.length);
   assert.ok(tt.validate({ caption: '', media: [vid()], options: { mode: 'direct', privacy_level: 'SELF_ONLY', brand_content: true } }).errors.some((e) => /Branded/.test(e)));
 });
+
+test('Video Lab: link types, captions to text, frame times, measuring a real file', async () => {
+  const { classify, vttToText, frameTimes, measure } = await import('../cli/grab.mjs');
+  assert.deepEqual(classify('https://www.youtube.com/shorts/abc'), { kind: 'video', platform: 'youtube' });
+  assert.deepEqual(classify('https://youtu.be/x'), { kind: 'video', platform: 'youtube' });
+  assert.deepEqual(classify('https://www.youtube.com/@xqcow/shorts'), { kind: 'channel', platform: 'youtube', handle: '@xqcow' });
+  assert.deepEqual(classify('https://www.instagram.com/reel/Cabc/'), { kind: 'video', platform: 'instagram' });
+  assert.deepEqual(classify('https://www.instagram.com/watchthewhyside/'), { kind: 'channel', platform: 'instagram', handle: 'watchthewhyside' });
+  assert.equal(classify('not a link').kind, 'bad');
+  assert.equal(vttToText('WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nHello <c>world</c>\n\n00:00:01.500 --> 00:00:03.000\nHello world\nnext\n\n00:01:05.000 --> 00:01:06.000\nlater'), '[00:00] Hello world\n[00:01] next\n[01:05] later');
+  const t = frameTimes({ duration_seconds: 9, cuts: [2, 3.5, 6.5] });
+  assert.equal(t.hook.length, 12);
+  assert.deepEqual(t.shots, [1, 2.8, 5, 7.8]);
+  assert.equal(t.overview.length, 16);
+  // a real 9 s file: cuts at 2, 3.5, 6.5 s and silence for the first second
+  const { spawnSync } = await import('node:child_process');
+  if (spawnSync('ffmpeg', ['-version']).status !== 0) return;
+  const f = '/tmp/postroom-lab-test.mp4';
+  spawnSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=red:s=360x640:d=2', '-f', 'lavfi', '-i', 'color=blue:s=360x640:d=1.5', '-f', 'lavfi', '-i', 'testsrc2=s=360x640:d=3', '-f', 'lavfi', '-i', 'color=green:s=360x640:d=2.5', '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=mono:d=1', '-f', 'lavfi', '-i', 'sine=f=440:d=8:r=44100',
+    '-filter_complex', '[0][1][2][3]concat=n=4:v=1:a=0[v];[4][5]concat=n=2:v=0:a=1[a]', '-map', '[v]', '-map', '[a]', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', f]);
+  const m = measure(f);
+  assert.deepEqual(m.cuts, [2, 3.5, 6.5]);
+  assert.equal(m.shot_count, 4);
+  assert.equal(m.first_sound_seconds, 1);
+  assert.equal(m.vertical, true);
+});

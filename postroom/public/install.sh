@@ -4,6 +4,7 @@
 #   ~/.claude/skills/postroom/SKILL.md every Claude Code chat learns how to use it
 #   ~/.claude/skills/how-it-clicks-captions/SKILL.md  How It Clicks caption rules
 #   ~/.claude/skills/stream-clip-repeat/SKILL.md      stream.clip.repeat titles, tags and captions
+#   ~/.claude/skills/video-lab/SKILL.md               paste a YouTube/Instagram link → download + breakdown
 #   ~/.postroom.json                   your Postroom sign-in (asked once, hidden while typing)
 set -e
 BASE="https://vwd-postroom.vercel.app"
@@ -13,13 +14,17 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
-mkdir -p "$HOME/postroom" "$HOME/.claude/skills/postroom" "$HOME/.claude/skills/how-it-clicks-captions" "$HOME/.claude/skills/stream-clip-repeat"
+mkdir -p "$HOME/postroom" "$HOME/.claude/skills/postroom" "$HOME/.claude/skills/how-it-clicks-captions" "$HOME/.claude/skills/stream-clip-repeat" "$HOME/.claude/skills/video-lab"
 curl -fsSL "$BASE/postroom.mjs" -o "$HOME/postroom/postroom.mjs"
 curl -fsSL "$BASE/postroom-skill.md" -o "$HOME/.claude/skills/postroom/SKILL.md"
 curl -fsSL "$BASE/how-it-clicks-captions-skill.md" -o "$HOME/.claude/skills/how-it-clicks-captions/SKILL.md"
 curl -fsSL "$BASE/stream-clip-repeat-skill.md" -o "$HOME/.claude/skills/stream-clip-repeat/SKILL.md"
+curl -fsSL "$BASE/video-lab-skill.md" -o "$HOME/.claude/skills/video-lab/SKILL.md"
 echo "✓ Postroom command: ~/postroom/postroom.mjs"
-echo "✓ Claude Code skills: postroom, how-it-clicks-captions, stream-clip-repeat (in ~/.claude/skills)"
+echo "✓ Claude Code skills: postroom, how-it-clicks-captions, stream-clip-repeat, video-lab (in ~/.claude/skills)"
+if ! command -v yt-dlp >/dev/null 2>&1 || ! command -v ffmpeg >/dev/null 2>&1; then
+  if command -v brew >/dev/null 2>&1; then brew install yt-dlp ffmpeg >/dev/null && echo "✓ Video downloader installed (yt-dlp, ffmpeg)"; else echo "For the video downloader, install yt-dlp and ffmpeg (brew install yt-dlp ffmpeg)."; fi
+fi
 
 if [ ! -f "$HOME/.postroom.json" ]; then
   printf "Postroom password (hidden): "

@@ -27,6 +27,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { upload } from '@vercel/blob/client';
+import { grab } from './grab.mjs';
 
 // Settings: env vars, or ~/.postroom.json  { "password": "…", "url": "https://vwd-postroom.vercel.app" }
 const CONF = (() => {
@@ -227,7 +228,7 @@ const fmt = (d) => new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', 
 
 const [cmd, ...args] = process.argv.slice(2);
 if (!cmd || cmd === 'help') {
-  console.log('Usage: node postroom.mjs post|check <card.json> · drafts · schedule <post-id> [time|next_slot] · ref <image|link…> [--brand --tags --note --board --idea] · report "<brand>" [--new] [--json] · upload <files…> · queue · accounts');
+  console.log('Usage: node postroom.mjs post|check <card.json> · drafts · schedule <post-id> [time|next_slot] · ref <image|link…> [--brand --tags --note --board --idea] · report "<brand>" [--new] [--json] · grab <link|channel> [--brand --top 3 --cookies-from firefox --only-download] · upload <files…> · queue · accounts');
   process.exit(0);
 }
 await login();
@@ -271,6 +272,10 @@ if (cmd === 'accounts') {
     }
     console.log(`✓ reference saved: ${r.title || r.url}${r.tags.length ? ` [${r.tags.join(', ')}]` : ''}${opts.board ? ' (pinned on the board)' : ''}  [ref ${r.id}]`);
   }
+} else if (cmd === 'grab') {
+  // Video Lab: download + measure + Claude breakdown of any YouTube/Instagram/TikTok video or channel (see grab.mjs)
+  const uploadImage = async (file, name) => (await upload(`research/${name}`, fs.readFileSync(file), { access: 'public', handleUploadUrl: `${BASE}/api/media/upload`, headers: { cookie }, contentType: 'image/jpeg' })).url;
+  await grab(args, { api, uploadImage, log: (x) => console.log(x), die, base: BASE });
 } else if (cmd === 'report') {
   // node postroom.mjs report "The Crime Archives" [--new] [--json]   — latest weekly report (--new writes one for the last 7 days)
   const brand = args.find((a) => !a.startsWith('--'));

@@ -348,6 +348,13 @@ export default async function handler(req, res) {
 
     // research extension
     if (p === 'research/projects' && m === 'GET') return send(res, 200, await listProjects());
+    // Video Lab: Claude's breakdown of a grabbed video / a whole channel
+    if (seg[0] === 'research' && seg[2] && seg[3] === 'analyze' && m === 'POST') {
+      const vl = await import('./_lib/videolab.js');
+      const b = await body(req);
+      if (seg[1] === 'posts') return send(res, 200, await vl.analyzeVideo(seg[2], { brand: b.brand || null }));
+      if (seg[1] === 'projects') return send(res, 200, await vl.analyzeChannel(seg[2], { brand: b.brand || null }));
+    }
     if (seg[0] === 'research' && seg[1] === 'projects' && seg[2]) {
       if (m === 'GET') return send(res, 200, await projectOverview(seg[2]));
       if (m === 'DELETE') return send(res, 200, await deleteProject(seg[2]));

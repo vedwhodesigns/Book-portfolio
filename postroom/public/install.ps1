@@ -5,6 +5,8 @@
 #   %USERPROFILE%\.claude\skills\postroom\SKILL.md             every Claude Code chat learns how to use it
 #   %USERPROFILE%\.claude\skills\how-it-clicks-captions\SKILL.md
 #   %USERPROFILE%\.claude\skills\stream-clip-repeat\SKILL.md
+#   %USERPROFILE%\.claude\skills\video-lab\SKILL.md              paste a YouTube/Instagram link → download + breakdown
+#   yt-dlp and ffmpeg (through winget) for the video downloader
 #   %USERPROFILE%\.postroom.json                               your Postroom sign-in (asked once, hidden)
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
@@ -16,14 +18,32 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
   return
 }
 
-$dirs = @("$HomeDir\postroom", "$HomeDir\.claude\skills\postroom", "$HomeDir\.claude\skills\how-it-clicks-captions", "$HomeDir\.claude\skills\stream-clip-repeat")
+$dirs = @("$HomeDir\postroom", "$HomeDir\.claude\skills\postroom", "$HomeDir\.claude\skills\how-it-clicks-captions", "$HomeDir\.claude\skills\stream-clip-repeat", "$HomeDir\.claude\skills\video-lab")
 foreach ($d in $dirs) { New-Item -ItemType Directory -Force -Path $d | Out-Null }
 Invoke-WebRequest -UseBasicParsing "$Base/postroom.mjs" -OutFile "$HomeDir\postroom\postroom.mjs"
 Invoke-WebRequest -UseBasicParsing "$Base/postroom-skill.md" -OutFile "$HomeDir\.claude\skills\postroom\SKILL.md"
 Invoke-WebRequest -UseBasicParsing "$Base/how-it-clicks-captions-skill.md" -OutFile "$HomeDir\.claude\skills\how-it-clicks-captions\SKILL.md"
 Invoke-WebRequest -UseBasicParsing "$Base/stream-clip-repeat-skill.md" -OutFile "$HomeDir\.claude\skills\stream-clip-repeat\SKILL.md"
+Invoke-WebRequest -UseBasicParsing "$Base/video-lab-skill.md" -OutFile "$HomeDir\.claude\skills\video-lab\SKILL.md"
 Write-Host 'OK  Postroom command: ~\postroom\postroom.mjs' -ForegroundColor Green
-Write-Host 'OK  Claude Code skills: postroom, how-it-clicks-captions, stream-clip-repeat' -ForegroundColor Green
+Write-Host 'OK  Claude Code skills: postroom, how-it-clicks-captions, stream-clip-repeat, video-lab' -ForegroundColor Green
+
+# Video Lab downloader: yt-dlp + ffmpeg
+$need = @()
+if (-not (Get-Command yt-dlp -ErrorAction SilentlyContinue)) { $need += 'yt-dlp.yt-dlp' }
+if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { $need += 'Gyan.FFmpeg' }
+if ($need.Count -gt 0) {
+  if (Get-Command winget -ErrorAction SilentlyContinue) {
+    foreach ($pkg in $need) { try { winget install --id $pkg -e --accept-source-agreements --accept-package-agreements --silent | Out-Null } catch { Write-Host "Couldn't install $pkg - run: winget install $pkg" -ForegroundColor Yellow } }
+    Write-Host 'OK  Installed the video downloader (yt-dlp, ffmpeg). Open a NEW PowerShell window before using "grab".' -ForegroundColor Green
+  } else {
+    Write-Host "For the video downloader, install: $($need -join ', ') (winget install <name>)" -ForegroundColor Yellow
+  }
+} else {
+  # keep yt-dlp current: YouTube and Instagram change often
+  try { if (Get-Command winget -ErrorAction SilentlyContinue) { winget upgrade --id yt-dlp.yt-dlp -e --silent --accept-source-agreements | Out-Null } } catch { }
+  Write-Host 'OK  Video downloader ready (yt-dlp, ffmpeg)' -ForegroundColor Green
+}
 
 $conf = "$HomeDir\.postroom.json"
 if (-not (Test-Path $conf)) {

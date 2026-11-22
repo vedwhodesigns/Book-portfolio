@@ -173,7 +173,7 @@ before(async () => {
   if (skip) return;
   sql = postgres(URL_, { onnotice: () => {}, transform: { undefined: null } });
   await sql.unsafe('drop schema if exists postroom cascade');
-  for (const f of ['001_base.sql', '002_multiplatform.sql', '003_research.sql', '004_inbox.sql', '005_alerts_brand.sql', '006_planning.sql', '007_insights.sql', '008_reports.sql']) await sql.unsafe(fs.readFileSync(new URL(`../db/${f}`, import.meta.url), 'utf8'));
+  for (const f of ['001_base.sql', '002_multiplatform.sql', '003_research.sql', '004_inbox.sql', '005_alerts_brand.sql', '006_planning.sql', '007_insights.sql', '008_reports.sql', '009_videolab.sql']) await sql.unsafe(fs.readFileSync(new URL(`../db/${f}`, import.meta.url), 'utf8'));
   globalThis.fetch = fakeFetch;
   core = await import('../api/_lib/core.js');
   posts = await import('../api/_lib/posts.js');
@@ -974,4 +974,42 @@ test('brand defaults: AI labels on every upload; YouTube links the channel\'s pr
   const off = await posts.checkTargets({ media_ids: ['00000000-0000-0000-0000-0000000000f1'], caption: 'x', title: 'y', targets: [{ account_id: '00000000-0000-0000-0000-00000000000b', options: { made_for_kids: false, synthetic: false, link_previous: false } }] });
   assert.deepEqual([off.targets[0].options.synthetic, off.targets[0].options.link_previous], [false, false]);
   await sql`update postroom.accounts set brand = '{}'::jsonb where username = 'brand.one' or id = '00000000-0000-0000-0000-00000000000b'`;
+});
+
+test('Video Lab: grabbed video is stored with frames; Claude breaks it down; channel analysis', { skip }, async () => {
+  const research = await import('../api/_lib/research.js');
+  const vl = await import('../api/_lib/videolab.js');
+  const frames = { hook: 'https://blob.test/h.jpg', shots: 'https://blob.test/s.jpg', overview: 'https://blob.test/o.jpg', hook_times: [0, 0.25], shot_times: [1, 2.8], overview_times: [0.3] };
+  const r = await research.ingest({
+    project: { name: 'Video Lab', source: 'video-lab', niche: 'Videos sent for analysis' },
+    posts: [{ postId: 'vid123', platform: 'youtube', url: 'https://youtu.be/vid123', author: '@someone', type: 'short', caption: 'Why X happens', viewsNum: 50000, likesNum: 2000, transcript: '[00:00] Hello', measure: { shot_count: 4, cuts: [2, 3.5], cuts_per_10_seconds: 3.3, frames } }],
+  });
+  const id = r.ids.vid123;
+  assert.ok(id, 'ingest returns the research post id');
+  let seen;
+  const fakeVideo = async (content) => {
+    seen = content;
+    return { model: 'test', out: { idea: { topic: 'X', angle: 'a', why_it_works: 'w', format: 'explainer' }, hook: { first_3s_visual: 'v', first_3s_spoken: 'Hello', first_3s_onscreen_text: 't', hook_type: 'Question', why_it_stops_scroll: 'y' } } };
+  };
+  const a = await vl.analyzeVideo(id, { ask: fakeVideo });
+  assert.equal(a.teardown.hook.hook_type, 'Question');
+  assert.equal(a.model, 'claude:test');
+  assert.deepEqual(seen.filter((c) => c.type === 'image').map((c) => c.source.url), [frames.hook, frames.shots, frames.overview]);
+  const text = seen.find((c) => c.type === 'text').text;
+  assert.match(text, /3\.3 cuts per 10 s/);
+  assert.match(text, /Image 1 = the first 3 seconds/);
+  assert.match(text, /\[00:00\] Hello/);
+  // a post without frames can't be broken down
+  const noFrames = await research.ingest({ project: { name: 'Video Lab', source: 'video-lab' }, posts: [{ postId: 'plain1', caption: 'x' }] });
+  await assert.rejects(vl.analyzeVideo(noFrames.ids.plain1, { ask: fakeVideo }), /grab/);
+  // channel analysis needs 3+ posts, then saves on the project
+  await assert.rejects(vl.analyzeChannel(r.project_id, { ask: async () => ({}) }), /at least 3/);
+  await research.ingest({ project: { name: 'Video Lab', source: 'video-lab' }, posts: [{ postId: 'p3', caption: 'Third', viewsNum: 10 }] });
+  let chText;
+  const ch = await vl.analyzeChannel(r.project_id, { brand: 'How It Clicks', ask: async (c) => { chText = c[0].text; return { model: 'test', out: { summary: 'S', opportunities_for_us: [] } }; } });
+  assert.equal(ch.analysis.summary, 'S');
+  assert.match(chText, /50,000 views/);
+  const ov = await research.projectOverview(r.project_id);
+  assert.equal(ov.project.meta.analysis.summary, 'S');
+  assert.equal(ov.project.meta.analysis_brand, 'How It Clicks');
 });

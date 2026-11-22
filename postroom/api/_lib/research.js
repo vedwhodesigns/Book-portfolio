@@ -42,6 +42,7 @@ export async function ingest(body) {
   if (posts.length > 50) throw new HttpError(413, 'Send at most 50 posts per request.');
   const project = await upsertProject(body.project || {});
   let saved = 0;
+  const ids = {};
   for (const p of posts) {
     const id = String(p.postId || p.external_id || '').trim();
     if (!id) continue;
@@ -70,9 +71,9 @@ export async function ingest(body) {
       views: n(p.viewsNum ?? p.views),
       duration_s: t?.measure?.duration_seconds ?? p.duration_s ?? null,
       transcript: str(p.transcript, 50000),
-      thumb_url: thumb,
+      thumb_url: thumb || (/^https:\/\//.test(p.thumb_url || '') ? str(p.thumb_url, 1000) : null),
       teardown: t?.teardown ? db().json(t.teardown) : null,
-      measure: t?.measure ? db().json(cleanMeasure(t.measure)) : null,
+      measure: (t?.measure || p.measure) ? db().json(cleanMeasure(t?.measure || p.measure)) : null,
       model: str(t?.model, 100),
     };
     if (row.posted_at && Number.isNaN(row.posted_at.getTime())) row.posted_at = null;
@@ -94,11 +95,12 @@ export async function ingest(body) {
         teardown = coalesce(excluded.teardown, postroom.research_posts.teardown),
         measure = coalesce(excluded.measure, postroom.research_posts.measure),
         model = coalesce(excluded.model, postroom.research_posts.model),
-        updated_at = now()`;
+        updated_at = now()
+      returning id`.then(([x]) => { ids[id] = x.id; });
     saved++;
   }
   await db()`update postroom.research_projects set updated_at = now() where id = ${project.id}`;
-  return { project_id: project.id, saved };
+  return { project_id: project.id, saved, ids };
 }
 
 export async function listProjects() {

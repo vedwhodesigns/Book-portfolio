@@ -2,7 +2,7 @@ import { useState, useEffect } from 'preact/hooks';
 import { api, fmtNum, fmtDur, relTime } from '../api.js';
 import { useApp, useAsync, Icon, Seg, Empty, Spinner, Drawer, PfMark, CopyField } from '../ui.jsx';
 
-const SOURCE = { 'ig-research': { label: 'Instagram research', pf: 'instagram' }, youtube: { label: 'YouTube channel', pf: 'youtube' }, 'instagram-api': { label: 'Instagram account', pf: 'instagram' } };
+const SOURCE = { 'ig-research': { label: 'Instagram research', pf: 'instagram' }, youtube: { label: 'YouTube channel', pf: 'youtube' }, 'instagram-api': { label: 'Instagram account', pf: 'instagram' }, 'video-lab': { label: 'Videos you sent for analysis', pf: 'youtube' } };
 
 function Section({ title, children }) {
   if (!children) return null;
@@ -16,7 +16,10 @@ function Section({ title, children }) {
 const KV = ({ k, v }) => (v ? <div><b>{k}:</b> {v}</div> : null);
 
 function ResearchDrawer({ id, onClose }) {
-  const { go, toast } = useApp();
+  const { go, toast, accounts } = useApp();
+  const [busy, setBusy] = useState(false);
+  const brands = [...new Set(accounts.map((a) => a.brand?.name).filter(Boolean))];
+  const [brand, setBrand] = useState('');
   const saveRef = async (r) => {
     const tags = prompt('Save as a reference. Tags (comma separated), e.g. hook, pacing, thumbnail:', 'hook');
     if (tags === null) return;
@@ -25,7 +28,11 @@ function ResearchDrawer({ id, onClose }) {
       toast('Saved to Planner → References');
     } catch (e) { toast(e.message, 'bad'); }
   };
-  const { data: r, loading } = useAsync(() => api(`research/posts/${id}`), [id]);
+  const { data: r, loading, reload } = useAsync(() => api(`research/posts/${id}`), [id]);
+  const analyze = async () => {
+    setBusy(true);
+    try { await api(`research/posts/${id}/analyze`, { method: 'POST', body: { brand: brand || null } }); await reload(); toast('Claude broke it down'); } catch (e) { toast(e.message, 'bad'); } finally { setBusy(false); }
+  };
   const [showTx, setShowTx] = useState(false);
   if (loading || !r) return <Drawer onClose={onClose} title="Research"><Spinner /></Drawer>;
   const t = r.teardown || {};
@@ -56,7 +63,13 @@ function ResearchDrawer({ id, onClose }) {
           </div>
         </div>
 
-        {!r.teardown && <div class="notice info"><Icon name="sparkle" size={16} /><span>No teardown yet. Run <code>npm run teardown -- {r.project} --only {r.external_id}</code> in ig-research, then push again.</span></div>}
+        {m.frames ? (
+          <div class="row wrap" style={{ gap: 8 }}>
+            <select class="select" style={{ width: 'auto' }} value={brand} onChange={(e) => setBrand(e.currentTarget.value)} aria-label="Adapt for brand"><option value="">Adapt for: best fit</option>{brands.map((b) => <option key={b} value={b}>{b}</option>)}</select>
+            <button class="btn primary sm" disabled={busy} onClick={analyze}>{busy ? <Spinner /> : <Icon name="sparkle" size={14} />} {r.teardown ? 'Break it down again' : 'Break it down with Claude'}</button>
+            {busy && <span class="tiny faint">About a minute…</span>}
+          </div>
+        ) : !r.teardown && <div class="notice info"><Icon name="sparkle" size={16} /><span>No breakdown yet. On your computer run <code>node postroom.mjs grab {r.url || '<link>'}</code> — it downloads the video, measures it and has Claude break it down.</span></div>}
 
         {t.idea && <Section title="Idea"><KV k="Topic" v={t.idea.topic} /><KV k="Angle" v={t.idea.angle} /><KV k="Format" v={t.idea.format} /><KV k="Why it works" v={t.idea.why_it_works} /></Section>}
         {t.hook && (
@@ -78,7 +91,19 @@ function ResearchDrawer({ id, onClose }) {
             {t.replicate.how_it_clicks_adaptation && <div style={{ marginTop: 6 }}><b>Your adaptation:</b> {t.replicate.how_it_clicks_adaptation}</div>}
           </Section>
         )}
-        {(m.integrated_lufs != null || m.bpm) && <Section title="Measured"><span class="faint">{[m.shot_count && `${m.shot_count} shots`, m.cuts_in_first_3_seconds != null && `${m.cuts_in_first_3_seconds} cuts in first 3s`, m.integrated_lufs != null && `${m.integrated_lufs} LUFS`, m.bpm && `${Math.round(m.bpm)} BPM`].filter(Boolean).join(' · ')}</span></Section>}
+        {t.retention && <Section title="Retention"><KV k="Why people keep watching" v={t.retention.why_people_keep_watching} /><KV k="Where they probably drop" v={t.retention.where_people_probably_drop} /><KV k="Ending / loop" v={t.retention.loop_or_ending} /></Section>}
+        {t.packaging && <Section title="Packaging"><KV k="Title" v={t.packaging.title} /><KV k="Thumbnail / cover" v={t.packaging.thumbnail_or_cover} /><KV k="Caption" v={t.packaging.caption} /></Section>}
+        {m.frames && (
+          <Section title="Frames">
+            <div class="col" style={{ gap: 8 }}>
+              {[['hook', 'First 3 seconds'], ['shots', 'One frame per shot'], ['overview', 'Whole video']].map(([k, l]) => m.frames[k] && (
+                <a key={k} href={m.frames[k]} target="_blank" rel="noreferrer"><div class="tiny faint">{l}</div><img src={m.frames[k]} alt={l} loading="lazy" style={{ width: '100%', borderRadius: 8, border: '1px solid var(--line)' }} /></a>
+              ))}
+            </div>
+          </Section>
+        )}
+        {m.shot_count != null && m.frames && <Section title="Measured"><span class="faint">{[`${m.shot_count} shots`, m.cuts_per_10_seconds != null && `${m.cuts_per_10_seconds} cuts / 10s`, m.avg_shot_seconds != null && `avg shot ${m.avg_shot_seconds}s`, m.first_cut_seconds != null && `first cut at ${m.first_cut_seconds}s`, m.cuts_in_first_3_seconds != null && `${m.cuts_in_first_3_seconds} cuts in first 3s`, m.first_sound_seconds != null && `sound from ${m.first_sound_seconds}s`, m.integrated_lufs != null && `${m.integrated_lufs} LUFS`, m.width && `${m.width}×${m.height}`].filter(Boolean).join(' · ')}</span></Section>}
+        {!m.frames && (m.integrated_lufs != null || m.bpm) && <Section title="Measured"><span class="faint">{[m.shot_count && `${m.shot_count} shots`, m.cuts_in_first_3_seconds != null && `${m.cuts_in_first_3_seconds} cuts in first 3s`, m.integrated_lufs != null && `${m.integrated_lufs} LUFS`, m.bpm && `${Math.round(m.bpm)} BPM`].filter(Boolean).join(' · ')}</span></Section>}
         {r.caption && <Section title="Caption"><div style={{ whiteSpace: 'pre-wrap' }}>{r.caption}</div></Section>}
         {r.transcript && (
           <div>
@@ -88,6 +113,36 @@ function ResearchDrawer({ id, onClose }) {
         )}
       </div>
     </Drawer>
+  );
+}
+
+function ChannelAnalysis({ a }) {
+  return (
+    <div class="col" style={{ gap: 12, marginTop: 10 }}>
+      <p class="small" style={{ margin: 0 }}>{a.summary}</p>
+      {a.positioning && <Section title="Positioning">{a.positioning}</Section>}
+      {a.content_pillars?.length > 0 && (
+        <Section title="Content pillars">
+          <ul class="tight" style={{ margin: 0 }}>{a.content_pillars.map((x, i) => <li key={i}><b>{x.pillar}</b> <span class="faint">· {x.share_of_posts} · median {x.median_views}</span>{x.examples?.length ? <div class="faint">{x.examples.slice(0, 3).join(' · ')}</div> : null}</li>)}</ul>
+        </Section>
+      )}
+      <div class="grid2">
+        <Section title="What performs">{a.what_performs?.length ? <ul class="tight" style={{ margin: 0 }}>{a.what_performs.map((x, i) => <li key={i}><b>{x.pattern}</b> <span class="muted">— {x.evidence}</span></li>)}</ul> : null}</Section>
+        <Section title="What flops">{a.what_flops?.length ? <ul class="tight" style={{ margin: 0 }}>{a.what_flops.map((x, i) => <li key={i}><b>{x.pattern}</b> <span class="muted">— {x.evidence}</span></li>)}</ul> : null}</Section>
+      </div>
+      <div class="grid2">
+        {a.titles_and_packaging && <Section title="Titles & packaging">{a.titles_and_packaging}</Section>}
+        {a.hooks && <Section title="Hooks">{a.hooks}</Section>}
+        {a.formats_and_length && <Section title="Formats & length">{a.formats_and_length}</Section>}
+        {a.cadence && <Section title="Cadence">{a.cadence}</Section>}
+      </div>
+      {a.opportunities_for_us?.length > 0 && (
+        <Section title="Opportunities for us">
+          <ol style={{ margin: 0, paddingLeft: 18 }}>{a.opportunities_for_us.map((x, i) => <li key={i}><b>{x.idea}</b> <span class="pill tiny">{x.for_brand}</span><div class="muted">{x.why}</div></li>)}</ol>
+        </Section>
+      )}
+      {a.caveats && <p class="tiny faint" style={{ margin: 0 }}><b>Keep in mind:</b> {a.caveats}</p>}
+    </div>
   );
 }
 
@@ -117,16 +172,23 @@ function YoutubeLookup({ onDone }) {
   );
 }
 
-export default function Research() {
-  const { config } = useApp();
+export default function Research({ params = {} }) {
+  const { config, toast, accounts } = useApp();
   const projects = useAsync(() => api('research/projects'), []);
-  const [pid, setPid] = useState(null);
+  const [pid, setPid] = useState(params.project || null);
   const [tab, setTab] = useState('library');
   const [f, setF] = useState({ q: '', author: '', hook_type: '', sort: 'views' });
-  const [open, setOpen] = useState(null);
+  const [open, setOpen] = useState(params.post || null);
+  const [chBusy, setChBusy] = useState(false);
+  const brands = [...new Set(accounts.map((a) => a.brand?.name).filter(Boolean))];
+  const [chBrand, setChBrand] = useState('');
   useEffect(() => { if (!pid && projects.data?.length) setPid(projects.data[0].id); }, [projects.data]);
   const ov = useAsync(() => (pid ? api(`research/projects/${pid}`) : Promise.resolve(null)), [pid]);
   const posts = useAsync(() => (pid ? api('research/posts', { query: { project_id: pid, ...f, limit: 120 } }) : Promise.resolve([])), [pid, JSON.stringify(f)]);
+  const analyzeChannel = async () => {
+    setChBusy(true);
+    try { await api(`research/projects/${pid}/analyze`, { method: 'POST', body: { brand: chBrand || null } }); await ov.reload(); toast('Claude analysed the channel'); } catch (e) { toast(e.message, 'bad'); } finally { setChBusy(false); }
+  };
 
   const head = (
     <div class="page-head">
@@ -180,6 +242,19 @@ export default function Research() {
             <div class="card kpi"><div class="k">Median views</div><div class="v num">{fmtNum(o.stats.median_views)}</div><span class="tiny faint">median likes {fmtNum(o.stats.median_likes)}</span></div>
             <div class="card kpi"><div class="k">Teardowns</div><div class="v num">{o.stats.teardowns}</div><span class="tiny faint">{o.hooks[0]?.hook_type ? `Best hook: ${o.hooks[0].hook_type}` : 'Hook, script, edit & sound breakdowns'}</span></div>
           </div>
+
+          {p.source !== 'video-lab' && (
+            <section class="card pad" style={{ marginBottom: 14 }}>
+              <div class="row wrap" style={{ gap: 8 }}>
+                <h2 class="row grow" style={{ margin: 0, gap: 6 }}><Icon name="sparkle" size={16} /> Channel analysis</h2>
+                {p.meta?.analyzed_at && <span class="tiny faint">{relTime(p.meta.analyzed_at)}{p.meta.analysis_brand ? ` · for ${p.meta.analysis_brand}` : ''}</span>}
+                <select class="select" style={{ width: 'auto' }} value={chBrand} onChange={(e) => setChBrand(e.currentTarget.value)} aria-label="For brand"><option value="">For: all our brands</option>{brands.map((b) => <option key={b} value={b}>{b}</option>)}</select>
+                <button class="btn primary sm" disabled={chBusy || o.stats.posts < 3} onClick={analyzeChannel}>{chBusy ? <Spinner /> : <Icon name="sparkle" size={14} />} {p.meta?.analysis ? 'Analyse again' : 'Analyse this channel'}</button>
+              </div>
+              {chBusy && <p class="tiny faint">Claude is reading every post — about a minute…</p>}
+              {p.meta?.analysis ? <ChannelAnalysis a={p.meta.analysis} /> : <p class="small muted" style={{ marginBottom: 0 }}>Claude reads every post's numbers (and any video breakdowns) and tells you what this channel does, what works, what flops and what we can borrow. For the deepest read, run <code>node postroom.mjs grab {p.source === 'youtube' ? `https://www.youtube.com/${p.name}` : `https://www.instagram.com/${p.name.replace(/^@/, '')}/`}</code> on your computer: it also downloads and breaks down the top videos.</p>}
+            </section>
+          )}
 
           <div class="cal-toolbar">
             <Seg value={tab} onChange={setTab} options={[{ value: 'library', label: 'Library' }, { value: 'creators', label: 'Creators' }, { value: 'hooks', label: 'Hooks & formats' }]} />

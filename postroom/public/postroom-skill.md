@@ -80,6 +80,7 @@ Never ask for the password in chat, never print it, and never put it in a file o
 - `node "$HOME/postroom/postroom.mjs" drafts`: drafts with their post ids
 - `node "$HOME/postroom/postroom.mjs" schedule <post-id> [2026-11-20T20:30 | next_slot]`: schedule a draft. Its other platforms in the same cross-post are scheduled too. Leave out the time to keep the draft's time. Never re-post a card to schedule a draft; that uploads duplicates.
 - `node "$HOME/postroom/postroom.mjs" upload <files…>`: put files in the library only
+- `node "$HOME/postroom/postroom.mjs" grab <YouTube/Instagram link or channel>`: download a video (or a channel's top videos), measure it and have Claude break it down in Research. See the `video-lab` skill.
 - `node "$HOME/postroom/postroom.mjs" report "The Crime Archives"`: the latest weekly report for a brand: every post with its numbers, what worked, what didn't, the running learnings, last week's experiments and next week's decisions. Add `--new` to write a fresh one for the last 7 days, `--json` for the raw data.
 
 Changing captions or times, or cancelling a post, happens in the Postroom app: Queue → open the post. The Postroom connector's `update_post`, `schedule_post` and `cancel_post` tools do the same.
