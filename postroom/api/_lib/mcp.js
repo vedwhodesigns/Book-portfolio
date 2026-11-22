@@ -3,7 +3,7 @@
 // approve in the app, unless you set MCP_AUTO_APPROVE=true.
 import { updateBrand } from './brand.js';
 import * as planner from './planner.js';
-import { send, body, env, localLabel, TZ } from './core.js';
+import { send, body, env, localLabel, TZ, db, HttpError } from './core.js';
 import { listAccounts } from './accounts.js';
 import { listMedia, importFromUrl } from './media.js';
 import { checkTargets, summariseCheck, createPosts, listPosts, getPost, updatePost, schedulePost, cancelPost, listPlans, findAccount } from './posts.js';
@@ -165,6 +165,8 @@ const TOOLS = [
   { name: 'inbox_threads', description: 'List Instagram DM conversations across the connected accounts (newest first), with unread counts and whether a reply is still allowed (Instagram only allows replies within 24h of their last message).', inputSchema: { type: 'object', properties: { account_id: { type: 'string' }, q: { type: 'string', description: 'Search username or last message' } } } },
   { name: 'inbox_thread', description: 'Read one DM conversation (messages oldest → newest).', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
   { name: 'draft_dm_reply', description: 'Save a suggested reply on a DM conversation. It is NOT sent: the user reviews and sends it from Postroom → Inbox. Keep it brief, in their language, and never invent prices, dates or links.', inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'Conversation id from inbox_threads' }, text: { type: 'string' } }, required: ['id', 'text'] } },
+  { name: 'comment_replies', description: 'Comments on our Instagram and YouTube posts with Claude\'s suggested public replies waiting for review (status draft or needs_you, with a note why). Replies are only posted when the owner approves them in Postroom → Inbox → Comments.', inputSchema: { type: 'object', properties: { all: { type: 'boolean', description: 'Include already handled comments too' } } } },
+  { name: 'edit_comment_reply', description: 'Improve the suggested reply for one comment (it is NOT posted; the owner approves it in Inbox → Comments). Keep it short, in the brand voice, facts only from the post.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, text: { type: 'string' } }, required: ['id', 'text'] } },
   { name: 'list_automations', description: 'List DM automations: welcome message, keyword auto-replies, and comment-to-DM rules, with hit counts.', inputSchema: { type: 'object', properties: {} } },
   {
     name: 'create_automation',
@@ -225,6 +227,13 @@ async function callTool(name, a = {}) {
     case 'analyze_channel': {
       const vl = await import('./videolab.js');
       return vl.analyzeChannel(a.project_id, { brand: a.brand || null });
+    }
+    case 'comment_replies': return inbox.listComments({ review: !a.all, limit: 60 });
+    case 'edit_comment_reply': {
+      const [row] = await db()`update postroom.ig_comments set reply_draft = ${String(a.text || '').trim().slice(0, 1000)}, reply_status = 'draft'
+        where id = ${a.id} and reply_status is distinct from 'sent' returning id, reply_draft`;
+      if (!row) throw new HttpError(404, 'Comment not found or already replied.');
+      return row;
     }
     case 'post_insights': {
       const ins = await import('./insights.js');

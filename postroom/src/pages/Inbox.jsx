@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { api, relTime, fmtDateTime } from '../api.js';
-import { useApp, useAsync, Icon, Seg, Empty, Spinner, Avatar, CopyField, Toggle } from '../ui.jsx';
+import { useApp, useAsync, Icon, Seg, Empty, Spinner, Avatar, CopyField, Toggle, PfMark } from '../ui.jsx';
 
 const KIND = {
   welcome: { label: 'Welcome message', hint: 'Sent once, the first time someone DMs you.' },
@@ -216,29 +216,70 @@ function Messages({ status }) {
   );
 }
 
-function Comments() {
-  const { data, loading } = useAsync(() => api('inbox/comments'), []);
-  if (loading) return <Spinner />;
-  if (!data?.length) return <div class="card"><Empty icon="list" title="No comments yet">Comments on your posts appear here, with what your Comment → DM automations did.</Empty></div>;
+const REPLY = { draft: ['Draft ready', 'info'], needs_you: ['Needs you', 'warn'], sent: ['Replied', 'good'], skipped: ['Skipped', ''] };
+
+function CommentCard({ c, onChange }) {
+  const { toast } = useApp();
+  const [text, setText] = useState(c.reply_draft || '');
+  const [busy, setBusy] = useState(null);
+  const [guide, setGuide] = useState('');
+  useEffect(() => setText(c.reply_draft || ''), [c.id, c.reply_draft]);
+  const act = async (kind, fn, msg) => {
+    setBusy(kind);
+    try { await fn(); toast(msg); onChange(); } catch (e) { toast(e.message, 'bad'); } finally { setBusy(null); }
+  };
+  const open = c.reply_status === 'draft' || c.reply_status === 'needs_you';
+  const [lbl, cls] = REPLY[c.reply_status] || [c.rule_id ? 'Automation' : 'Not drafted', ''];
+  const profile = c.platform === 'youtube' ? (c.from_id ? `https://www.youtube.com/channel/${c.from_id}` : null) : c.username ? `https://www.instagram.com/${c.username}/` : null;
   return (
-    <div class="card table-wrap">
-      <table class="table">
-        <thead><tr><th>When</th><th>Account</th><th>From</th><th>Comment</th><th>Automation</th><th>DM</th><th>Public reply</th></tr></thead>
-        <tbody>
-          {data.map((c) => (
-            <tr key={c.id}>
-              <td class="small muted">{relTime(c.created_at)}</td>
-              <td class="small">@{c.account_username}</td>
-              <td class="small">{c.username ? <a href={`https://www.instagram.com/${c.username}/`} target="_blank" rel="noreferrer">@{c.username}</a> : '—'}</td>
-              <td class="small" style={{ maxWidth: 320 }}>{c.text}</td>
-              <td class="small">{c.rule_name || (c.rule_id ? 'Rule' : <span class="faint">—</span>)}</td>
-              <td>{c.dm_sent ? <span class="pill good">Sent</span> : c.rule_id ? <span class="pill bad" title={c.error || ''}>Failed</span> : <span class="faint">—</span>}</td>
-              <td>{c.public_replied ? <span class="pill good">Replied</span> : <span class="faint">—</span>}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div class="card pad col" style={{ gap: 8 }}>
+      <div class="row wrap small" style={{ gap: 6 }}>
+        <PfMark platform={c.platform || 'instagram'} size={15} />
+        <b>{profile ? <a href={profile} target="_blank" rel="noreferrer">{c.platform === 'youtube' ? c.username : `@${c.username}`}</a> : c.username || 'someone'}</b>
+        <span class="faint">on {c.post_url ? <a href={c.post_url} target="_blank" rel="noreferrer">{c.post_title || 'your post'}</a> : (c.post_title || 'your post')} · @{c.account_username} · {relTime(c.created_at)}</span>
+        <span class="grow" />
+        <span class={`pill ${cls}`}>{lbl}</span>
+      </div>
+      <div style={{ fontSize: 15 }}>{c.text}</div>
+      {c.reply_note && <div class="tiny" style={{ color: c.reply_status === 'needs_you' ? 'var(--warn)' : 'var(--text-3)' }}>{c.reply_note}</div>}
+      {c.reply_status === 'sent' && <div class="small muted">↳ {c.reply_sent_text} <span class="faint">· {relTime(c.replied_at)}</span></div>}
+      {open && (
+        <>
+          <textarea class="textarea" style={{ minHeight: 60 }} value={text} placeholder="Write your reply…" onInput={(e) => setText(e.currentTarget.value)} aria-label="Reply" />
+          <div class="row wrap" style={{ gap: 6 }}>
+            <button class="btn primary sm" disabled={!!busy || !text.trim()} onClick={() => act('send', () => api(`inbox/comments/${c.id}/reply`, { method: 'POST', body: { text } }), 'Reply posted')}>{busy === 'send' ? <Spinner /> : <Icon name="send" size={14} />} Post reply</button>
+            <button class="btn sm" disabled={!!busy} onClick={() => act('skip', () => api(`inbox/comments/${c.id}/skip`, { method: 'POST' }), 'Skipped')}>Skip</button>
+            <span class="grow" />
+            <input class="input" style={{ maxWidth: 220, height: 32 }} placeholder="Guidance, e.g. funnier" value={guide} onInput={(e) => setGuide(e.currentTarget.value)} />
+            <button class="btn ghost sm" disabled={!!busy} onClick={() => act('redraft', () => api(`inbox/comments/${c.id}/redraft`, { method: 'POST', body: { guidance: guide } }), 'New draft')}>{busy === 'redraft' ? <Spinner /> : <Icon name="sparkle" size={14} />} Rewrite</button>
+          </div>
+        </>
+      )}
     </div>
+  );
+}
+
+function Comments() {
+  const { toast } = useApp();
+  const [view, setView] = useState('review');
+  const { data, loading, reload } = useAsync(() => api('inbox/comments', { query: { review: view === 'review', limit: 150 } }), [view]);
+  const [checking, setChecking] = useState(false);
+  const check = async () => {
+    setChecking(true);
+    try { const r = await api('inbox/comments/check', { method: 'POST' }); toast(r.drafted ? `${r.drafted} new repl${r.drafted === 1 ? 'y' : 'ies'} drafted` : 'No new comments'); await reload(); } catch (e) { toast(e.message, 'bad'); } finally { setChecking(false); }
+  };
+  return (
+    <>
+      <div class="row wrap" style={{ gap: 8, marginBottom: 10 }}>
+        <Seg value={view} onChange={setView} options={[{ value: 'review', label: 'To review' }, { value: 'all', label: 'All comments' }]} />
+        <span class="grow" />
+        <button class="btn sm" disabled={checking} onClick={check}>{checking ? <Spinner /> : <Icon name="refresh" size={14} />} Check now</button>
+      </div>
+      <p class="small muted" style={{ marginTop: 0 }}>New comments on Instagram and YouTube get a reply drafted by Claude in the brand's voice. <b>Nothing is posted until you tap Post reply.</b> Switch it on or off per account in Accounts → brand kit.</p>
+      {loading && !data ? <Spinner /> : !data?.length
+        ? <div class="card"><Empty icon="list" title={view === 'review' ? 'Nothing to review' : 'No comments yet'}>{view === 'review' ? 'New comments show up here with a suggested reply within a few minutes.' : 'Comments on your posts appear here.'}</Empty></div>
+        : <div class="col" style={{ gap: 10 }}>{data.map((c) => <CommentCard key={c.id} c={c} onChange={reload} />)}</div>}
+    </>
   );
 }
 

@@ -71,6 +71,10 @@ export default function BrandKit({ account, onClose }) {
           </>
         )}
 
+        {['instagram', 'youtube'].includes(account.platform) && (
+          <Toggle checked={b.defaults?.comment_replies === 'review'} onChange={(v) => setB({ ...b, defaults: { ...(b.defaults || {}), comment_replies: v ? 'review' : 'off' } })} label="Draft replies to comments" hint="Claude suggests a reply to each new comment; you approve it in Inbox → Comments before it posts" />
+        )}
+
         <h3 style={{ margin: '10px 0 0' }}>Brand kit</h3>
         {FIELDS.map(([k, label, ph]) => (
           <div class="field" key={k}>

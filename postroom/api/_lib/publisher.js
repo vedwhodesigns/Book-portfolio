@@ -165,6 +165,12 @@ export async function housekeeping(deadline = Date.now() + 60000) {
   if (Date.now() < deadline - 25000) out.postInsights = await throttle('post-insights', 3 * 3600, () => collectPostInsights({ deadline }));
   if (Date.now() < deadline - 25000) out.daily = await throttle('account-daily', 3 * 3600, () => collectAccountInsights({ kinds: ['daily'] }));
   if (Date.now() < deadline - 25000) out.audience = await throttle('account-audience', 12 * 3600, () => collectAccountInsights({ kinds: ['audience'] }));
+  // Comment replies (review first): YouTube comments every 5 min; Claude drafts replies every 3 min
+  if (Date.now() < deadline - 60000) {
+    const cr = await import('./commentreplies.js');
+    out.ytComments = await throttle('yt-comments', 5 * 60, () => cr.pollYoutubeComments()).catch((e) => ({ error: e.message }));
+    if (Date.now() < deadline - 60000) out.commentDrafts = await throttle('comment-drafts', 3 * 60, () => cr.draftCommentReplies()).catch((e) => ({ error: e.message }));
+  }
   out.reminders = await sendReminders().catch((e) => ({ error: e.message }));
   // Weekly report (Monday 10:00 IST onward): needs ~2 minutes per brand, so only when the tick has room.
   if (Date.now() < deadline - 150000) {

@@ -116,6 +116,8 @@ async function fakeFetch(input, init = {}) {
     return json({ items: [{}] });
   }
   if (url.host === 'www.googleapis.com' && url.pathname === '/youtube/v3/playlistItems' && method === 'POST') { state.ytPlaylist = JSON.parse(init.body).snippet; return json({ id: 'pli1' }); }
+  if (url.host === 'www.googleapis.com' && url.pathname === '/youtube/v3/commentThreads' && method === 'GET') return json({ items: state.ytThreads || [] });
+  if (url.host === 'www.googleapis.com' && url.pathname === '/youtube/v3/comments' && method === 'POST') { state.ytReply = JSON.parse(init.body).snippet; return json({ id: 'ytreply1' }); }
   if (url.host === 'www.googleapis.com' && url.pathname === '/youtube/v3/commentThreads' && method === 'POST') { state.ytComment = JSON.parse(init.body).snippet; return json({ id: 'ct1' }); }
   if (url.host === 'oauth2.googleapis.com') return json({ access_token: 'yt-new', expires_in: 3600 });
   if (url.host === 'www.googleapis.com' && url.pathname === '/upload/youtube/v3/videos') {
@@ -176,7 +178,7 @@ before(async () => {
   if (skip) return;
   sql = postgres(URL_, { onnotice: () => {}, transform: { undefined: null } });
   await sql.unsafe('drop schema if exists postroom cascade');
-  for (const f of ['001_base.sql', '002_multiplatform.sql', '003_research.sql', '004_inbox.sql', '005_alerts_brand.sql', '006_planning.sql', '007_insights.sql', '008_reports.sql', '009_videolab.sql']) await sql.unsafe(fs.readFileSync(new URL(`../db/${f}`, import.meta.url), 'utf8'));
+  for (const f of ['001_base.sql', '002_multiplatform.sql', '003_research.sql', '004_inbox.sql', '005_alerts_brand.sql', '006_planning.sql', '007_insights.sql', '008_reports.sql', '009_videolab.sql', '010_comment_replies.sql']) await sql.unsafe(fs.readFileSync(new URL(`../db/${f}`, import.meta.url), 'utf8'));
   globalThis.fetch = fakeFetch;
   core = await import('../api/_lib/core.js');
   posts = await import('../api/_lib/posts.js');
@@ -1028,4 +1030,55 @@ test('Instagram publishes but answers with an error: Postroom finds the live pos
   assert.equal(row.permalink, 'https://www.instagram.com/reel/ghost/');
   assert.equal(state.ghost.calls, 1, 'media_publish is called only once');
   state.ghost = null;
+});
+
+test('comment replies: YouTube comments collected, Claude drafts per brand, nothing posts until approved', { skip }, async () => {
+  const cr = await import('../api/_lib/commentreplies.js');
+  const brand = { name: 'Reply Brand', tone: 'Curious and warm', defaults: { comment_replies: 'review' } };
+  await sql`update postroom.accounts set brand = ${sql.json(brand)}, status = 'active' where id = '00000000-0000-0000-0000-00000000000b' or username = 'brand.one'`;
+  const [yt] = await sql`select id, external_id from postroom.accounts where id = '00000000-0000-0000-0000-00000000000b'`;
+  const [ig] = await sql`select id from postroom.accounts where username = 'brand.one'`;
+  state.ytThreads = [
+    { snippet: { videoId: 'ytvid1', topLevelComment: { id: 'ytc1', snippet: { authorDisplayName: 'Viewer', authorChannelId: { value: 'UCviewer' }, textOriginal: 'This blew my mind!', publishedAt: new Date().toISOString() } } } },
+    { snippet: { videoId: 'ytvid1', topLevelComment: { id: 'ytc-own', snippet: { authorDisplayName: 'Us', authorChannelId: { value: yt.external_id }, textOriginal: 'our own', publishedAt: new Date().toISOString() } } } },
+  ];
+  await sql`update postroom.ig_comments set reply_status = 'skipped' where reply_status is null`; // earlier tests' comments
+  const polled = await cr.pollYoutubeComments();
+  assert.equal(Object.values(polled)[0], 1, 'own comments are ignored');
+  await sql`insert into postroom.ig_comments (account_id, comment_id, media_external_id, username, text) values
+    (${ig.id}, 'igc1', 'fbmedia1', 'fan', 'Is part 2 coming?'), (${ig.id}, 'igc2', 'fbmedia1', 'spammer', 'Follow me for free followers'),
+    (${ig.id}, 'igc3', 'fbmedia1', 'fan2', 'reply in thread')`;
+  await sql`update postroom.ig_comments set is_reply = true where comment_id = 'igc3'`;
+  let prompt;
+  const ask = async (p) => {
+    prompt = p;
+    const refs = [...p.matchAll(/- (C\d+) \[(\w+)\][^\n]*\n {2}@[^:]*: "([^"]*)"/g)].map((m) => ({ ref: m[1], text: m[3] }));
+    return { replies: refs.map((r) => r.text.includes('Follow me') ? { ref: r.ref, action: 'skip', reply: '', note: 'spam' }
+      : r.text.includes('part 2') ? { ref: r.ref, action: 'needs_you', reply: 'Soon!', note: 'asks about a future post' }
+      : { ref: r.ref, action: 'reply', reply: 'Glad it clicked!', note: '' }) };
+  };
+  const d = await cr.draftCommentReplies({ ask });
+  assert.equal(d.drafted, 2);
+  assert.match(prompt, /Curious and warm/);
+  assert.doesNotMatch(prompt, /reply in thread/, 'replies inside threads are not drafted');
+  const st = Object.fromEntries((await sql`select comment_id, reply_status, reply_draft from postroom.ig_comments where comment_id in ('ytc1','igc1','igc2')`).map((r) => [r.comment_id, r]));
+  assert.deepEqual([st.ytc1.reply_status, st.igc1.reply_status, st.igc2.reply_status], ['draft', 'needs_you', 'skipped']);
+  assert.equal(state.ytReply, undefined, 'nothing posted before approval');
+  const [n] = await sql`select title from postroom.notifications where kind = 'comment' order by created_at desc limit 1`;
+  assert.match(n.title, /2 new comment replies to review/);
+
+  // approve: YouTube + Instagram
+  const [ytRow] = await sql`select id from postroom.ig_comments where comment_id = 'ytc1'`;
+  const sent = await cr.sendCommentReply(ytRow.id, 'Glad it clicked!');
+  assert.equal(sent.reply_status, 'sent');
+  assert.deepEqual(state.ytReply, { parentId: 'ytc1', textOriginal: 'Glad it clicked!' });
+  await assert.rejects(cr.sendCommentReply(ytRow.id, 'again'), /Already replied/);
+  const before = state.publicReplies || 0;
+  const [igRow] = await sql`select id from postroom.ig_comments where comment_id = 'igc1'`;
+  await cr.sendCommentReply(igRow.id, 'Part 2 is in the works!');
+  assert.equal(state.publicReplies, before + 1);
+  const review = await (await import('../api/_lib/inbox.js')).listComments({ review: true });
+  assert.ok(!review.some((r) => ['ytc1', 'igc1'].includes(r.comment_id)), 'sent replies leave the review list');
+  await sql`update postroom.accounts set brand = '{}'::jsonb where id = '00000000-0000-0000-0000-00000000000b' or username = 'brand.one'`;
+  state.ytThreads = null;
 });

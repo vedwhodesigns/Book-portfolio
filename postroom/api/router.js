@@ -340,6 +340,18 @@ export default async function handler(req, res) {
       }
       if (p === 'inbox/subscribe' && m === 'POST') return send(res, 200, await inbox.subscribeAll());
       if (p === 'inbox/comments' && m === 'GET') return send(res, 200, await inbox.listComments(query(req)));
+      if (seg[1] === 'comments' && seg[2]) {
+        const cr = await import('./_lib/commentreplies.js');
+        if (seg[2] === 'counts' && m === 'GET') return send(res, 200, await cr.replyCounts());
+        if (seg[2] === 'check' && m === 'POST') {
+          await inbox.pollInbox({ dms: false, comments: true, deadline: Date.now() + 60000 });
+          const yt = await cr.pollYoutubeComments();
+          return send(res, 200, { youtube: yt, ...(await cr.draftCommentReplies()) });
+        }
+        if (seg[3] === 'reply' && m === 'POST') return send(res, 200, await cr.sendCommentReply(seg[2], (await body(req)).text));
+        if (seg[3] === 'skip' && m === 'POST') return send(res, 200, await cr.skipComment(seg[2]));
+        if (seg[3] === 'redraft' && m === 'POST') return send(res, 200, await cr.redraftComment(seg[2], { guidance: (await body(req)).guidance || '' }));
+      }
       if (p === 'inbox/rules' && m === 'GET') return send(res, 200, await inbox.listRules());
       if (p === 'inbox/rules' && m === 'POST') return send(res, 200, await inbox.createRule(await body(req)));
       if (seg[1] === 'rules' && seg[2] && m === 'PATCH') return send(res, 200, await inbox.updateRule(seg[2], await body(req)));

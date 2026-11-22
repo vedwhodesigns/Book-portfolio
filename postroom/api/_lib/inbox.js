@@ -136,8 +136,8 @@ async function onComment(account, value, { automate = true } = {}) {
   if (from.id && String(from.id) === String(account.external_id)) return; // our own replies
   const mediaId = value.media?.id ? String(value.media.id) : null;
   const at = value.timestamp ? metaDate(value.timestamp) : new Date();
-  const ins = await db()`insert into postroom.ig_comments (account_id, comment_id, media_external_id, from_id, username, text, created_at)
-    values (${account.id}, ${commentId}, ${mediaId}, ${from.id || null}, ${from.username || null}, ${value.text || null}, ${at})
+  const ins = await db()`insert into postroom.ig_comments (account_id, comment_id, media_external_id, from_id, username, text, created_at, is_reply)
+    values (${account.id}, ${commentId}, ${mediaId}, ${from.id || null}, ${from.username || null}, ${value.text || null}, ${at}, ${!!value.parent_id})
     on conflict (comment_id) do nothing returning id`;
   if (!ins.length || value.parent_id || !automate) return false; // duplicate, a reply inside a thread, or history
   for (const rule of await rulesFor(account.id, 'comment_keyword')) {
@@ -418,11 +418,14 @@ export async function saveDraft(threadId, text, by = 'claude') {
   return { ok: true };
 }
 
-export async function listComments({ account_id = null, limit = 100 } = {}) {
-  return db()`select c.*, a.username as account_username, r.name as rule_name
+export async function listComments({ account_id = null, review = false, limit = 100 } = {}) {
+  return db()`select c.*, a.username as account_username, a.platform as account_platform, a.brand->>'name' as brand, r.name as rule_name,
+      coalesce(p.title, split_part(p.caption, E'\n', 1)) as post_title, p.permalink as post_url, p.id as post_id
     from postroom.ig_comments c join postroom.accounts a on a.id = c.account_id
     left join postroom.auto_rules r on r.id = c.rule_id
-    where true ${account_id ? db()`and c.account_id = ${account_id}` : db()``}
+    left join lateral (select id, title, caption, permalink from postroom.posts where account_id = c.account_id and external_id = c.media_external_id limit 1) p on true
+    where not c.is_reply ${account_id ? db()`and c.account_id = ${account_id}` : db()``}
+      ${review === true || review === 'true' ? db()`and c.reply_status in ('draft', 'needs_you')` : db()``}
     order by c.created_at desc limit ${Math.min(Number(limit) || 100, 300)}`;
 }
 
