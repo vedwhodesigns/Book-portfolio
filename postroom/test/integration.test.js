@@ -178,7 +178,7 @@ before(async () => {
   if (skip) return;
   sql = postgres(URL_, { onnotice: () => {}, transform: { undefined: null } });
   await sql.unsafe('drop schema if exists postroom cascade');
-  for (const f of ['001_base.sql', '002_multiplatform.sql', '003_research.sql', '004_inbox.sql', '005_alerts_brand.sql', '006_planning.sql', '007_insights.sql', '008_reports.sql', '009_videolab.sql', '010_comment_replies.sql']) await sql.unsafe(fs.readFileSync(new URL(`../db/${f}`, import.meta.url), 'utf8'));
+  for (const f of ['001_base.sql', '002_multiplatform.sql', '003_research.sql', '004_inbox.sql', '005_alerts_brand.sql', '006_planning.sql', '007_insights.sql', '008_reports.sql', '009_videolab.sql', '010_comment_replies.sql', '011_report_share.sql']) await sql.unsafe(fs.readFileSync(new URL(`../db/${f}`, import.meta.url), 'utf8'));
   globalThis.fetch = fakeFetch;
   core = await import('../api/_lib/core.js');
   posts = await import('../api/_lib/posts.js');
@@ -948,6 +948,33 @@ test('weekly reports: week numbers vs last week, Claude analysis with carried-fo
   const one = (await call('GET', `reports/${list[0].id}`, h)).body;
   assert.equal(one.brand, 'Test Brand');
   assert.equal((await call('GET', 'reports/learnings?brand=Test%20Brand', h)).body[0].learning, 'Evening beats morning');
+
+  // download / print / share link
+  const html = (url, headers = {}) => new Promise((resolve) => {
+    const res = { statusCode: 200, headers: {}, setHeader(k, v) { this.headers[k.toLowerCase()] = v; }, end(b) { resolve({ status: this.statusCode, headers: this.headers, body: String(b || '') }); } };
+    router({ method: 'GET', url: `/api/${url}`, headers, query: { ...Object.fromEntries(new URL(`http://x/api/${url}`).searchParams), __p: url.split('?')[0] } }, res);
+  });
+  const auto = list.find((x) => x.headline === 'Auto');
+  await sql`update postroom.weekly_reports set data = jsonb_set(data, '{posts,0,hook}', '"<script>alert(1)</script> hook"') where id = ${auto.id}`;
+  const dl = await html(`reports/${auto.id}/export`, h.headers);
+  assert.equal(dl.status, 200);
+  assert.match(dl.headers['content-type'], /text\/html/);
+  assert.match(dl.headers['content-disposition'], /attachment; filename="Test-Brand-weekly-report-.*\.html"/);
+  assert.match(dl.body, /Test Brand · Weekly content report/);
+  assert.match(dl.body, /&lt;script&gt;alert\(1\)&lt;\/script&gt; hook/, 'captions are escaped');
+  assert.doesNotMatch(dl.body, /<script>alert/);
+  const pr = await html(`reports/${auto.id}/export?print=1`, h.headers);
+  assert.match(pr.body, /window\.print\(\)/);
+  assert.equal(pr.headers['content-disposition'], undefined);
+  assert.equal((await html(`reports/${auto.id}/export`)).status, 401, 'download needs sign-in');
+  const sh = (await call('POST', `reports/${auto.id}/share`, h)).body;
+  const token = sh.url.split('/').pop();
+  const pub = await html(`share/report/${token}`);
+  assert.equal(pub.status, 200, 'share link works without signing in');
+  assert.match(pub.body, /Test Brand/);
+  assert.equal((await call('POST', `reports/${auto.id}/share`, h)).body.url, sh.url, 'same link when shared again');
+  await call('DELETE', `reports/${auto.id}/share`, h);
+  assert.equal((await html(`share/report/${token}`)).status, 404, 'stopped links no longer open');
 });
 
 test('brand defaults: AI labels on every upload; YouTube links the channel\'s previous video', { skip }, async () => {

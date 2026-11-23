@@ -7,6 +7,43 @@ import { db, env, HttpError } from './core.js';
 import { brandSummary } from './brand.js';
 import { hookScore } from './hooks.js';
 import { notify } from './notify.js';
+import { accessToken } from './accounts.js';
+import { platform } from './platforms/index.js';
+import { igGet } from './platforms/instagram.js';
+import { listUploads } from './platforms/youtube.js';
+
+const igDate = (t) => new Date(String(t || '').replace(/([+-]\d\d)(\d\d)$/, '$1:$2'));
+const IG_KIND = { REELS: 'reel', CAROUSEL_ALBUM: 'carousel', IMAGE: 'image', VIDEO: 'reel' };
+
+/** Posts made on the account outside Postroom (Instagram app, YouTube Studio…) in [from, to), with their current stats. */
+export async function outsidePosts(account, from, to, knownIds) {
+  const token = await accessToken(account);
+  let items = [];
+  if (account.platform === 'instagram') {
+    const r = await igGet(`${account.external_id}/media`, token, { fields: 'id,caption,timestamp,permalink,media_type,media_product_type,thumbnail_url,media_url', limit: 50 }, account);
+    items = (r.data || []).map((m) => ({
+      external_id: m.id, kind: IG_KIND[m.media_product_type === 'REELS' ? 'REELS' : m.media_type] || 'image', caption: m.caption || '', title: null,
+      permalink: m.permalink || null, published_at: igDate(m.timestamp), thumb: m.thumbnail_url || (m.media_type === 'IMAGE' ? m.media_url : null) || null, duration_s: null,
+    }));
+  } else if (account.platform === 'youtube') {
+    items = (await listUploads({ token, channelId: account.external_id })).map((v) => ({ ...v, published_at: new Date(v.published_at) }));
+  } else return [];
+  items = items.filter((i) => !knownIds.has(String(i.external_id)) && i.published_at >= from && i.published_at < to);
+  if (!items.length) return [];
+  const p = platform(account.platform);
+  const stats = await p.fetchMetrics({ account, token, posts: items.map((i) => ({ id: i.external_id, external_id: i.external_id, kind: i.kind })) }).catch(() => ({}));
+  let deep = {};
+  if (account.platform === 'youtube' && p.fetchInsights) deep = await p.fetchInsights({ account, token, posts: items.map((i) => ({ id: i.external_id, external_id: i.external_id, published_at: i.published_at, duration_s: i.duration_s })), withRetention: false }).catch(() => ({}));
+  return items.map((i) => {
+    const st = stats[i.external_id] || {};
+    const { _insights, ...metrics } = st;
+    return {
+      id: `outside:${i.external_id}`, account_id: account.id, platform: account.platform, kind: i.kind, title: i.title, caption: i.caption,
+      permalink: i.permalink, published_at: i.published_at, metrics, insights: { ...(_insights || {}), ...(deep[i.external_id]?.insights || {}) },
+      username: account.username, idea_hook: null, series: null, duration_s: i.duration_s, thumb: i.thumb, views_24h: null, views_6h: null, outside: true,
+    };
+  });
+}
 
 const MODEL = () => env('CLAUDE_MODEL', 'claude-opus-5-5');
 const IST = 330 * 60000; // India has no daylight saving: always UTC+05:30
@@ -30,6 +67,7 @@ const n = (v) => (v == null || v === '' ? null : Number(v));
 const sum = (rows, k) => rows.reduce((s, r) => s + (Number(r[k]) || 0), 0);
 const avg = (vals) => { const v = vals.filter((x) => x != null && !Number.isNaN(x)); return v.length ? Math.round((v.reduce((a, b) => a + b, 0) / v.length) * 10) / 10 : null; };
 const median = (vals) => { const v = vals.filter((x) => x != null).sort((a, b) => a - b); return v.length ? (v.length % 2 ? v[(v.length - 1) / 2] : Math.round((v[v.length / 2 - 1] + v[v.length / 2]) / 2)) : null; };
+const v24 = (r) => r.views_24h ?? (r.outside ? r.views : null); // outside posts: lifetime views
 const pctChange = (cur, prev) => (prev ? Math.round(((cur - prev) / prev) * 1000) / 10 : null);
 
 function totals(rows) {
@@ -42,8 +80,8 @@ function totals(rows) {
     comments: sum(rows, 'comments'),
     shares: sum(rows, 'shares'),
     saves: sum(rows, 'saves'),
-    median_views_24h: median(rows.map((r) => r.views_24h)),
-    avg_views_24h: avg(rows.map((r) => r.views_24h)),
+    median_views_24h: median(rows.map(v24)),
+    avg_views_24h: avg(rows.map(v24)),
     avg_hook_score: avg(rows.map((r) => r.hook_score)),
     avg_view_pct: avg(rows.map((r) => r.avg_view_pct)),
     engagement_rate: views ? Math.round((inter / views) * 1000) / 10 : null,
@@ -58,7 +96,7 @@ function breakdown(rows, keyFn, labelFn = (k) => k) {
     if (k == null || k === '') continue;
     (m.get(k) || m.set(k, []).get(k)).push(r);
   }
-  return [...m].map(([k, list]) => ({ key: String(k), label: labelFn(k), posts: list.length, avg_views_24h: avg(list.map((r) => r.views_24h)), avg_hook_score: avg(list.map((r) => r.hook_score)) }))
+  return [...m].map(([k, list]) => ({ key: String(k), label: labelFn(k), posts: list.length, avg_views_24h: avg(list.map(v24)), avg_hook_score: avg(list.map((r) => r.hook_score)) }))
     .sort((a, b) => (b.avg_views_24h ?? -1) - (a.avg_views_24h ?? -1));
 }
 
@@ -81,6 +119,16 @@ export async function weekData({ brand, start, end }) {
     left join postroom.media m on m.id = p.media_ids[1]
     where p.status = 'published' and p.account_id = any(${ids}) and p.published_at >= ${prevStart} and p.published_at < ${end}
     order by p.published_at`;
+  // plus everything posted on these accounts outside Postroom (phone, Studio…), so each brand's report is complete
+  const notes = [];
+  const known = new Set((await db()`select external_id from postroom.posts where account_id = any(${ids}) and external_id is not null`).map((r) => String(r.external_id)));
+  for (const a of accts) {
+    try {
+      const [full] = await db()`select * from postroom.accounts where id = ${a.id} and status = 'active'`;
+      if (full) rows.push(...(await outsidePosts(full, prevStart, end, known)));
+    } catch (e) { notes.push(`${a.platform}:${a.username}: couldn't read posts made outside Postroom (${e.message})`); }
+  }
+  rows.sort((x, y) => new Date(x.published_at) - new Date(y.published_at));
   const now = Date.now();
   const toRow = (r) => {
     const met = r.metrics || {}, ins = r.insights || {};
@@ -99,6 +147,7 @@ export async function weekData({ brand, start, end }) {
       hook_score: hookScore(r), skip_rate: ins.skip_rate ?? null, hold_3s: ins.hold_3s ?? null, avg_watch_s: ins.avg_watch_s ?? null,
       avg_view_pct: ins.avg_view_pct ?? (ins.avg_watch_s && r.duration_s ? Math.round((ins.avg_watch_s / Number(r.duration_s)) * 1000) / 10 : null),
       subs_gained: ins.subs_gained ?? null,
+      outside: !!r.outside,
     };
   };
   const all = rows.map(toRow);
@@ -138,7 +187,7 @@ export async function weekData({ brand, start, end }) {
     };
   });
   const tc = totals(cur), tp = totals(prev);
-  const byViews = [...cur].filter((r) => r.views_24h != null).sort((a, b) => b.views_24h - a.views_24h);
+  const byViews = [...cur].filter((r) => v24(r) != null).sort((a, b) => v24(b) - v24(a));
   return {
     brand, period: { start, end, label: `${fmtIst(start, { day: 'numeric', month: 'short' })} – ${fmtIst(new Date(end - 1), { day: 'numeric', month: 'short', year: 'numeric' })}`, days },
     totals: tc, previous: tp,
@@ -155,6 +204,8 @@ export async function weekData({ brand, start, end }) {
     by_kind: breakdown(cur, (r) => `${r.platform} ${r.kind}`),
     by_series: breakdown(cur, (r) => r.series),
     brand_kit: brandSummary(accts[0]),
+    notes,
+    outside_posts: cur.filter((r) => r.outside).length,
   };
 }
 
@@ -212,7 +263,7 @@ const REPORT_SCHEMA = {
 
 function postLine(r) {
   const bits = [
-    `${r.ref} [${r.account} ${r.kind}${r.duration_s ? ` ${Math.round(r.duration_s)}s` : ''}] ${r.posted} IST`,
+    `${r.ref} [${r.account} ${r.kind}${r.duration_s ? ` ${Math.round(r.duration_s)}s` : ''}] ${r.posted} IST${r.outside ? ' (posted outside Postroom: lifetime totals only, no 6h/24h curve)' : ''}`,
     r.series && `series "${r.series}"`,
     `hook: "${r.hook}"`,
     `views ${r.views ?? '?'} (6h ${r.views_6h ?? '?'}, 24h ${r.views_24h ?? '?'}, age ${r.age_h}h)`,
@@ -316,11 +367,10 @@ export async function rewriteReport(id, { ask = askClaude } = {}) {
 export async function runWeeklyReports({ deadline = Date.now() + 200000, now = new Date(), ask = askClaude } = {}) {
   const { start, end } = lastWeek(now);
   if (now - end < RUN_AFTER_H * 3600e3) return { waiting: 'until Monday 10:00 India time' };
+  // every brand gets its own report (posts made outside Postroom are read from Instagram/YouTube)
   const brands = await db()`select distinct a.brand->>'name' as brand from postroom.accounts a
-    where a.brand->>'name' is not null
+    where a.brand->>'name' is not null and a.status = 'active'
       and not exists (select 1 from postroom.weekly_reports w where w.kind = 'weekly' and w.brand = a.brand->>'name' and w.period_start = ${start})
-      and exists (select 1 from postroom.posts p join postroom.accounts b on b.id = p.account_id
-        where b.brand->>'name' = a.brand->>'name' and p.status = 'published' and p.published_at >= ${new Date(start - 7 * DAY)} and p.published_at < ${end})
     order by 1`;
   const done = [];
   for (const { brand } of brands) {

@@ -42,6 +42,33 @@ function Findings({ title, items, byRef, tone }) {
   );
 }
 
+function ShareButtons({ r }) {
+  const { toast } = useApp();
+  const [link, setLink] = useState(r.share_token ? `${location.origin}/api/share/report/${r.share_token}` : null);
+  useEffect(() => setLink(r.share_token ? `${location.origin}/api/share/report/${r.share_token}` : null), [r.id, r.share_token]);
+  const share = async () => {
+    try {
+      const { url } = await api(`reports/${r.id}/share`, { method: 'POST' });
+      setLink(url);
+      const title = `${r.brand} · weekly report · ${r.data?.period?.label || ''}`;
+      if (navigator.share) { try { await navigator.share({ title, url }); return; } catch { /* cancelled */ } }
+      await navigator.clipboard?.writeText(url);
+      toast('Share link copied: anyone with the link can view this report');
+    } catch (e) { toast(e.message, 'bad'); }
+  };
+  const stop = async () => {
+    try { await api(`reports/${r.id}/share`, { method: 'DELETE' }); setLink(null); toast('Link switched off'); } catch (e) { toast(e.message, 'bad'); }
+  };
+  return (
+    <>
+      <a class="btn sm" href={`/api/reports/${r.id}/export`} download><Icon name="upload" size={14} style={{ transform: 'rotate(180deg)' }} /> Download</a>
+      <a class="btn sm" href={`/api/reports/${r.id}/export?print=1`} target="_blank" rel="noreferrer">Save as PDF</a>
+      <button class="btn sm" onClick={share}><Icon name="link" size={14} /> {link ? 'Share again' : 'Share link'}</button>
+      {link && <button class="btn ghost sm" onClick={stop} title={link}>Stop sharing</button>}
+    </>
+  );
+}
+
 function ReportView({ r, onRewrite, busy }) {
   const { openPost } = useApp();
   const d = r.data || {};
@@ -61,6 +88,7 @@ function ReportView({ r, onRewrite, busy }) {
       <section class="card pad" style={{ marginBottom: 14 }}>
         <div class="row wrap" style={{ gap: 8 }}>
           <span class="tiny faint grow">{d.period?.label} · {r.kind === 'weekly' ? 'weekly report' : `last ${d.period?.days} days`} · {r.posts} post{r.posts === 1 ? '' : 's'} · written {relTime(r.created_at)}</span>
+          <ShareButtons r={r} />
           <button class="btn sm" disabled={busy} onClick={onRewrite} title="Pull the latest numbers and ask Claude again">{busy ? <Spinner /> : <Icon name="refresh" size={14} />} Rewrite analysis</button>
         </div>
         {rep ? (

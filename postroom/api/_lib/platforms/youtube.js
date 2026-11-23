@@ -57,6 +57,27 @@ async function call(url, init = {}) {
 }
 const authed = (token, extra = {}) => ({ authorization: `Bearer ${token}`, ...extra });
 
+const isoSecs = (d = '') => { const m = /P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/.exec(d); return m ? (+(m[1] || 0)) * 86400 + (+(m[2] || 0)) * 3600 + (+(m[3] || 0)) * 60 + (+(m[4] || 0)) : null; };
+/** The channel's latest uploads (made anywhere: Postroom, Studio, phone), newest first. */
+export async function listUploads({ token, channelId, max = 50 }) {
+  const ch = await call(`${API}/channels?part=contentDetails&id=${encodeURIComponent(channelId)}`, { headers: authed(token) });
+  const uploads = ch.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+  if (!uploads) return [];
+  const pl = await call(`${API}/playlistItems?part=contentDetails&playlistId=${uploads}&maxResults=${Math.min(max, 50)}`, { headers: authed(token) });
+  const ids = (pl.items || []).map((x) => x.contentDetails?.videoId).filter(Boolean);
+  if (!ids.length) return [];
+  const v = await call(`${API}/videos?part=snippet,contentDetails&id=${ids.join(',')}`, { headers: authed(token) });
+  return (v.items || []).map((x) => {
+    const dur = isoSecs(x.contentDetails?.duration);
+    return {
+      external_id: x.id, title: x.snippet?.title || '', caption: x.snippet?.description || '', published_at: x.snippet?.publishedAt,
+      duration_s: dur, kind: dur != null && dur <= 180 ? 'short' : 'video',
+      permalink: dur != null && dur <= 180 ? `https://www.youtube.com/shorts/${x.id}` : `https://youtu.be/${x.id}`,
+      thumb: x.snippet?.thumbnails?.medium?.url || x.snippet?.thumbnails?.default?.url || null,
+    };
+  });
+}
+
 async function tokenRequest(params) {
   return call('https://oauth2.googleapis.com/token', {
     method: 'POST',

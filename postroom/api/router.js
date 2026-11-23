@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import { APP_URL, TZ, env, HttpError, body, send, redirect, isAuthed, sessionCookie, clearCookie, safeEqual, db, loadSettings, saveSettings, settingSource } from './_lib/core.js';
+import { APP_URL, TZ, env, HttpError, body, send, redirect, isAuthed, sessionCookie, clearCookie, safeEqual, db, loadSettings, saveSettings, settingSource, randomId } from './_lib/core.js';
 import { listAccounts, platformStatus, startConnect, finishConnect, syncAccount, disconnectAccount, getAccount, accessToken } from './_lib/accounts.js';
 import { listMedia, registerMedia, importFromUrl, deleteMedia, updateMediaMeta, uploadConfig, ALLOWED_TYPES, MAX_UPLOAD_BYTES } from './_lib/media.js';
 import { checkTargets, summariseCheck, createPosts, listPosts, getPost, updatePost, schedulePost, cancelPost, retryPost, deletePost, listPlans, approvePlan, discardPlan } from './_lib/posts.js';
@@ -67,6 +67,15 @@ function parseSignedRequest(sr) {
   const expected = crypto.createHmac('sha256', env('IG_APP_SECRET')).update(payload).digest('base64url');
   if (!safeEqual(sig, expected)) throw new HttpError(400, 'Bad signature');
   return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+}
+
+function sendHtml(res, html, headers = {}) {
+  res.statusCode = 200;
+  res.setHeader('content-type', 'text/html; charset=utf-8');
+  res.setHeader('cache-control', 'no-store');
+  res.setHeader('content-security-policy', "default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; frame-ancestors 'none'");
+  for (const [k, v] of Object.entries(headers)) res.setHeader(k, v);
+  res.end(html);
 }
 
 export default async function handler(req, res) {
@@ -174,6 +183,14 @@ export default async function handler(req, res) {
       const bearer = String(req.headers.authorization || '').replace(/^Bearer /, '');
       if (!isAuthed(req) && !(env('RESEARCH_KEY') && safeEqual(bearer, env('RESEARCH_KEY')))) return send(res, 401, { error: 'Bad research key' });
       return send(res, 200, await ingest(await body(req)));
+    }
+
+    // Shared weekly report (private link, no sign-in): /api/share/report/<token>
+    if (seg[0] === 'share' && seg[1] === 'report' && seg[2] && m === 'GET') {
+      const [r] = await db()`select * from postroom.weekly_reports where share_token = ${String(seg[2])}`;
+      if (!r) { res.statusCode = 404; res.setHeader('content-type', 'text/plain; charset=utf-8'); return res.end('This report link was switched off or never existed.'); }
+      const { renderReportHtml } = await import('./_lib/reportpage.js');
+      return sendHtml(res, renderReportHtml(r, { shared: true }), { 'x-robots-tag': 'noindex', 'referrer-policy': 'no-referrer' });
     }
 
     // ---------- everything below needs a session ----------
@@ -421,6 +438,21 @@ export default async function handler(req, res) {
       }
       if (p === 'reports/learnings' && m === 'GET') return send(res, 200, await rp.learningLog({ brand: query(req).brand }));
       if (seg[1] && seg[2] === 'rewrite' && m === 'POST') return send(res, 200, await rp.rewriteReport(seg[1]));
+      if (seg[1] && seg[2] === 'export' && m === 'GET') {
+        const r = await rp.getReport(seg[1]);
+        const pg = await import('./_lib/reportpage.js');
+        const print = query(req).print === '1';
+        return sendHtml(res, pg.renderReportHtml(r, { print, appUrl: APP_URL() }), print ? {} : { 'content-disposition': `attachment; filename="${pg.reportFilename(r)}"` });
+      }
+      if (seg[1] && seg[2] === 'share' && m === 'POST') {
+        const [r] = await db()`update postroom.weekly_reports set share_token = coalesce(share_token, ${randomId(18)}) where id = ${seg[1]} returning share_token`;
+        if (!r) return send(res, 404, { error: 'Report not found.' });
+        return send(res, 200, { url: `${APP_URL()}/api/share/report/${r.share_token}` });
+      }
+      if (seg[1] && seg[2] === 'share' && m === 'DELETE') {
+        await db()`update postroom.weekly_reports set share_token = null where id = ${seg[1]}`;
+        return send(res, 200, { ok: true });
+      }
       if (seg[1] && !seg[2] && m === 'GET') return send(res, 200, await rp.getReport(seg[1]));
     }
     if (p === 'ai/captions' && m === 'POST') return send(res, 200, await writeCaptions(await body(req)));
