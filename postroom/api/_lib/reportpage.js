@@ -1,3 +1,4 @@
+import { bestWorst } from './reports.js';
 // A weekly report as one self-contained HTML page: download it, print it to PDF, or open it from a share link.
 // Everything from captions, comments or Claude is escaped; the page loads nothing but the post thumbnails.
 
@@ -22,7 +23,8 @@ function bars(rows, label) {
 
 export function renderReportHtml(r, { print = false, shared = false, appUrl = '' } = {}) {
   const d = r.data || {}, rep = r.report, t = d.totals || {}, ch = d.change || {};
-  const best = new Set(d.best || []), worst = new Set(d.worst || []);
+  const bw = bestWorst(d.posts || []);
+  const best = new Set(bw.best), worst = new Set(bw.worst);
   const kpi = (k, v, c) => `<div class="kpi"><div class="k">${k}</div><div class="v">${v}</div>${pct(c)}</div>`;
   const finding = (items, cls) => (items || []).map((f) => `<li><b>${esc(f.finding)}</b>${f.refs?.length ? ` <span class="refs">${f.refs.map(esc).join(' ')}</span>` : ''}<div class="muted">${esc(f.evidence)}</div></li>`).join('') || '<li class="muted">Nothing clear this week.</li>';
   const posts = (d.posts || []).map((p) => `<tr>

@@ -68,6 +68,12 @@ const sum = (rows, k) => rows.reduce((s, r) => s + (Number(r[k]) || 0), 0);
 const avg = (vals) => { const v = vals.filter((x) => x != null && !Number.isNaN(x)); return v.length ? Math.round((v.reduce((a, b) => a + b, 0) / v.length) * 10) / 10 : null; };
 const median = (vals) => { const v = vals.filter((x) => x != null).sort((a, b) => a - b); return v.length ? (v.length % 2 ? v[(v.length - 1) / 2] : Math.round((v[v.length / 2 - 1] + v[v.length / 2]) / 2)) : null; };
 const v24 = (r) => r.views_24h ?? (r.outside ? r.views : null); // outside posts: lifetime views
+/** Best / weakest posts: at most a third of the week each way (none marked weakest under 4 posts). */
+export function bestWorst(posts) {
+  const ranked = [...posts].filter((r) => v24(r) != null).sort((a, b) => v24(b) - v24(a));
+  const k = Math.min(3, Math.floor(ranked.length / 3));
+  return { best: ranked.slice(0, Math.max(1, k)).map((r) => r.ref), worst: ranked.length >= 4 ? ranked.slice(-k).reverse().map((r) => r.ref) : [] };
+}
 const pctChange = (cur, prev) => (prev ? Math.round(((cur - prev) / prev) * 1000) / 10 : null);
 
 function totals(rows) {
@@ -197,8 +203,7 @@ export async function weekData({ brand, start, end }) {
     accounts,
     posts: cur,
     previous_posts: prev,
-    best: byViews.slice(0, 3).map((r) => r.ref),
-    worst: byViews.length > 3 ? byViews.slice(-3).reverse().map((r) => r.ref) : [],
+    ...bestWorst(cur),
     by_hour: breakdown(cur, (r) => r.hour_ist, (h) => `${String(h).padStart(2, '0')}:00`),
     by_weekday: breakdown(cur, (r) => r.weekday),
     by_kind: breakdown(cur, (r) => `${r.platform} ${r.kind}`),

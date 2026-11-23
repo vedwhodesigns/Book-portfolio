@@ -75,7 +75,9 @@ function ReportView({ r, onRewrite, busy }) {
   const rep = r.report;
   const t = d.totals || {}, ch = d.change || {};
   const byRef = Object.fromEntries((d.posts || []).concat(d.previous_posts || []).map((p) => [p.ref, p]));
-  const best = new Set(d.best || []), worst = new Set(d.worst || []);
+  const ranked = (d.posts || []).filter((p) => (p.views_24h ?? (p.outside ? p.views : null)) != null).sort((a, b) => (b.views_24h ?? b.views) - (a.views_24h ?? a.views));
+  const k = Math.min(3, Math.floor(ranked.length / 3));
+  const best = new Set(ranked.slice(0, Math.max(1, k)).map((p) => p.ref)), worst = new Set(ranked.length >= 4 ? ranked.slice(-k).map((p) => p.ref) : []);
   const kpis = [
     ['Posts', t.posts, ch.posts],
     ['Views', t.views, ch.views],
