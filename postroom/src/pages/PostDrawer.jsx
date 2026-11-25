@@ -55,9 +55,9 @@ export default function PostDrawer({ id, onClose }) {
           <button class="btn" onClick={() => { onClose(); go(`compose?from=${id}`); }}><Icon name="copy" size={16} /> Duplicate</button>
           <span class="grow" />
           {editable && <button class="btn danger" disabled={busy} onClick={() => confirm('Cancel this post?') && act(() => api(`posts/${id}/cancel`, { method: 'POST' }), 'Cancelled')}>Cancel post</button>}
-          {p.status === 'published' && p.platform === 'youtube' && (p.upload?.archived
+          {p.status === 'published' && ['youtube', 'instagram'].includes(p.platform) && (p.upload?.archived
             ? <button class="btn" disabled={busy} onClick={() => act(() => api(`posts/${id}/archive`, { method: 'POST', body: { undo: true } }), 'Public again on YouTube')}>Unarchive</button>
-            : <button class="btn" disabled={busy} onClick={() => confirm('Archive this video? It becomes Private on YouTube (only you can see it). You can unarchive it any time.') && act(() => api(`posts/${id}/archive`, { method: 'POST' }), 'Archived: now Private on YouTube')}>Archive</button>)}
+            : <button class="btn" disabled={busy} onClick={() => confirm(p.platform === 'youtube' ? 'Archive this video? It becomes Private on YouTube (only you can see it) and leaves analytics. You can unarchive it any time.' : 'Mark this post archived? It leaves Postroom analytics. Instagram doesn\'t let apps archive posts, so also archive it in the Instagram app (post → ⋯ → Archive).') && act(() => api(`posts/${id}/archive`, { method: 'POST' }), p.platform === 'youtube' ? 'Archived: now Private on YouTube' : 'Archived in Postroom. Archive it in the Instagram app too')}>Archive</button>)}
           {['cancelled', 'draft', 'failed'].includes(p.status) && <button class="btn ghost danger icon" aria-label="Delete" disabled={busy} onClick={() => confirm('Delete this post for good?') && act(async () => { await api(`posts/${id}`, { method: 'DELETE' }); onClose(); }, 'Deleted')}><Icon name="trash" size={16} /></button>}
         </>
       }

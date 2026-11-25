@@ -359,7 +359,13 @@ export async function archivePost(id, { undo = false, by = 'app' } = {}) {
   if (!p) throw new HttpError(404, 'Post not found.');
   if (p.status !== 'published' || !p.external_id) throw new HttpError(400, 'Only published posts can be archived.');
   if (p.platform !== 'youtube') {
-    throw new HttpError(400, `${p.platform === 'instagram' ? 'Instagram' : 'This platform'} doesn't let apps archive posts. Open the post in the app → ⋯ → Archive.`);
+    // Instagram doesn't let apps archive posts (and its API keeps listing archived ones): mark it here so analytics
+    // leaves it out; the person archives it in the Instagram app.
+    const [row] = await db()`update postroom.posts set archived_at = ${undo ? null : new Date()},
+        upload = upload || ${db().json({ archived: !undo, archived_in: undo ? null : 'marked in Postroom' })}, updated_at = now()
+      where id = ${id} returning id, platform, external_id, permalink, upload`;
+    await logEvent({ postId: id, accountId: p.account_id, message: `${undo ? 'Unarchived' : 'Archived'} in Postroom by ${by} (Instagram itself is changed in the app)` });
+    return { ...row, privacy: null, note: undo ? null : 'Left out of analytics. Instagram doesn\'t let apps archive posts: archive it in the Instagram app too (post → ⋯ → Archive).' };
   }
   const [account] = await db()`select * from postroom.accounts where id = ${p.account_id}`;
   const { accessToken } = await import('./accounts.js');

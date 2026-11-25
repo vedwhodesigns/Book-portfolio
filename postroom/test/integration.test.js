@@ -1112,7 +1112,7 @@ test('comment replies: YouTube comments collected, Claude drafts per brand, noth
   state.ytThreads = null;
 });
 
-test('archive: a published YouTube video goes Private (keeping its other settings) and back; Instagram is refused with how to do it', { skip }, async () => {
+test('archive: a published YouTube video goes Private (keeping its other settings) and back; Instagram is marked in Postroom', { skip }, async () => {
   const { archivePost } = posts;
   await sql`update postroom.accounts set status = 'active' where id = '00000000-0000-0000-0000-00000000000b'`;
   const [yt] = await sql`select id from postroom.posts where platform = 'youtube' and status = 'published' and external_id is not null limit 1`;
@@ -1123,7 +1123,10 @@ test('archive: a published YouTube video goes Private (keeping its other setting
   const b = await archivePost(yt.id, { undo: true });
   assert.equal(b.privacy, 'public');
   const [ig] = await sql`select id from postroom.posts where platform = 'instagram' and status = 'published' and external_id is not null limit 1`;
-  await assert.rejects(archivePost(ig.id), /Instagram doesn't let apps archive posts/);
+  const igA = await archivePost(ig.id);
+  assert.match(igA.note, /archive it in the Instagram app too/);
+  assert.ok((await sql`select archived_at from postroom.posts where id = ${ig.id}`)[0].archived_at);
+  await archivePost(ig.id, { undo: true });
   state.ytPrivacy = null;
 });
 
