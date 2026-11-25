@@ -15,7 +15,7 @@ async function saveAccountInsight(accountId, kind, data, error = null) {
 export async function collectPostInsights({ deadline = Date.now() + 120000, postIds = null, force = false } = {}) {
   const posts = await db()`select p.*, m.duration_s from postroom.posts p
     left join postroom.media m on m.id = p.media_ids[1]
-    where p.status = 'published' and p.platform = 'youtube' and p.external_id is not null
+    where p.status = 'published' and p.archived_at is null and p.platform = 'youtube' and p.external_id is not null
       and p.published_at > now() - interval '45 days'
       ${postIds?.length ? db()`and p.id = any(${postIds}::uuid[])` : force ? db()`` : db()`and (p.insights_at is null or p.insights_at < now() - interval '3 hours')`}
     order by p.published_at desc limit 60`;

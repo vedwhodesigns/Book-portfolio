@@ -365,9 +365,44 @@ export async function archivePost(id, { undo = false, by = 'app' } = {}) {
   const { accessToken } = await import('./accounts.js');
   const { setPrivacy } = await import('./platforms/youtube.js');
   const r = await setPrivacy({ token: await accessToken(account), videoId: p.external_id, privacy: undo ? 'public' : 'private' });
-  const [row] = await db()`update postroom.posts set options = options || ${db().json({ privacy: r.to })},
+  const [row] = await db()`update postroom.posts set options = options || ${db().json({ privacy: r.to })}, archived_at = ${undo ? null : new Date()},
       upload = upload || ${db().json({ archived: !undo, archived_at: undo ? null : new Date().toISOString() })}, updated_at = now()
     where id = ${id} returning id, platform, external_id, permalink, options, upload`;
   await logEvent({ postId: id, accountId: p.account_id, message: `${undo ? 'Unarchived' : 'Archived'} on YouTube (${r.from} → ${r.to}) by ${by}` });
   return { ...row, privacy: r.to };
+}
+
+/**
+ * Posts archived in the Instagram app disappear from the account's media list; mark them archived (and bring
+ * them back if they are unarchived) so analytics only counts what is live.
+ */
+export async function syncInstagramArchive() {
+  const { accessToken } = await import('./accounts.js');
+  const { igGet } = await import('./platforms/instagram.js');
+  const accounts = await db()`select * from postroom.accounts where platform = 'instagram' and status = 'active'`;
+  const out = {};
+  for (const a of accounts) {
+    try {
+      const r = await igGet(`${a.external_id}/media`, await accessToken(a), { fields: 'id,timestamp', limit: 100 }, a);
+      const live = new Set((r.data || []).map((m) => String(m.id)));
+      if (!live.size) continue;
+      const oldest = new Date(Math.min(...(r.data || []).map((m) => new Date(String(m.timestamp).replace(/([+-]\d\d)(\d\d)$/, '$1:$2')).getTime())));
+      const ours = await db()`select id, external_id, archived_at from postroom.posts where account_id = ${a.id} and status = 'published'
+        and kind <> 'story' and external_id is not null and published_at >= ${oldest}`;
+      let archived = 0, restored = 0;
+      for (const p of ours) {
+        const isLive = live.has(String(p.external_id));
+        if (!isLive && !p.archived_at) {
+          await db()`update postroom.posts set archived_at = now(), upload = upload || ${db().json({ archived: true, archived_in: 'instagram app' })} where id = ${p.id}`;
+          await logEvent({ postId: p.id, accountId: a.id, message: 'Archived or deleted in the Instagram app: left out of analytics' });
+          archived++;
+        } else if (isLive && p.archived_at) {
+          await db()`update postroom.posts set archived_at = null, upload = upload || ${db().json({ archived: false })} where id = ${p.id}`;
+          restored++;
+        }
+      }
+      out[a.username] = { archived, restored };
+    } catch (e) { out[a.username] = { error: e.message }; }
+  }
+  return out;
 }

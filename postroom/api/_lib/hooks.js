@@ -30,7 +30,7 @@ export async function listHooks({ brand = null, account_id = null, days = 120 } 
     from postroom.posts p join postroom.accounts a on a.id = p.account_id
     left join postroom.plan_ideas i on i.id = p.idea_id
     left join postroom.media m on m.id = p.media_ids[1]
-    where p.status = 'published' and p.kind in ('reel', 'short', 'video')
+    where p.status = 'published' and p.archived_at is null and p.kind in ('reel', 'short', 'video')
       and p.published_at > now() - make_interval(days => ${Number(days) || 120})
       ${brand ? db()`and a.brand->>'name' = ${brand}` : db()``}
       ${account_id ? db()`and p.account_id = ${account_id}` : db()``}

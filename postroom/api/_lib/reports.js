@@ -123,7 +123,7 @@ export async function weekData({ brand, start, end }) {
     left join postroom.plan_ideas i on i.id = p.idea_id
     left join postroom.plan_series s on s.id = i.series_id
     left join postroom.media m on m.id = p.media_ids[1]
-    where p.status = 'published' and p.account_id = any(${ids}) and p.published_at >= ${prevStart} and p.published_at < ${end}
+    where p.status = 'published' and p.archived_at is null and p.account_id = any(${ids}) and p.published_at >= ${prevStart} and p.published_at < ${end}
     order by p.published_at`;
   // plus everything posted on these accounts outside Postroom (phone, Studio…), so each brand's report is complete
   const notes = [];

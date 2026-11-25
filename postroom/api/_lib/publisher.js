@@ -162,6 +162,7 @@ export async function housekeeping(deadline = Date.now() + 60000) {
   // Stats: checked every ~10 min; each post is refreshed on an age-based schedule (see collectMetrics).
   if (Date.now() < deadline - 20000) out.metrics = await throttle('metrics', 9 * 60, () => collectMetrics({ deadline }));
   if (Date.now() < deadline - 20000) out.followers = await throttle('followers', 2 * 3600, collectFollowers);
+  if (Date.now() < deadline - 20000) out.archive = await throttle('ig-archive', 30 * 60, async () => (await import('./posts.js')).syncInstagramArchive()).catch((e) => ({ error: e.message }));
   if (Date.now() < deadline - 25000) out.postInsights = await throttle('post-insights', 3 * 3600, () => collectPostInsights({ deadline }));
   if (Date.now() < deadline - 25000) out.daily = await throttle('account-daily', 3 * 3600, () => collectAccountInsights({ kinds: ['daily'] }));
   if (Date.now() < deadline - 25000) out.audience = await throttle('account-audience', 12 * 3600, () => collectAccountInsights({ kinds: ['audience'] }));
@@ -271,7 +272,7 @@ async function refreshTokens() {
 export async function collectMetrics({ deadline = Date.now() + 120000, force = false, postIds = null } = {}) {
   if (typeof arguments[0] === 'number') deadline = arguments[0];
   const posts = await db()`select * from postroom.posts
-    where status = 'published' and external_id is not null and coalesce((upload->>'inbox')::boolean, false) = false
+    where status = 'published' and archived_at is null and external_id is not null and coalesce((upload->>'inbox')::boolean, false) = false
       and published_at > now() - interval '45 days'
       ${postIds?.length ? db()`and id = any(${postIds}::uuid[])` : db()``}
       ${force ? db()`` : db()`and (metrics_at is null or metrics_at < now() - case

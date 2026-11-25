@@ -180,7 +180,7 @@ before(async () => {
   if (skip) return;
   sql = postgres(URL_, { onnotice: () => {}, transform: { undefined: null } });
   await sql.unsafe('drop schema if exists postroom cascade');
-  for (const f of ['001_base.sql', '002_multiplatform.sql', '003_research.sql', '004_inbox.sql', '005_alerts_brand.sql', '006_planning.sql', '007_insights.sql', '008_reports.sql', '009_videolab.sql', '010_comment_replies.sql', '011_report_share.sql']) await sql.unsafe(fs.readFileSync(new URL(`../db/${f}`, import.meta.url), 'utf8'));
+  for (const f of ['001_base.sql', '002_multiplatform.sql', '003_research.sql', '004_inbox.sql', '005_alerts_brand.sql', '006_planning.sql', '007_insights.sql', '008_reports.sql', '009_videolab.sql', '010_comment_replies.sql', '011_report_share.sql', '012_archived.sql']) await sql.unsafe(fs.readFileSync(new URL(`../db/${f}`, import.meta.url), 'utf8'));
   globalThis.fetch = fakeFetch;
   core = await import('../api/_lib/core.js');
   posts = await import('../api/_lib/posts.js');
@@ -1125,4 +1125,20 @@ test('archive: a published YouTube video goes Private (keeping its other setting
   const [ig] = await sql`select id from postroom.posts where platform = 'instagram' and status = 'published' and external_id is not null limit 1`;
   await assert.rejects(archivePost(ig.id), /Instagram doesn't let apps archive posts/);
   state.ytPrivacy = null;
+});
+
+test('archived posts: Instagram archives are detected and archived posts leave analytics', { skip }, async () => {
+  const [acct] = await sql`select id from postroom.accounts where username = 'brand.one'`;
+  await sql`update postroom.accounts set status = 'active' where id = ${acct.id}`;
+  const [p] = await sql`insert into postroom.posts (account_id, platform, kind, caption, scheduled_at, status, published_at, external_id, metrics)
+    values (${acct.id}, 'instagram', 'reel', 'archived one', now(), 'published', now(), 'gone123', ${sql.json({ views: 999999 })}) returning id`;
+  const before = await analytics.overview({ days: 30 });
+  assert.ok(before.top_posts.some((x) => x.id === p.id), 'counted while live');
+  const r = await posts.syncInstagramArchive();
+  assert.ok(r['brand.one'].archived >= 1, JSON.stringify(r));
+  const [row] = await sql`select archived_at from postroom.posts where id = ${p.id}`;
+  assert.ok(row.archived_at, 'missing from the Instagram media list → archived');
+  const after = await analytics.overview({ days: 30 });
+  assert.ok(!after.top_posts.some((x) => x.id === p.id), 'archived posts leave analytics');
+  assert.ok(after.totals.views < before.totals.views);
 });

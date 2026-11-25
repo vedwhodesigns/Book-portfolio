@@ -409,10 +409,11 @@ export default async function handler(req, res) {
       const { collectMetrics, collectFollowers } = await import('./_lib/publisher.js');
       const metrics = await collectMetrics({ force: true, postIds: ids, deadline: Date.now() + 200000 });
       const followers = ids ? null : await collectFollowers();
+      const archive = ids ? null : await (await import('./_lib/posts.js')).syncInstagramArchive().catch((e) => ({ error: e.message }));
       const ins = await import('./_lib/insights.js');
       const deep = await ins.collectPostInsights({ postIds: ids, force: !ids, deadline: Date.now() + 120000 }).catch((e) => ({ error: e.message }));
       const accounts = ids ? null : await ins.collectAccountInsights({ kinds: ['daily', 'audience'] }).catch((e) => ({ error: e.message }));
-      return send(res, 200, { metrics, followers, insights: deep, accounts });
+      return send(res, 200, { metrics, followers, archive, insights: deep, accounts });
     }
     if (p === 'analytics/hooks' && m === 'GET') {
       const hk = await import('./_lib/hooks.js');
