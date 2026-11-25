@@ -2,7 +2,7 @@
 // tap Send (or edit first), Skip, or Rewrite. Nothing posts until you tap.
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { api, relTime } from '../api.js';
-import { useApp, useAsync, Icon, Spinner, Empty, PfMark } from '../ui.jsx';
+import { useApp, useAsync, Icon, Spinner, Empty, PfMark, Avatar } from '../ui.jsx';
 
 const VIEWS = [['review', 'To reply'], ['sent', 'Replied'], ['all', 'All']];
 
@@ -36,22 +36,28 @@ function Card({ c, onDone, focus }) {
         <PfMark platform={c.platform || 'instagram'} size={14} />
         <span class="tiny faint">{c.brand || `@${c.account_username}`}</span>
       </div>
-      <div class="cm-who">
-        {profile ? <a href={profile} target="_blank" rel="noreferrer"><b>{name}</b></a> : <b>{name}</b>}
-        <span class="tiny faint">{relTime(c.created_at)}</span>
+      <div class="cm-msg">
+        <Avatar name={c.username || '?'} size={32} />
+        <div class="cm-bubble">
+          <div class="cm-who">
+            {profile ? <a href={profile} target="_blank" rel="noreferrer"><b>{name}</b></a> : <b>{name}</b>}
+            <span class="tiny faint">{relTime(c.created_at)}</span>
+          </div>
+          <p class="cm-text">{c.text || <span class="faint">(empty comment)</span>}</p>
+        </div>
       </div>
-      <p class="cm-text">{c.text || <span class="faint">(empty comment)</span>}</p>
       {c.reply_status === 'needs_you' && c.reply_note && <div class="cm-note"><Icon name="alert" size={14} /> {c.reply_note}</div>}
-      {c.reply_status === 'sent' && <div class="cm-sent">↳ {c.reply_sent_text} <span class="faint">· {relTime(c.replied_at)}</span></div>}
+      {c.reply_status === 'sent' && <div class="cm-sent"><span class="cm-reply-bubble">{c.reply_sent_text}</span><span class="tiny faint">Replied {relTime(c.replied_at)}</span></div>}
       {c.reply_status === 'skipped' && <div class="tiny faint">Skipped{c.reply_note ? `: ${c.reply_note}` : ''}</div>}
       {open && (
         <>
+          <div class="cm-reply-label tiny faint">Your reply</div>
           <textarea ref={ta} class="cm-input" rows={2} value={text} placeholder="Write a short reply…" aria-label={`Reply to ${name}`}
             autoFocus={focus} onInput={(e) => setText(e.currentTarget.value)} />
           <div class="cm-actions">
-            <button class="btn" disabled={!!busy} onClick={() => run('skip', () => api(`inbox/comments/${c.id}/skip`, { method: 'POST' }), 'Skipped')}>Skip</button>
-            <button class="btn" disabled={!!busy} aria-label="New suggestion" title="New suggestion" onClick={() => run('redraft', () => api(`inbox/comments/${c.id}/redraft`, { method: 'POST', body: {} }))}>
-              {busy === 'redraft' ? <Spinner /> : <Icon name="sparkle" size={16} />}
+            <button class="btn ghost" disabled={!!busy} onClick={() => run('skip', () => api(`inbox/comments/${c.id}/skip`, { method: 'POST' }), 'Skipped')}>Skip</button>
+            <button class="btn ghost cm-redraft" disabled={!!busy} aria-label="New suggestion" title="New suggestion" onClick={() => run('redraft', () => api(`inbox/comments/${c.id}/redraft`, { method: 'POST', body: {} }))}>
+              {busy === 'redraft' ? <Spinner /> : <Icon name="sparkle" size={16} />}<span class="hide-xs">Rewrite</span>
             </button>
             <button class="btn primary grow" disabled={!!busy || !text.trim()} onClick={() => run('send', () => api(`inbox/comments/${c.id}/reply`, { method: 'POST', body: { text } }), `Replied to ${name}`)}>
               {busy === 'send' ? <Spinner /> : <Icon name="send" size={16} />} Send

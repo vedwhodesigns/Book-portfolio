@@ -181,7 +181,7 @@ function App() {
         <nav class="tabbar" aria-label="Main">
           {[['home', 'Home', 'home'], ['comments', 'Comments', 'chat'], ['compose', 'Post', 'plus'], ['analytics', 'Analytics', 'chart'], ['alerts', 'Alerts', 'bell']].map(([p, l, i]) => (
             <a key={p} href={`#/${p}`} aria-current={route.path === p ? 'page' : undefined} class={`${route.path === p ? 'on' : ''} ${p === 'compose' ? 'plus' : ''}`}>
-              <span class="ic"><Icon name={i} size={21} /></span>{l}
+              <span class="ic"><Icon name={i} size={p === 'compose' ? 22 : 21} stroke={route.path === p ? 2.2 : 1.8} /></span><span class="lbl">{l}</span>
               {p === 'comments' && toReply > 0 && <span class="badge">{toReply > 99 ? '99+' : toReply}</span>}
               {p === 'alerts' && alerts > 0 && <span class="badge">{alerts > 99 ? '99+' : alerts}</span>}
               {p === 'home' && (needsAttention > 0 || plansCount > 0) && <span class="badge dot-badge" aria-label="Needs attention" />}

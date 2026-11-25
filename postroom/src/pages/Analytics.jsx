@@ -5,7 +5,7 @@ import { HooksTab, AudienceTab } from './Insights.jsx';
 import { ReportsTab } from './Reports.jsx';
 
 function Delta({ cur, prev }) {
-  if (!prev) return <span class="delta faint">—</span>;
+  if (!prev) return null;
   const d = (cur - prev) / prev;
   const up = d >= 0;
   return <span class={`delta ${up ? 'up' : 'down'}`}>{up ? '▲' : '▼'} {Math.abs(Math.round(d * 100))}% <span class="faint" style={{ fontWeight: 500 }}>vs prev.</span></span>;
@@ -161,7 +161,7 @@ function Overview({ tabs }) {
       {head}
       <div class="kpis">
         {[['views', 'Views'], ['likes', 'Likes'], ['comments', 'Comments'], ['shares', 'Shares'], ['posts', 'Posts published']].map(([k, l]) => (
-          <div class="card kpi" key={k}>
+          <div class={`card kpi kpi-${k}`} key={k}>
             <div class="k">{l}</div>
             <div class="v num">{fmtNum(t[k])}</div>
             <Delta cur={t[k]} prev={pv[k]} />

@@ -1,6 +1,6 @@
 // Home: the phone-first start screen. What needs you, what's next, how each brand is doing, what just went out.
 import { api, fmtNum, fmtTime, fmtDate, relTime, dayKey, todayKey, addDays } from '../api.js';
-import { useApp, useAsync, Icon, Spinner, PfMark } from '../ui.jsx';
+import { useApp, useAsync, Icon, Spinner, PfMark, Avatar } from '../ui.jsx';
 
 const SHORTCUTS = [
   ['calendar', 'Calendar', 'calendar'],
@@ -70,7 +70,7 @@ export default function Home() {
             <a key={t.text} href={t.href} class={`h-todo-item ${t.tone}`}>
               <span class="ic"><Icon name={t.icon} size={18} /></span>
               <span class="grow">{t.text}</span>
-              <span class="faint" aria-hidden="true" style={{ fontSize: 20, lineHeight: 1 }}>›</span>
+              <span class="faint" aria-hidden="true"><Icon name="chevR" size={18} /></span>
             </a>
           ))}
         </div>
@@ -78,15 +78,18 @@ export default function Home() {
 
       {d.empty_slots.length > 0 && (
         <section class="h-sec">
-          <h2>Nothing scheduled in the next 24 hours</h2>
-          <div class="col" style={{ gap: 8 }}>
+          <div class="row between"><h2>Open slots</h2><span class="tiny faint">next 24 hours</span></div>
+          <div class="card h-list">
             {d.empty_slots.map((e) => {
               const a = brandAcct(e.brand);
               return (
-                <a key={e.brand} class="h-row card" href={`#/compose${a ? `?account=${a.id}` : ''}`}>
-                  <span class="h-slot">{e.time || '—'}</span>
-                  <span class="grow"><b>{e.brand}</b><div class="tiny faint">Next slot is empty</div></span>
-                  <span class="btn sm primary"><Icon name="plus" size={14} /> Post</span>
+                <a key={e.brand} class="h-item h-slotrow" href={`#/compose${a ? `?account=${a.id}` : ''}`}>
+                  <Avatar src={a?.profile_picture_url} name={e.brand} size={40} />
+                  <span class="grow" style={{ minWidth: 0 }}>
+                    <b class="ellipsis">{e.brand}</b>
+                    <span class="tiny faint">{e.time ? `${e.time} · empty slot` : 'Empty slot'}</span>
+                  </span>
+                  <span class="h-add" aria-label={`Post for ${e.brand}`}><Icon name="plus" size={18} /></span>
                 </a>
               );
             })}
@@ -126,10 +129,14 @@ export default function Home() {
           <div class="h-brands">
             {d.brands.map((b) => (
               <a key={b.brand} class="card h-brand" href="#/analytics">
-                <div class="row" style={{ gap: 4 }}>{(b.platforms || []).map((pf) => <PfMark key={pf} platform={pf} size={14} />)}</div>
-                <b class="ellipsis">{b.brand}</b>
+                <div class="row between" style={{ gap: 6 }}>
+                  <Avatar src={brandAcct(b.brand)?.profile_picture_url} name={b.brand} size={28} />
+                  <span class="row" style={{ gap: 3 }}>{(b.platforms || []).map((pf) => <PfMark key={pf} platform={pf} size={14} />)}</span>
+                </div>
+                <b class="ellipsis small">{b.brand}</b>
                 <div class="h-big">{fmtNum(b.views_7d)}</div>
-                <div class="tiny faint">views · {b.posts_7d} post{b.posts_7d === 1 ? '' : 's'} · {fmtNum(b.followers)} followers</div>
+                <div class="tiny faint">views · {b.posts_7d} post{b.posts_7d === 1 ? '' : 's'}</div>
+                <div class="tiny faint">{fmtNum(b.followers)} followers</div>
               </a>
             ))}
           </div>
