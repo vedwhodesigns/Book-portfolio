@@ -648,7 +648,7 @@ export default function Compose({ params }) {
                   ))}
                 </div>
               ) : null}
-            <button class="btn primary block" style={{ marginTop: 14, height: 42 }} disabled={!canSubmit} onClick={submit}>
+            <button class="btn primary block post-cta" style={{ marginTop: 14, height: 46 }} disabled={!canSubmit} onClick={submit}>
               {busy ? <Spinner /> : <Icon name={when === 'now' ? 'send' : when === 'draft' ? 'layers' : 'clock'} size={16} />}
               {when === 'now' ? `Post now${targets.length > 1 ? ` to ${targets.length} accounts` : ''}` : when === 'draft' ? `Save ${targets.length > 1 ? `${targets.length} drafts` : 'draft'}` : `Schedule${targets.length > 1 ? ` ${targets.length} posts` : ''}`}
             </button>

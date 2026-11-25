@@ -69,7 +69,18 @@ function PhoneSetup() {
     }
   };
 
-  if (!status) return <section class="card pad"><Spinner /></section>;
+  if (!status) return <section class="card pad" style={{ marginBottom: 12 }}><Spinner /></section>;
+  if (supported() && mine) {
+    // already on for this phone: one quiet line instead of the whole setup card
+    return (
+      <div class="row wrap small" style={{ gap: 8, marginBottom: 12 }}>
+        <span class="pill good"><span class="dot" />Notifications on for this device</span>
+        <span class="grow" />
+        <button class="btn ghost sm" disabled={busy} onClick={() => api('push/test', { method: 'POST' }).then(() => toast('Test sent'))}>Test</button>
+        <button class="btn ghost sm danger" disabled={busy} onClick={disable}>Turn off</button>
+      </div>
+    );
+  }
   return (
     <section class="card pad" style={{ marginBottom: 16 }}>
       <h2 class="row" style={{ marginTop: 0 }}><Icon name="bell" size={16} /> Phone notifications</h2>
@@ -110,7 +121,7 @@ export default function Alerts() {
   const acct = (id) => accounts.find((a) => a.id === id);
   return (
     <>
-      <div class="page-head"><h1>Alerts</h1><span class="sub">Everything Postroom did for you, newest first.</span></div>
+      <div class="page-head"><h1>Alerts</h1></div>
       <div style={{ maxWidth: 760 }}>
         <PhoneSetup />
         <section class="card">

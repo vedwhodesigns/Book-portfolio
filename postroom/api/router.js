@@ -325,6 +325,8 @@ export default async function handler(req, res) {
       }
     }
 
+    if (p === 'home' && m === 'GET') return send(res, 200, await (await import('./_lib/home.js')).homeData());
+
     // plans
     if (p === 'plans' && m === 'GET') return send(res, 200, await listPlans(query(req)));
     if (seg[0] === 'plans' && seg[2] === 'approve' && m === 'POST') return send(res, 200, await approvePlan(seg[1]));

@@ -418,15 +418,23 @@ export async function saveDraft(threadId, text, by = 'claude') {
   return { ok: true };
 }
 
-export async function listComments({ account_id = null, review = false, limit = 100 } = {}) {
-  return db()`select c.*, a.username as account_username, a.platform as account_platform, a.brand->>'name' as brand, r.name as rule_name,
-      coalesce(p.title, split_part(p.caption, E'\n', 1)) as post_title, p.permalink as post_url, p.id as post_id
+export async function listComments({ account_id = null, review = false, status = null, brand = null, limit = 100 } = {}) {
+  const sql = db();
+  return sql`select c.*, a.username as account_username, a.platform as account_platform, a.profile_picture_url as account_avatar,
+      a.brand->>'name' as brand, r.name as rule_name,
+      coalesce(p.title, split_part(p.caption, E'\n', 1)) as post_title, p.permalink as post_url, p.id as post_id, p.thumb as post_thumb
     from postroom.ig_comments c join postroom.accounts a on a.id = c.account_id
     left join postroom.auto_rules r on r.id = c.rule_id
-    left join lateral (select id, title, caption, permalink from postroom.posts where account_id = c.account_id and external_id = c.media_external_id limit 1) p on true
-    where not c.is_reply ${account_id ? db()`and c.account_id = ${account_id}` : db()``}
-      ${review === true || review === 'true' ? db()`and c.reply_status in ('draft', 'needs_you')` : db()``}
-    order by c.created_at desc limit ${Math.min(Number(limit) || 100, 300)}`;
+    left join lateral (select q.id, q.title, q.caption, q.permalink,
+        coalesce((select x.url from postroom.media x where x.id = q.cover_media_id), m.poster_url, case when m.kind = 'image' then m.url end) as thumb
+      from postroom.posts q left join postroom.media m on m.id = q.media_ids[1]
+      where q.account_id = c.account_id and q.external_id = c.media_external_id limit 1) p on true
+    where not c.is_reply ${account_id ? sql`and c.account_id = ${account_id}` : sql``}
+      ${brand ? sql`and a.brand->>'name' = ${brand}` : sql``}
+      ${review === true || review === 'true' ? sql`and c.reply_status in ('draft', 'needs_you')` : sql``}
+      ${status ? sql`and c.reply_status = ${status}` : sql``}
+    order by ${review === true || review === 'true' ? sql`(c.reply_status = 'needs_you'), c.created_at desc` : sql`c.created_at desc`}
+    limit ${Math.min(Number(limit) || 100, 300)}`;
 }
 
 // ---------- rules ----------

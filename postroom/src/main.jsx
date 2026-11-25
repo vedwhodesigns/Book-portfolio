@@ -15,13 +15,17 @@ import Research from './pages/Research.jsx';
 import Inbox from './pages/Inbox.jsx';
 import Alerts from './pages/Alerts.jsx';
 import Planner from './pages/Planner.jsx';
+import Home from './pages/Home.jsx';
+import Comments from './pages/Comments.jsx';
 import { backfillPosters } from './posters.js';
 import PostDrawer from './pages/PostDrawer.jsx';
 
 const NAV = [
+  { path: 'home', label: 'Home', icon: 'home' },
+  { path: 'comments', label: 'Comments', icon: 'chat' },
   { path: 'calendar', label: 'Calendar', icon: 'calendar' },
   { path: 'queue', label: 'Queue', icon: 'list' },
-  { path: 'inbox', label: 'Inbox', icon: 'inbox' },
+  { path: 'inbox', label: 'DMs', icon: 'inbox' },
   { path: 'alerts', label: 'Alerts', icon: 'bell' },
   { path: 'planner', label: 'Planner', icon: 'board' },
   { path: 'plans', label: 'Approvals', icon: 'sparkle' },
@@ -31,12 +35,12 @@ const NAV = [
   { path: 'research', label: 'Research', icon: 'layers', ext: true },
   { path: 'settings', label: 'Settings', icon: 'settings' },
 ];
-const PAGES = { calendar: Calendar, compose: Compose, queue: Queue, plans: Plans, analytics: Analytics, accounts: Accounts, library: Library, settings: Settings, research: Research, inbox: Inbox, alerts: Alerts, planner: Planner };
+const PAGES = { home: Home, comments: Comments, calendar: Calendar, compose: Compose, queue: Queue, plans: Plans, analytics: Analytics, accounts: Accounts, library: Library, settings: Settings, research: Research, inbox: Inbox, alerts: Alerts, planner: Planner };
 
 function parseHash() {
   const h = location.hash.replace(/^#\/?/, '');
   const [path, qs] = h.split('?');
-  return { path: PAGES[path] ? path : 'calendar', params: Object.fromEntries(new URLSearchParams(qs || '')) };
+  return { path: PAGES[path] ? path : 'home', params: Object.fromEntries(new URLSearchParams(qs || '')) };
 }
 
 function Login({ onDone }) {
@@ -81,6 +85,7 @@ function App() {
   const [plansCount, setPlansCount] = useState(0);
   const [unread, setUnread] = useState(0);
   const [alerts, setAlerts] = useState(0);
+  const [toReply, setToReply] = useState(0);
   const [toasts, setToasts] = useState([]);
   const [openId, setOpenId] = useState(null);
   const [bump, setBump] = useState(0);
@@ -98,7 +103,11 @@ function App() {
     setAccounts(accs);
     setPlansCount(plans.length);
     api('inbox/status').then((s) => setUnread(s.unread || 0)).catch(() => {});
+    loadCounts();
+  }, []);
+  const loadCounts = useCallback(() => {
     api('notifications', { query: { limit: 1 } }).then((n) => setAlerts(n.unread || 0)).catch(() => {});
+    api('inbox/comments/counts').then((c) => setToReply((c.drafts || 0) + (c.needs_you || 0))).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -118,11 +127,13 @@ function App() {
       // quietly make preview images for videos that arrived without one
       setTimeout(() => backfillPosters(cfg.storage?.mode, () => setBump((b) => b + 1)), 2500);
     }).catch((e) => toast(e.message, 'bad'));
+    const t = setInterval(() => { if (document.visibilityState === 'visible') loadCounts(); }, 60000);
     // OAuth round-trip messages
     const q = new URLSearchParams(location.search);
     if (q.get('connected')) toast(`Connected ${q.get('connected').replace(':', ' @')}`);
     if (q.get('error')) toast(q.get('error'), 'bad');
     if (q.get('connected') || q.get('error')) history.replaceState(null, '', `/${location.hash}`);
+    return () => clearInterval(t);
   }, [authed]);
 
   const ctx = useMemo(() => ({
@@ -131,9 +142,10 @@ function App() {
     toast,
     openPost: setOpenId,
     refresh: () => { setBump((b) => b + 1); loadBasics().catch(() => {}); },
+    refreshCounts: loadCounts,
     bump,
     go: (path) => { location.hash = `#/${path}`; },
-  }), [config, accounts, toast, bump, loadBasics]);
+  }), [config, accounts, toast, bump, loadBasics, loadCounts]);
 
   if (authed === null) return <div class="login"><Spinner /></div>;
   if (!authed) return <Login onDone={() => setAuthed(true)} />;
@@ -156,6 +168,7 @@ function App() {
                 {n.path === 'plans' && plansCount > 0 && <span class="badge">{plansCount}</span>}
                 {n.path === 'inbox' && unread > 0 && <span class="badge">{unread}</span>}
                 {n.path === 'alerts' && alerts > 0 && <span class="badge">{alerts}</span>}
+                {n.path === 'comments' && toReply > 0 && <span class="badge">{toReply}</span>}
                 {n.path === 'accounts' && needsAttention > 0 && <span class="badge" title="Needs attention">!</span>}
               </a>,
             ])}
@@ -166,11 +179,12 @@ function App() {
           <Page params={route.params} key={route.path} />
         </main>
         <nav class="tabbar" aria-label="Main">
-          {[['calendar', 'Calendar', 'calendar'], ['queue', 'Queue', 'list'], ['compose', 'New', 'plus'], ['alerts', 'Alerts', 'bell'], ['settings', 'More', 'more']].map(([p, l, i]) => (
-            <a key={p} href={`#/${p}`} class={`${route.path === p || (p === 'settings' && ['accounts', 'plans', 'library', 'research', 'inbox', 'analytics', 'planner'].includes(route.path)) ? 'on' : ''} ${p === 'compose' ? 'plus' : ''}`}>
-              <span class="ic"><Icon name={i} size={20} /></span>{l}
-              {p === 'settings' && (plansCount > 0 || needsAttention > 0 || unread > 0) && <span class="badge">{plansCount + needsAttention + unread}</span>}
-              {p === 'alerts' && alerts > 0 && <span class="badge">{alerts}</span>}
+          {[['home', 'Home', 'home'], ['comments', 'Comments', 'chat'], ['compose', 'Post', 'plus'], ['analytics', 'Analytics', 'chart'], ['alerts', 'Alerts', 'bell']].map(([p, l, i]) => (
+            <a key={p} href={`#/${p}`} aria-current={route.path === p ? 'page' : undefined} class={`${route.path === p ? 'on' : ''} ${p === 'compose' ? 'plus' : ''}`}>
+              <span class="ic"><Icon name={i} size={21} /></span>{l}
+              {p === 'comments' && toReply > 0 && <span class="badge">{toReply > 99 ? '99+' : toReply}</span>}
+              {p === 'alerts' && alerts > 0 && <span class="badge">{alerts > 99 ? '99+' : alerts}</span>}
+              {p === 'home' && (needsAttention > 0 || plansCount > 0) && <span class="badge dot-badge" aria-label="Needs attention" />}
             </a>
           ))}
         </nav>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { api, relTime, fmtDateTime } from '../api.js';
 import { useApp, useAsync, Icon, Seg, Empty, Spinner, Avatar, CopyField, Toggle, PfMark } from '../ui.jsx';
+import { CommentsList } from './Comments.jsx';
 
 const KIND = {
   welcome: { label: 'Welcome message', hint: 'Sent once, the first time someone DMs you.' },
@@ -401,13 +402,12 @@ export default function Inbox({ params }) {
     <>
       <div class="page-head">
         <h1>Inbox</h1>
-        <span class="sub">Instagram DMs and comments from all your accounts.</span>
         <div class="grow" />
         <Seg value={tab} onChange={setTab} options={[{ value: 'messages', label: 'Messages' }, { value: 'comments', label: 'Comments' }, { value: 'automations', label: 'Automations' }]} />
       </div>
-      {status.data && <SetupCard status={status.data} onDone={status.reload} />}
+      {status.data && tab === 'messages' && <SetupCard status={status.data} onDone={status.reload} />}
       {tab === 'messages' && status.data && <Messages status={status.data} />}
-      {tab === 'comments' && <Comments />}
+      {tab === 'comments' && <CommentsList compact />}
       {tab === 'automations' && <Automations />}
     </>
   );

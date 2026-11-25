@@ -95,7 +95,7 @@ function RefreshButton({ onDone }) {
       onDone?.();
     } catch (e) { toast(e.message, 'bad'); } finally { setBusy(false); }
   };
-  return <button class="btn sm" disabled={busy} onClick={run}>{busy ? <Spinner /> : <Icon name="refresh" size={14} />} Refresh now</button>;
+  return <button class="btn sm" disabled={busy} onClick={run} title="Pull the latest numbers">{busy ? <Spinner /> : <Icon name="refresh" size={14} />}<span class="hide-sm"> Refresh now</span></button>;
 }
 
 export default function Analytics({ params = {} }) {
@@ -107,7 +107,7 @@ export default function Analytics({ params = {} }) {
   const brands = [...new Set(accounts.map((a) => a.brand?.name).filter(Boolean))];
   return (
     <>
-      <div class="page-head"><h1>Analytics</h1>{tabs}<div class="grow" /><RefreshButton onDone={() => setBump((b) => b + 1)} /></div>
+      <div class="page-head"><h1>Analytics</h1><div class="grow" /><RefreshButton onDone={() => setBump((b) => b + 1)} />{tabs}</div>
       {tab === 'hooks' && <HooksTab key={bump} brands={brands} />}
       {tab === 'audience' && <AudienceTab key={bump} />}
       {tab === 'reports' && <ReportsTab key={bump} brands={brands} params={params} />}
@@ -132,16 +132,21 @@ function Overview({ tabs }) {
   const pfs = [...new Set(accounts.map((a) => a.platform))];
 
   const head = (
-    <div class="page-head">
-      <h1>Analytics</h1>
-      {tabs}
-      {loading && <Spinner />}
-      <div class="grow" />
-      {data?.updated_at && <span class="tiny faint" title="New posts refresh every 10 min for 6 hours, hourly for 2 days, then every 3–12 hours">Updated {relTime(data.updated_at)}</span>}
-      <button class="btn sm" disabled={refreshing} onClick={refreshNow}>{refreshing ? <Spinner /> : <Icon name="refresh" size={14} />} Refresh now</button>
-      {pfs.length > 1 && <Seg value={pf} onChange={setPf} options={[{ value: '', label: 'All' }, ...pfs.map((p) => ({ value: p, label: PF[p].label }))]} />}
-      <Seg value={days} onChange={setDays} options={[{ value: 7, label: '7d' }, { value: 30, label: '30d' }, { value: 90, label: '90d' }]} />
-    </div>
+    <>
+      <div class="page-head">
+        <h1>Analytics</h1>
+        {loading && <Spinner />}
+        <div class="grow" />
+        <button class="btn sm" disabled={refreshing} onClick={refreshNow} title="Pull the latest numbers from Instagram & YouTube">{refreshing ? <Spinner /> : <Icon name="refresh" size={14} />}<span class="hide-sm"> Refresh now</span></button>
+        {tabs}
+      </div>
+      <div class="an-filters">
+        {pfs.length > 1 && <Seg value={pf} onChange={setPf} options={[{ value: '', label: 'All' }, ...pfs.map((p) => ({ value: p, label: PF[p].label }))]} />}
+        <Seg value={days} onChange={setDays} options={[{ value: 7, label: '7d' }, { value: 30, label: '30d' }, { value: 90, label: '90d' }]} />
+        <span class="grow" />
+        {data?.updated_at && <span class="tiny faint" title="New posts refresh every 10 min for 6 hours, hourly for 2 days, then every 3–12 hours">Updated {relTime(data.updated_at)}</span>}
+      </div>
+    </>
   );
   if (!data) return <>{head}<div class="skeleton" style={{ height: 300 }} /></>;
   const t = data.totals, pv = data.previous;
