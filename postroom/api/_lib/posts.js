@@ -349,3 +349,25 @@ export async function discardPlan(id) {
   await db()`update postroom.batches set status = 'discarded' where id = ${id}`;
   return { ok: true };
 }
+
+/**
+ * Archive a published post (or bring it back). YouTube: the video becomes Private (or Public again).
+ * Instagram does not let apps archive posts, so that is refused with how to do it in the app.
+ */
+export async function archivePost(id, { undo = false, by = 'app' } = {}) {
+  const [p] = await db()`select * from postroom.posts where id = ${id}`;
+  if (!p) throw new HttpError(404, 'Post not found.');
+  if (p.status !== 'published' || !p.external_id) throw new HttpError(400, 'Only published posts can be archived.');
+  if (p.platform !== 'youtube') {
+    throw new HttpError(400, `${p.platform === 'instagram' ? 'Instagram' : 'This platform'} doesn't let apps archive posts. Open the post in the app → ⋯ → Archive.`);
+  }
+  const [account] = await db()`select * from postroom.accounts where id = ${p.account_id}`;
+  const { accessToken } = await import('./accounts.js');
+  const { setPrivacy } = await import('./platforms/youtube.js');
+  const r = await setPrivacy({ token: await accessToken(account), videoId: p.external_id, privacy: undo ? 'public' : 'private' });
+  const [row] = await db()`update postroom.posts set options = options || ${db().json({ privacy: r.to })},
+      upload = upload || ${db().json({ archived: !undo, archived_at: undo ? null : new Date().toISOString() })}, updated_at = now()
+    where id = ${id} returning id, platform, external_id, permalink, options, upload`;
+  await logEvent({ postId: id, accountId: p.account_id, message: `${undo ? 'Unarchived' : 'Archived'} on YouTube (${r.from} → ${r.to}) by ${by}` });
+  return { ...row, privacy: r.to };
+}

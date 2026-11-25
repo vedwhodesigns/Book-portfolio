@@ -89,6 +89,7 @@ const TOOLS = [
     description: 'Schedule a DRAFT post so it publishes automatically. By default every draft in the same cross-post (e.g. its Instagram and YouTube versions) is scheduled together. Use this instead of re-creating a post. To only change the time of an already-scheduled post, use update_post.',
     inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'Any one post id of the draft' }, scheduled_at: { type: 'string', description: 'Optional new time (ISO with offset, wall-clock "YYYY-MM-DDTHH:mm" in the app time zone, or "next_slot"); omit to keep the draft\'s time.' }, group: { type: 'boolean', description: 'Also schedule the other drafts of the same cross-post (default true).' } }, required: ['id'] },
   },
+  { name: 'archive_post', description: 'Archive a published YouTube video (it becomes Private; undo: true makes it Public again). Instagram does not let apps archive posts: tell the user to archive those in the Instagram app (post → ⋯ → Archive). Only do this when the user asks.', inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'Postroom post id' }, undo: { type: 'boolean' } }, required: ['id'] } },
   { name: 'cancel_post', description: 'Cancel a draft, scheduled or failed post.', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
   {
     name: 'get_analytics',
@@ -234,6 +235,10 @@ async function callTool(name, a = {}) {
         where id = ${a.id} and reply_status is distinct from 'sent' returning id, reply_draft`;
       if (!row) throw new HttpError(404, 'Comment not found or already replied.');
       return row;
+    }
+    case 'archive_post': {
+      const { archivePost } = await import('./posts.js');
+      return archivePost(a.id, { undo: !!a.undo, by: 'claude' });
     }
     case 'post_insights': {
       const ins = await import('./insights.js');

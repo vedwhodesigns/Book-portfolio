@@ -78,6 +78,19 @@ export async function listUploads({ token, channelId, max = 50 }) {
   });
 }
 
+/** Change a video's visibility (public / unlisted / private), keeping every other status setting as it is. */
+export async function setPrivacy({ token, videoId, privacy }) {
+  if (!['public', 'unlisted', 'private'].includes(privacy)) throw new PlatformError('YouTube: privacy must be public, unlisted or private.');
+  const cur = await call(`${API}/videos?part=status&id=${encodeURIComponent(videoId)}`, { headers: authed(token) });
+  const status = cur.items?.[0]?.status;
+  if (!status) throw new PlatformError('YouTube: that video no longer exists on the channel.');
+  const keep = ['privacyStatus', 'license', 'embeddable', 'publicStatsViewable', 'selfDeclaredMadeForKids', 'containsSyntheticMedia'];
+  const next = Object.fromEntries(keep.filter((k) => status[k] !== undefined).map((k) => [k, status[k]]));
+  next.privacyStatus = privacy;
+  await call(`${API}/videos?part=status`, { method: 'PUT', headers: authed(token, { 'content-type': 'application/json' }), body: JSON.stringify({ id: videoId, status: next }) });
+  return { from: status.privacyStatus, to: privacy };
+}
+
 async function tokenRequest(params) {
   return call('https://oauth2.googleapis.com/token', {
     method: 'POST',

@@ -116,6 +116,8 @@ async function fakeFetch(input, init = {}) {
     return json({ items: [{}] });
   }
   if (url.host === 'www.googleapis.com' && url.pathname === '/youtube/v3/playlistItems' && method === 'POST') { state.ytPlaylist = JSON.parse(init.body).snippet; return json({ id: 'pli1' }); }
+  if (url.host === 'www.googleapis.com' && url.pathname === '/youtube/v3/videos' && url.searchParams.get('part') === 'status' && method === 'GET') return json({ items: [{ id: url.searchParams.get('id'), status: { privacyStatus: state.ytPrivacy || 'public', selfDeclaredMadeForKids: false, embeddable: true, license: 'youtube' } }] });
+  if (url.host === 'www.googleapis.com' && url.pathname === '/youtube/v3/videos' && method === 'PUT') { const b = JSON.parse(init.body); state.ytStatusPut = b; state.ytPrivacy = b.status.privacyStatus; return json(b); }
   if (url.host === 'www.googleapis.com' && url.pathname === '/youtube/v3/commentThreads' && method === 'GET') return json({ items: state.ytThreads || [] });
   if (url.host === 'www.googleapis.com' && url.pathname === '/youtube/v3/comments' && method === 'POST') { state.ytReply = JSON.parse(init.body).snippet; return json({ id: 'ytreply1' }); }
   if (url.host === 'www.googleapis.com' && url.pathname === '/youtube/v3/commentThreads' && method === 'POST') { state.ytComment = JSON.parse(init.body).snippet; return json({ id: 'ct1' }); }
@@ -1108,4 +1110,19 @@ test('comment replies: YouTube comments collected, Claude drafts per brand, noth
   assert.ok(!review.some((r) => ['ytc1', 'igc1'].includes(r.comment_id)), 'sent replies leave the review list');
   await sql`update postroom.accounts set brand = '{}'::jsonb where id = '00000000-0000-0000-0000-00000000000b' or username = 'brand.one'`;
   state.ytThreads = null;
+});
+
+test('archive: a published YouTube video goes Private (keeping its other settings) and back; Instagram is refused with how to do it', { skip }, async () => {
+  const { archivePost } = posts;
+  await sql`update postroom.accounts set status = 'active' where id = '00000000-0000-0000-0000-00000000000b'`;
+  const [yt] = await sql`select id from postroom.posts where platform = 'youtube' and status = 'published' and external_id is not null limit 1`;
+  const a = await archivePost(yt.id);
+  assert.equal(a.privacy, 'private');
+  assert.deepEqual(state.ytStatusPut.status, { privacyStatus: 'private', license: 'youtube', embeddable: true, selfDeclaredMadeForKids: false });
+  assert.equal(a.upload.archived, true);
+  const b = await archivePost(yt.id, { undo: true });
+  assert.equal(b.privacy, 'public');
+  const [ig] = await sql`select id from postroom.posts where platform = 'instagram' and status = 'published' and external_id is not null limit 1`;
+  await assert.rejects(archivePost(ig.id), /Instagram doesn't let apps archive posts/);
+  state.ytPrivacy = null;
 });

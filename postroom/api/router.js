@@ -319,6 +319,10 @@ export default async function handler(req, res) {
       if (seg[2] === 'cancel' && m === 'POST') return send(res, 200, await cancelPost(id));
       if (seg[2] === 'schedule' && m === 'POST') return send(res, 200, await schedulePost(id, await body(req)));
       if (seg[2] === 'retry' && m === 'POST') return send(res, 200, await retryPost(id));
+      if (seg[2] === 'archive' && m === 'POST') {
+        const { archivePost } = await import('./_lib/posts.js');
+        return send(res, 200, await archivePost(id, { undo: !!(await body(req)).undo }));
+      }
     }
 
     // plans

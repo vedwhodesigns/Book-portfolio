@@ -55,6 +55,9 @@ export default function PostDrawer({ id, onClose }) {
           <button class="btn" onClick={() => { onClose(); go(`compose?from=${id}`); }}><Icon name="copy" size={16} /> Duplicate</button>
           <span class="grow" />
           {editable && <button class="btn danger" disabled={busy} onClick={() => confirm('Cancel this post?') && act(() => api(`posts/${id}/cancel`, { method: 'POST' }), 'Cancelled')}>Cancel post</button>}
+          {p.status === 'published' && p.platform === 'youtube' && (p.upload?.archived
+            ? <button class="btn" disabled={busy} onClick={() => act(() => api(`posts/${id}/archive`, { method: 'POST', body: { undo: true } }), 'Public again on YouTube')}>Unarchive</button>
+            : <button class="btn" disabled={busy} onClick={() => confirm('Archive this video? It becomes Private on YouTube (only you can see it). You can unarchive it any time.') && act(() => api(`posts/${id}/archive`, { method: 'POST' }), 'Archived: now Private on YouTube')}>Archive</button>)}
           {['cancelled', 'draft', 'failed'].includes(p.status) && <button class="btn ghost danger icon" aria-label="Delete" disabled={busy} onClick={() => confirm('Delete this post for good?') && act(async () => { await api(`posts/${id}`, { method: 'DELETE' }); onClose(); }, 'Deleted')}><Icon name="trash" size={16} /></button>}
         </>
       }
