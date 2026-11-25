@@ -393,7 +393,7 @@ export async function syncInstagramArchive() {
       const live = new Set((r.data || []).map((m) => String(m.id)));
       if (!live.size) continue;
       const oldest = new Date(Math.min(...(r.data || []).map((m) => new Date(String(m.timestamp).replace(/([+-]\d\d)(\d\d)$/, '$1:$2')).getTime())));
-      const ours = await db()`select id, external_id, archived_at from postroom.posts where account_id = ${a.id} and status = 'published'
+      const ours = await db()`select id, external_id, archived_at, upload from postroom.posts where account_id = ${a.id} and status = 'published'
         and kind <> 'story' and external_id is not null and published_at >= ${oldest}`;
       let archived = 0, restored = 0;
       for (const p of ours) {
@@ -402,7 +402,7 @@ export async function syncInstagramArchive() {
           await db()`update postroom.posts set archived_at = now(), upload = upload || ${db().json({ archived: true, archived_in: 'instagram app' })} where id = ${p.id}`;
           await logEvent({ postId: p.id, accountId: a.id, message: 'Archived or deleted in the Instagram app: left out of analytics' });
           archived++;
-        } else if (isLive && p.archived_at) {
+        } else if (isLive && p.archived_at && p.upload?.archived_in === 'instagram app') { // only undo what this sync detected
           await db()`update postroom.posts set archived_at = null, upload = upload || ${db().json({ archived: false })} where id = ${p.id}`;
           restored++;
         }

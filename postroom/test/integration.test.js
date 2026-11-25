@@ -1144,4 +1144,11 @@ test('archived posts: Instagram archives are detected and archived posts leave a
   const after = await analytics.overview({ days: 30 });
   assert.ok(!after.top_posts.some((x) => x.id === p.id), 'archived posts leave analytics');
   assert.ok(after.totals.views < before.totals.views);
+  // a post marked archived by hand stays archived even though Instagram still lists it
+  const [live] = await sql`select id from postroom.posts where account_id = ${acct.id} and external_id = 'pmedia1' limit 1`;
+  if (live) {
+    await posts.archivePost(live.id);
+    await posts.syncInstagramArchive();
+    assert.ok((await sql`select archived_at from postroom.posts where id = ${live.id}`)[0].archived_at, 'manual archive kept');
+  }
 });
