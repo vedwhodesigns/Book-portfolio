@@ -45,7 +45,7 @@ export default function Queue({ params }) {
   const posts = applyFilter(data || [], filter);
   return (
     <>
-      <div class="page-head"><h1>Queue</h1><div class="grow" /><a class="btn primary" href="#/compose"><Icon name="plus" size={16} /> New post</a></div>
+      <div class="page-head"><h1>Queue</h1><div class="grow" /><a class="btn primary hide-sm" href="#/compose"><Icon name="plus" size={16} /> New post</a></div>
       <div class="cal-toolbar">
         <Seg value={tab} onChange={setTab} options={Object.entries(TABS).map(([k, t], i) => ({ value: k, label: `${t.label}${counts.data ? ` ${counts.data[i]}` : ''}` }))} />
         {loading && <Spinner />}

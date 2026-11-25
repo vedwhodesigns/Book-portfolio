@@ -334,8 +334,8 @@ export default function Compose({ params }) {
               onKeyDown={(e) => e.key === 'Enter' && fileRef.current.click()}
             >
               <Icon name="upload" size={22} />
-              <div style={{ fontWeight: 600, color: 'var(--text)', marginTop: 6 }}>Drop videos or images, or click to upload</div>
-              <div class="tiny">MP4/MOV up to 4 GB · JPEG/PNG/WebP/HEIC (converted to JPEG for Instagram)</div>
+              <div style={{ fontWeight: 600, color: 'var(--text)', marginTop: 6 }}><span class="hide-sm">Drop videos or images, or click to upload</span><span class="show-sm">Tap to add a video or image</span></div>
+              <div class="tiny">MP4/MOV up to 4 GB · JPEG, PNG, WebP, HEIC</div>
               <input ref={fileRef} type="file" multiple accept="video/mp4,video/quicktime,video/webm,image/jpeg,image/png,image/webp,image/heic" class="hidden" onChange={(e) => { addFiles([...e.currentTarget.files]); e.currentTarget.value = ''; }} />
             </div>
             {uploads.map((u) => (
@@ -346,7 +346,7 @@ export default function Compose({ params }) {
             ))}
             <div class="row" style={{ marginTop: 10 }}>
               <Icon name="link" size={16} class="faint" />
-              <input class="input" placeholder="…or paste a direct link to a video/image file" value={importUrl} onInput={(e) => setImportUrl(e.currentTarget.value)} onKeyDown={(e) => e.key === 'Enter' && importLink()} />
+              <input class="input" placeholder="or paste a file link" value={importUrl} onInput={(e) => setImportUrl(e.currentTarget.value)} onKeyDown={(e) => e.key === 'Enter' && importLink()} />
               <button class="btn" onClick={importLink} disabled={!importUrl}>Import</button>
             </div>
             {library.length > 0 && (

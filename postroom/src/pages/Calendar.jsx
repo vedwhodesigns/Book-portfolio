@@ -161,7 +161,7 @@ export default function Calendar({ params }) {
       <div class="page-head">
         <h1>Calendar</h1>
         <div class="grow" />
-        <a class="btn primary" href={`#/compose`}><Icon name="plus" size={16} /> New post</a>
+        <a class="btn primary hide-sm" href={`#/compose`}><Icon name="plus" size={16} /> New post</a>
       </div>
       <div class="week-wrap">
         <div class="cal-toolbar">

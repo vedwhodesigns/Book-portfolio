@@ -731,3 +731,5 @@ ul.tight li { margin: 2px 0; }
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme='light']) .seg button.on { background: var(--surface-3); } }
 :root[data-theme='dark'] .seg button.on { background: var(--surface-3); }
+.show-sm { display: none; }
+@media (max-width: 900px) { .show-sm { display: inline; } }
