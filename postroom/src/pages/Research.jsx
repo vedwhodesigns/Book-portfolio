@@ -15,11 +15,66 @@ function Section({ title, children }) {
 }
 const KV = ({ k, v }) => (v ? <div><b>{k}:</b> {v}</div> : null);
 
+const LESSON_AREAS = [['scripting', 'Scripting'], ['visuals', 'Visuals'], ['music_and_sound', 'Music & sound'], ['editing_and_pacing', 'Editing & pacing'], ['hook', 'Hook'], ['packaging', 'Packaging']];
+
+function Lessons({ t, brand }) {
+  const [area, setArea] = useState('scripting');
+  const L = t.lessons || {};
+  const fb = t.for_brand || {};
+  const list = L[area] || [];
+  return (
+    <div class="lab-lessons">
+      <div class="label" style={{ marginBottom: 6 }}>Learnings{brand ? ` for ${brand}` : ''}</div>
+      <div class="scroll-chips">{LESSON_AREAS.filter(([k]) => L[k]?.length).map(([k, l]) => <button key={k} class={`chip-filter ${area === k ? 'on' : ''}`} onClick={() => setArea(k)}>{l} <span class="faint">{L[k].length}</span></button>)}</div>
+      <div class="col" style={{ gap: 8 }}>
+        {list.map((x, i) => (
+          <div key={i} class="lab-lesson">
+            <b>{x.lesson}</b>
+            {x.evidence && <div class="tiny faint">{x.evidence}</div>}
+            {x.how_to_apply && <div class="small">→ {x.how_to_apply}</div>}
+          </div>
+        ))}
+      </div>
+      {fb.next_video_idea && (
+        <div class="lab-next">
+          <div class="label">Next video for {fb.brand || brand}</div>
+          <div class="small"><b>{fb.next_video_idea}</b></div>
+          {fb.hook_line && <div class="small"><b>Hook:</b> {fb.hook_line}</div>}
+          {fb.script_outline?.length > 0 && <ol class="small" style={{ margin: '4px 0 0', paddingLeft: 18 }}>{fb.script_outline.map((x, i) => <li key={i}>{x}</li>)}</ol>}
+          {fb.visual_plan && <div class="small"><b>Visuals:</b> {fb.visual_plan}</div>}
+          {fb.music_plan && <div class="small"><b>Music:</b> {fb.music_plan}</div>}
+          {fb.do?.length > 0 && <div class="small"><b>Do:</b> {fb.do.join('; ')}</div>}
+          {fb.dont?.length > 0 && <div class="small"><b>Don't:</b> {fb.dont.join('; ')}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Everything Video Lab learned for one channel, ready to paste into that channel's chat. */
+function LearningsDrawer({ onClose }) {
+  const { accounts, toast } = useApp();
+  const brands = [...new Set(accounts.map((a) => a.brand?.name).filter(Boolean))];
+  const [brand, setBrand] = useState(brands[0] || '');
+  const { data, loading } = useAsync(() => (brand ? api('research/learnings', { query: { brand, limit: 10 } }) : Promise.resolve(null)), [brand]);
+  const copy = async () => { try { await navigator.clipboard.writeText(data.markdown); toast(`Copied. Paste it into the ${brand} chat`); } catch (e) { toast(e.message, 'bad'); } };
+  return (
+    <Drawer onClose={onClose} title="Learnings by channel" foot={data?.videos ? <button class="btn primary" onClick={copy}><Icon name="copy" size={16} /> Copy all for {brand} chat</button> : null}>
+      <div class="col" style={{ gap: 12 }}>
+        <div class="scroll-chips">{brands.map((b) => <button key={b} class={`chip-filter ${brand === b ? 'on' : ''}`} onClick={() => setBrand(b)}>{b}</button>)}</div>
+        <p class="tiny faint" style={{ margin: 0 }}>In that channel's Claude chat you can also say "pull the latest Video Lab learnings" (Postroom connector).</p>
+        {loading ? <Spinner /> : !data ? null : !data.videos ? <Empty icon="layers" title={`Nothing for ${brand} yet`}>Analyse a video for {brand} and its learnings collect here.</Empty> : <pre class="lab-md">{data.markdown}</pre>}
+      </div>
+    </Drawer>
+  );
+}
+
 function ResearchDrawer({ id, onClose }) {
   const { go, toast, accounts } = useApp();
   const [busy, setBusy] = useState(false);
   const brands = [...new Set(accounts.map((a) => a.brand?.name).filter(Boolean))];
   const [brand, setBrand] = useState('');
+  const [progress, setProgress] = useState('');
   const saveRef = async (r) => {
     const tags = prompt('Save as a reference. Tags (comma separated), e.g. hook, pacing, thumbnail:', 'hook');
     if (tags === null) return;
@@ -29,9 +84,31 @@ function ResearchDrawer({ id, onClose }) {
     } catch (e) { toast(e.message, 'bad'); }
   };
   const { data: r, loading, reload } = useAsync(() => api(`research/posts/${id}`), [id]);
+  useEffect(() => { if (r?.brand && !brand) setBrand(r.brand); }, [r?.brand]);
   const analyze = async () => {
+    if (!brand) { toast('Choose which channel this is for first', 'bad'); return; }
     setBusy(true);
-    try { await api(`research/posts/${id}/analyze`, { method: 'POST', body: { brand: brand || null } }); await reload(); toast('Claude broke it down'); } catch (e) { toast(e.message, 'bad'); } finally { setBusy(false); }
+    try {
+      const h = await api(`research/posts/${id}/handoff`);
+      const blocks = h.missing_blocks || [];
+      let done = 0;
+      if (blocks.length) setProgress(`Reading the 12 fps frames: 0/${blocks.length}`);
+      const queue = [...blocks];
+      await Promise.all(Array.from({ length: Math.min(4, queue.length) }, async () => {
+        while (queue.length) { const from = queue.shift(); await api(`research/posts/${id}/seconds`, { method: 'POST', body: { from } }); setProgress(`Reading the 12 fps frames: ${++done}/${blocks.length}`); }
+      }));
+      setProgress(`Writing the learnings for ${brand}…`);
+      await api(`research/posts/${id}/analyze`, { method: 'POST', body: { brand } });
+      await reload();
+      toast(`Learnings ready for ${brand}`);
+    } catch (e) { toast(e.message, 'bad'); } finally { setBusy(false); setProgress(''); }
+  };
+  const copyHandoff = async (share = false) => {
+    try {
+      const h = await api(`research/posts/${id}/handoff`);
+      if (share && navigator.share) await navigator.share({ title: `Video Lab → ${h.brand}`, text: h.markdown });
+      else { await navigator.clipboard.writeText(h.markdown); toast(`Copied. Paste it into the ${h.brand} chat`); }
+    } catch (e) { if (e.name !== 'AbortError') toast(e.message, 'bad'); }
   };
   const [showTx, setShowTx] = useState(false);
   if (loading || !r) return <Drawer onClose={onClose} title="Research"><Spinner /></Drawer>;
@@ -64,13 +141,22 @@ function ResearchDrawer({ id, onClose }) {
         </div>
 
         {m.frames ? (
-          <div class="row wrap" style={{ gap: 8 }}>
-            <select class="select" style={{ width: 'auto' }} value={brand} onChange={(e) => setBrand(e.currentTarget.value)} aria-label="Adapt for brand"><option value="">Adapt for: best fit</option>{brands.map((b) => <option key={b} value={b}>{b}</option>)}</select>
-            <button class="btn primary sm" disabled={busy} onClick={analyze}>{busy ? <Spinner /> : <Icon name="sparkle" size={14} />} {r.teardown ? 'Break it down again' : 'Break it down with Claude'}</button>
-            {busy && <span class="tiny faint">About a minute…</span>}
+          <div class="lab-box">
+            <div class="label">Which channel is this for?</div>
+            <div class="scroll-chips">
+              {brands.map((b) => <button key={b} class={`chip-filter ${brand === b ? 'on' : ''}`} onClick={() => setBrand(b)} disabled={busy}>{b}</button>)}
+            </div>
+            <div class="row wrap" style={{ gap: 8 }}>
+              <button class="btn primary" disabled={busy || !brand} onClick={analyze}>{busy ? <Spinner /> : <Icon name="sparkle" size={15} />} {r.teardown && r.brand === brand ? 'Analyse again' : brand ? `Analyse for ${brand}` : 'Choose a channel'}</button>
+              {r.teardown && r.brand && !busy && <button class="btn" onClick={() => copyHandoff(false)}><Icon name="copy" size={15} /> Copy for {r.brand} chat</button>}
+              {r.teardown && r.brand && !busy && typeof navigator !== 'undefined' && navigator.share && <button class="btn icon" aria-label="Share" onClick={() => copyHandoff(true)}><Icon name="send" size={15} /></button>}
+            </div>
+            {busy && <div class="tiny faint">{progress || 'Starting…'} This takes 1–3 minutes.</div>}
+            <div class="tiny faint">{[m.frames.seconds?.length ? `${m.frames.seconds.filter((x) => x.fps === 12).length} s at 12 fps` : 'old grab: no 12 fps frames (grab it again)', m.sound?.tool ? 'soundtrack heard by earshot' : m.sound?.note ? `sound: ${m.sound.note}` : null, m.transcript_source ? `words from ${m.transcript_source}` : r.transcript ? 'words from captions' : 'no transcript'].filter(Boolean).join(' · ')}</div>
           </div>
         ) : !r.teardown && <div class="notice info"><Icon name="sparkle" size={16} /><span>No breakdown yet. On your computer run <code>node postroom.mjs grab {r.url || '<link>'}</code> — it downloads the video, measures it and has Claude break it down.</span></div>}
 
+        {t.lessons && <Lessons t={t} brand={r.brand} />}
         {t.idea && <Section title="Idea"><KV k="Topic" v={t.idea.topic} /><KV k="Angle" v={t.idea.angle} /><KV k="Format" v={t.idea.format} /><KV k="Why it works" v={t.idea.why_it_works} /></Section>}
         {t.hook && (
           <Section title={`Hook${t.hook.hook_type ? ` · ${t.hook.hook_type}` : ''}`}>
@@ -83,8 +169,9 @@ function ResearchDrawer({ id, onClose }) {
             {t.script.cta && <div style={{ marginTop: 6 }}><b>CTA:</b> {t.script.cta}</div>}
           </Section>
         )}
+        {t.visuals && <Section title="Visuals"><KV k="Look" v={t.visuals.look} /><KV k="Colour & light" v={t.visuals.color_and_light} /><KV k="Composition" v={t.visuals.composition} /><KV k="Text style" v={t.visuals.text_style} /><KV k="Motion graphics" v={t.visuals.motion_graphics} /></Section>}
         {t.edit && <Section title="Edit"><KV k="Pacing" v={t.edit.pacing_notes} /><KV k="Captions" v={t.edit.caption_style} /><KV k="Graphics" v={t.edit.graphics_and_motion?.join(', ')} /></Section>}
-        {t.sound && <Section title="Sound"><KV k="Music" v={t.sound.music && [t.sound.music.mood, t.sound.music.genre, t.sound.music.energy_curve].filter(Boolean).join(' · ')} /><KV k="Voice" v={t.sound.voice && [t.sound.voice.tone, t.sound.voice.pace].filter(Boolean).join(' · ')} /><KV k="Mix" v={t.sound.mix_notes} /></Section>}
+        {t.sound && <Section title="Sound"><KV k="Music" v={t.sound.music && [t.sound.music.mood, t.sound.music.genre, t.sound.music.instruments, t.sound.music.bpm_and_key, t.sound.music.energy_curve].filter(Boolean).join(' · ')} /><KV k="On the cuts" v={t.sound.music?.sync_with_cuts} /><KV k="SFX" v={t.sound.sfx?.join(', ')} /><KV k="Voice" v={t.sound.voice && [t.sound.voice.tone, t.sound.voice.pace].filter(Boolean).join(' · ')} /><KV k="Mix" v={t.sound.mix_notes} /></Section>}
         {t.replicate?.recipe_steps?.length > 0 && (
           <Section title={`Recipe${t.replicate.difficulty ? ` · ${t.replicate.difficulty}` : ''}`}>
             <ol style={{ margin: 0, paddingLeft: 18 }}>{t.replicate.recipe_steps.map((s, i) => <li key={i}>{s}</li>)}</ol>
@@ -96,6 +183,11 @@ function ResearchDrawer({ id, onClose }) {
         {m.frames && (
           <Section title="Frames">
             <div class="col" style={{ gap: 8 }}>
+              {m.frames.seconds?.length > 0 && (
+                <details><summary class="tiny faint">Every second at 12 fps ({m.frames.seconds.length} sheets)</summary>
+                  <div class="lab-strip">{m.frames.seconds.map((x) => <a key={x.url} href={x.url} target="_blank" rel="noreferrer"><img src={x.url} alt="" loading="lazy" /><span>{Math.floor(x.start / 60)}:{String(Math.floor(x.start % 60)).padStart(2, '0')}</span></a>)}</div>
+                </details>
+              )}
               {[['hook', 'First 3 seconds'], ['shots', 'One frame per shot'], ['overview', 'Whole video']].map(([k, l]) => m.frames[k] && (
                 <a key={k} href={m.frames[k]} target="_blank" rel="noreferrer"><div class="tiny faint">{l}</div><img src={m.frames[k]} alt={l} loading="lazy" style={{ width: '100%', borderRadius: 8, border: '1px solid var(--line)' }} /></a>
               ))}
@@ -180,6 +272,7 @@ export default function Research({ params = {} }) {
   const [f, setF] = useState({ q: '', author: '', hook_type: '', sort: 'views' });
   const [open, setOpen] = useState(params.post || null);
   const [chBusy, setChBusy] = useState(false);
+  const [showLearn, setShowLearn] = useState(false);
   const brands = [...new Set(accounts.map((a) => a.brand?.name).filter(Boolean))];
   const [chBrand, setChBrand] = useState('');
   useEffect(() => { if (!pid && projects.data?.length) setPid(projects.data[0].id); }, [projects.data]);
@@ -191,13 +284,17 @@ export default function Research({ params = {} }) {
   };
 
   const head = (
+    <>
+    {showLearn && <LearningsDrawer onClose={() => setShowLearn(false)} />}
     <div class="page-head">
       <h1>Research</h1>
       <span class="pill info">Extension</span>
       <span class="sub">Understand any niche or account, then turn what works into your own posts.</span>
       <div class="grow" />
+      <button class="btn" onClick={() => setShowLearn(true)}><Icon name="sparkle" size={15} /> Learnings</button>
       <YoutubeLookup onDone={(id) => { projects.reload(); setPid(id); }} />
     </div>
+    </>
   );
 
   if (projects.loading) return <>{head}<Spinner /></>;

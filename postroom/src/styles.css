@@ -759,3 +759,15 @@ ul.tight li { margin: 2px 0; }
   .lib-item { border-radius: 12px; }
 }
 @media (min-width: 560px) and (max-width: 900px) { .lib-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+/* ---------- Video Lab: channel picker, learnings ---------- */
+.lab-box { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 12px; background: var(--surface-2); }
+.lab-box .scroll-chips { margin: 0; }
+.lab-lessons { display: flex; flex-direction: column; gap: 8px; }
+.lab-lesson { padding: 10px 12px; border-radius: 12px; background: var(--surface-2); display: flex; flex-direction: column; gap: 3px; }
+.lab-next { margin-top: 4px; padding: 12px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--focus) 30%, transparent); background: color-mix(in srgb, var(--focus) 6%, var(--surface)); display: flex; flex-direction: column; gap: 4px; }
+.lab-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 6px; margin-top: 8px; }
+.lab-strip a { position: relative; display: block; }
+.lab-strip img { width: 100%; border-radius: 6px; border: 1px solid var(--line); display: block; }
+.lab-strip span { position: absolute; left: 4px; bottom: 4px; font-size: 10px; background: rgb(0 0 0 / .65); color: #fff; padding: 1px 4px; border-radius: 4px; }
+.lab-md { white-space: pre-wrap; word-break: break-word; font: inherit; font-size: 13px; line-height: 1.5; background: var(--surface-2); border-radius: 12px; padding: 12px; margin: 0; max-height: none; }

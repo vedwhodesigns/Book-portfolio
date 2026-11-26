@@ -1,9 +1,14 @@
 // Video Lab, local half: download a YouTube / Instagram / TikTok video (or a channel's top videos) with yt-dlp,
 // measure it with ffmpeg (cuts, pacing, first sound, loudness), make frame sheets, and send it all to Postroom,
-// where Claude breaks it down. Runs on your computer because YouTube and Instagram block downloads from cloud servers.
+// where Claude breaks it down for one of our channels. Runs on your computer because YouTube and Instagram block
+// downloads from cloud servers.
+//   · frames: every second of the video as a sheet of 12 frames (12 fps; videos over 3 min: the first minute at 12 fps,
+//     then one frame per second), plus motion energy per second
+//   · sound: earshot (if installed) listens to the soundtrack: tags, instruments, tempo/key, sections, sync with cuts
+//   · words: the captions, or Whisper on this computer when there are none (if installed)
 //
-//   node postroom.mjs grab <link> [--brand "How It Clicks"] [--top 3] [--cookies-from firefox] [--cookies cookies.txt]
-//                                 [--only-download] [--no-analyze]
+//   node postroom.mjs grab <link> --brand "Curious in 8bit" [--top 3] [--cookies-from firefox] [--cookies cookies.txt]
+//                                 [--only-download] [--no-analyze] [--no-earshot]
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -11,7 +16,7 @@ import { spawnSync } from 'node:child_process';
 
 const LAB = path.join(os.homedir(), 'postroom', 'lab');
 const run = (bin, args, opts = {}) => spawnSync(bin, args, { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, windowsHide: true, ...opts });
-const has = (bin) => { try { return run(bin, ['--version']).status === 0; } catch { return false; } };
+const has = (bin, args = ['--version']) => { try { const r = run(bin, args, { timeout: 60000 }); return !r.error && r.status === 0; } catch { return false; } };
 const r1 = (v) => (v == null || Number.isNaN(v) ? null : Math.round(v * 10) / 10);
 
 /** What kind of link is this? */
@@ -107,6 +112,96 @@ export function frameTimes(m) {
   return { hook, shots: mids, overview };
 }
 
+/** Our channel names, matched like the server does ("c8", "curious in 8bit", "@curiousin8bit" → "Curious in 8bit"). */
+const norm = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const ALIASES = { c8: 'curiousin8bit', curious: 'curiousin8bit', '8bit': 'curiousin8bit', hic: 'howitclicks', clicks: 'howitclicks', tca: 'thecrimearchives', crime: 'thecrimearchives', crimearchives: 'thecrimearchives' };
+export function matchBrand(input, names) {
+  const want = ALIASES[norm(input)] || norm(input);
+  if (!want) return null;
+  return names.find((n) => norm(n) === want) || names.find((n) => norm(n).startsWith(want) || want.startsWith(norm(n))) || null;
+}
+
+/** When each 12 fps sheet starts and ends: 12 frames per sheet = 1 second; past 3 minutes, 1 frame/s = 12 s per sheet. */
+export function sheetPlan(duration) {
+  const d = Math.max(0, Number(duration) || 0);
+  const full = d <= 180 ? d : 60;
+  const out = [];
+  for (let s = 0; s < full - 0.04; s += 1) out.push({ start: s, end: r1(Math.min(s + 1, full)), fps: 12 });
+  if (d > full) for (let s = full; s < d - 0.5; s += 12) out.push({ start: s, end: r1(Math.min(s + 12, d)), fps: 1 });
+  return out;
+}
+
+/** Every second as a 4×3 sheet of 12 frames (12 fps). Returns [{file, start, end, fps}]. */
+export function secondSheets(file, dir, m) {
+  const plan = sheetPlan(m.duration_seconds);
+  if (!plan.length) return [];
+  const w = m.vertical ? 168 : 256;
+  const sdir = path.join(dir, 'sheets-12fps');
+  fs.rmSync(sdir, { recursive: true, force: true });
+  fs.mkdirSync(sdir, { recursive: true });
+  const fast = plan.filter((x) => x.fps === 12), slow = plan.filter((x) => x.fps === 1);
+  const tile = `scale=${w}:-2,tile=4x3:padding=4:color=white`;
+  if (fast.length) run('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-i', file, '-t', String(fast[fast.length - 1].end), '-vf', `fps=12,${tile}`, '-q:v', '4', '-an', path.join(sdir, 'a_%04d.jpg')]);
+  if (slow.length) run('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-ss', String(slow[0].start), '-i', file, '-vf', `fps=1,${tile}`, '-q:v', '4', '-an', path.join(sdir, 'b_%04d.jpg')]);
+  const files = (pre) => fs.readdirSync(sdir).filter((f) => f.startsWith(pre)).sort().map((f) => path.join(sdir, f));
+  const a = files('a_'), b = files('b_');
+  return [...fast.map((x, i) => a[i] && { ...x, file: a[i] }), ...slow.map((x, i) => b[i] && { ...x, file: b[i] })].filter(Boolean);
+}
+
+/** Average frame-to-frame change per second at 12 fps (0 = still picture, 1 = a full change every frame). */
+export function motionCurve(file) {
+  const r = run('ffmpeg', ['-hide_banner', '-nostats', '-i', file, '-vf', "fps=12,scale=160:-2,select='gte(scene,0)',metadata=print:key=lavfi.scene_score", '-an', '-f', 'null', '-']);
+  return parseMotion(String(r.stderr));
+}
+export function parseMotion(text) {
+  const sums = [], counts = [];
+  let t = null;
+  for (const line of text.split('\n')) {
+    const pt = /pts_time:([\d.]+)/.exec(line);
+    if (pt) { t = Number(pt[1]); continue; }
+    const sc = /lavfi\.scene_score=([\d.]+)/.exec(line);
+    if (sc && t != null) { const s = Math.floor(t); sums[s] = (sums[s] || 0) + Number(sc[1]); counts[s] = (counts[s] || 0) + 1; t = null; }
+  }
+  return Array.from({ length: sums.length }, (_, i) => (counts[i] ? Math.round((sums[i] / counts[i]) * 1000) / 1000 : 0));
+}
+
+/** earshot listens to the soundtrack (https://github.com/Leonxlnx/earshot, the listen extra). Returns what it said. */
+function earshot(file, dir, log) {
+  if (!has('earshot', ['--help'])) return { note: 'earshot is not installed on this computer' };
+  const wav = path.join(dir, 'audio.wav');
+  if (!fs.existsSync(wav)) run('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-i', file, '-vn', '-ac', '2', '-ar', '48000', wav]);
+  if (!fs.existsSync(wav)) return { note: 'no soundtrack' };
+  const out = { tool: 'earshot' };
+  const call = (key, args) => {
+    log(`… earshot ${args[0]} (it loads its listening models; up to a minute)`);
+    const r = run('earshot', args, { timeout: 15 * 60000, env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
+    if (r.status === 0) out[key] = String(r.stdout).trim().slice(0, 20000);
+    else out[`${key}_error`] = (String(r.stderr).trim().split('\n').pop() || `exit ${r.status}`).slice(0, 300);
+  };
+  call('describe', ['describe', wav, '--out', path.join(dir, 'earshot-describe.json')]);
+  call('timeline', ['timeline', wav, '--video', file, '--out', path.join(dir, 'earshot-timeline.json')]);
+  call('measure', ['measure', wav, '--out', path.join(dir, 'earshot-measure.json')]);
+  return out;
+}
+
+/** Whisper on this computer, for videos without captions (most reels). Returns "[mm:ss] text" lines or null. */
+function whisper(file, dir, log) {
+  if (!has('whisper', ['--help'])) return null;
+  const wav = path.join(dir, 'audio.wav');
+  if (!fs.existsSync(wav)) run('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-i', file, '-vn', '-ac', '1', '-ar', '16000', wav]);
+  log('… Whisper is writing down the words');
+  run('whisper', [wav, '--model', 'small', '--output_format', 'vtt', '--output_dir', dir, '--fp16', 'False', '--verbose', 'False'], { timeout: 20 * 60000 });
+  const vtt = path.join(dir, 'audio.vtt');
+  return fs.existsSync(vtt) ? vttToText(fs.readFileSync(vtt, 'utf8')) : null;
+}
+
+async function mapLimit(list, n, fn) {
+  const out = new Array(list.length);
+  let i = 0;
+  await Promise.all(Array.from({ length: Math.min(n, list.length) }, async () => { while (i < list.length) { const k = i++; out[k] = await fn(list[k], k); } }));
+  return out;
+}
+
 function download(url, { cookiesFrom, cookies }) {
   fs.mkdirSync(LAB, { recursive: true });
   const args = [
@@ -147,15 +242,26 @@ async function grabVideo(url, ctx, { project, externalId = null, onlyDownload = 
     const p = sheet(file, dir, k, t[k], m);
     if (p) sheets[k] = await uploadImage(p, `lab-${info.id}-${k}.jpg`);
   }
+  log('… cutting every second into 12 frames (12 fps) and measuring motion');
+  const secs = secondSheets(file, dir, m);
+  const stamp = Date.now().toString(36);
+  const seconds = await mapLimit(secs, 6, async (x, i) => ({ url: await uploadImage(x.file, `lab-${info.id}-${stamp}-s${String(i).padStart(4, '0')}.jpg`), start: x.start, end: x.end, fps: x.fps }));
+  const motion = motionCurve(file);
+  log(`✓ ${seconds.length} frame sheets (${seconds.filter((x) => x.fps === 12).length} s at 12 fps${seconds.some((x) => x.fps === 1) ? ', the rest at 1 fps' : ''})`);
+  const sound = m.has_audio && !ctx.opts.noEarshot ? earshot(file, dir, log) : { note: m.has_audio ? 'skipped (--no-earshot)' : 'no soundtrack' };
+  if (sound.tool) log(`✓ earshot listened${sound.describe ? '' : ` (describe failed: ${sound.describe_error || '?'})`}${sound.timeline ? '' : ` (timeline failed: ${sound.timeline_error || '?'})`}`);
+  else log(`  sound: ${sound.note}${sound.note?.includes('not installed') ? ' → pip install "earshot[listen] @ git+https://github.com/Leonxlnx/earshot"' : ''}`);
   const thumbPath = path.join(dir, 'thumb.jpg');
   run('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-ss', String(Math.min(1, (m.duration_seconds || 2) / 2)), '-i', file, '-frames:v', '1', '-vf', 'scale=480:-2', '-q:v', '4', thumbPath]);
   const vtt = fs.readdirSync(dir).filter((f) => f.endsWith('.vtt')).sort((a, b) => (a.includes('.en.') ? -1 : 0) - (b.includes('.en.') ? -1 : 0))[0];
-  const transcript = vtt ? vttToText(fs.readFileSync(path.join(dir, vtt), 'utf8')) : null;
+  let transcript = vtt && vtt !== 'audio.vtt' ? vttToText(fs.readFileSync(path.join(dir, vtt), 'utf8')) : null;
+  let transcriptSource = transcript ? 'captions' : null;
+  if (!transcript && m.has_audio) { transcript = whisper(file, dir, log); if (transcript) transcriptSource = 'Whisper on our computer'; }
   const platform = PF[info.extractor_key] || (String(info.extractor_key || '').toLowerCase().includes('youtube') ? 'youtube' : 'instagram');
   const type = platform === 'youtube' ? ((info.duration || 0) <= 180 && (m.vertical || /\/shorts\//.test(url)) ? 'short' : 'video') : platform === 'instagram' ? 'reel' : 'video';
   const date = info.timestamp ? new Date(info.timestamp * 1000) : /^\d{8}$/.test(info.upload_date || '') ? new Date(`${info.upload_date.slice(0, 4)}-${info.upload_date.slice(4, 6)}-${info.upload_date.slice(6)}T12:00:00Z`) : null;
   const caption = platform === 'instagram' ? info.description || info.title : [info.title, info.description].filter(Boolean).join('\n\n');
-  const measureOut = { ...m, frames: { ...sheets, hook_times: t.hook, shot_times: t.shots, overview_times: t.overview }, tags: (info.tags || []).slice(0, 40), grabbed_at: new Date().toISOString() };
+  const measureOut = { ...m, frames: { ...sheets, hook_times: t.hook, shot_times: t.shots, overview_times: t.overview, seconds }, motion, sound, transcript_source: transcriptSource, tags: (info.tags || []).slice(0, 40), grabbed_at: new Date().toISOString() };
   const extId = externalId || info.id;
   const res = await api('research/ingest', {
     method: 'POST',
@@ -164,7 +270,7 @@ async function grabVideo(url, ctx, { project, externalId = null, onlyDownload = 
       posts: [{
         postId: extId, platform, url: info.webpage_url || url, author: String(info.uploader_id || info.channel || info.uploader || '').replace(/^@/, ''),
         type, date, caption, likesNum: info.like_count, commentsNum: info.comment_count, viewsNum: info.view_count ?? info.play_count,
-        duration_s: m.duration_seconds, transcript, measure: measureOut,
+        duration_s: m.duration_seconds, transcript, measure: measureOut, brand,
         thumb_b64: fs.existsSync(thumbPath) ? fs.readFileSync(thumbPath).toString('base64') : undefined,
       }],
     },
@@ -172,14 +278,25 @@ async function grabVideo(url, ctx, { project, externalId = null, onlyDownload = 
   const id = res.ids?.[extId];
   log(`✓ Measured: ${m.shot_count} shots, ${m.cuts_per_10_seconds} cuts/10s, first cut ${m.first_cut_seconds ?? '–'}s, sound from ${m.first_sound_seconds ?? '–'}s${transcript ? ', transcript saved' : ''}`);
   if (analyze && id) {
-    log('… Claude is breaking it down (about a minute)');
     try {
+      const h = await api(`research/posts/${id}/handoff`);
+      const blocks = h.missing_blocks || [];
+      if (blocks.length) {
+        log(`… Claude is reading the ${h.sheets} frame sheets, ${h.per_call} at a time (${blocks.length} part${blocks.length === 1 ? '' : 's'}, in parallel)`);
+        let done = 0;
+        await mapLimit(blocks, 4, async (from) => {
+          await api(`research/posts/${id}/seconds`, { method: 'POST', body: { from } });
+          log(`  ✓ part ${++done}/${blocks.length}`);
+        });
+      }
+      log(`… Claude is writing the learnings for ${brand} (1–2 minutes)`);
       const a = await api(`research/posts/${id}/analyze`, { method: 'POST', body: { brand } });
       const td = a.teardown || {};
       log(`✓ ${td.idea?.topic || ''}${td.idea?.format ? ` · ${td.idea.format}` : ''}`);
-      if (td.hook) log(`  Hook (${td.hook.hook_type}): ${td.hook.first_3s_spoken || td.hook.first_3s_onscreen_text || td.hook.first_3s_visual}`);
-      if (td.idea?.why_it_works) log(`  Why it works: ${td.idea.why_it_works}`);
-      if (td.replicate?.how_it_clicks_adaptation) log(`  For us: ${td.replicate.how_it_clicks_adaptation}`);
+      const md = path.join(dir, `for-${String(a.brand || brand).toLowerCase().replace(/[^a-z0-9]+/g, '-')}.md`);
+      fs.writeFileSync(md, a.handoff || '');
+      log(`\n${a.handoff}\n`);
+      log(`✓ Saved for ${a.brand}: ${md}  (paste it into the ${a.brand} chat, or ask that chat to "pull the latest Video Lab learnings")`);
     } catch (e) { log(`✗ Breakdown failed: ${e.message} (the video and numbers are saved; try again from the Research tab)`); }
   }
   log(`→ ${ctx.base}/#/research?post=${id}`);
@@ -187,7 +304,7 @@ async function grabVideo(url, ctx, { project, externalId = null, onlyDownload = 
 }
 
 export async function grab(args, ctx) {
-  const opts = { brand: null, top: 3, cookiesFrom: null, cookies: null, onlyDownload: false, analyze: true };
+  const opts = { brand: null, top: 3, cookiesFrom: null, cookies: null, onlyDownload: false, analyze: true, noEarshot: false };
   const links = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
@@ -197,9 +314,16 @@ export async function grab(args, ctx) {
     else if (a === '--cookies') opts.cookies = args[++i];
     else if (a === '--only-download') opts.onlyDownload = true;
     else if (a === '--no-analyze') opts.analyze = false;
+    else if (a === '--no-earshot') opts.noEarshot = true;
     else links.push(a);
   }
-  if (!links.length) ctx.die('Usage: node postroom.mjs grab <youtube/instagram link or channel> … [--brand "How It Clicks"] [--top 3] [--cookies-from firefox] [--only-download] [--no-analyze]');
+  if (!links.length) ctx.die('Usage: node postroom.mjs grab <youtube/instagram link or channel> … --brand "Curious in 8bit" [--top 3] [--cookies-from firefox] [--only-download] [--no-analyze] [--no-earshot]');
+  if (opts.analyze && !opts.onlyDownload) {
+    const names = await ctx.api('research/brands');
+    const hit = matchBrand(opts.brand, names);
+    if (!hit) ctx.die(`${opts.brand ? `"${opts.brand}" isn't one of our channels. ` : ''}Which channel is this analysis for? Add --brand with one of: ${names.map((n) => `"${n}"`).join(', ')}`);
+    opts.brand = hit;
+  }
   for (const bin of ['yt-dlp', 'ffmpeg', 'ffprobe']) {
     if (!has(bin)) ctx.die(`${bin} isn't installed. Windows: winget install yt-dlp.yt-dlp Gyan.FFmpeg  ·  Mac: brew install yt-dlp ffmpeg  — then open a new terminal.`);
   }

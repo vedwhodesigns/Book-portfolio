@@ -75,6 +75,7 @@ export async function ingest(body) {
       teardown: t?.teardown ? db().json(t.teardown) : null,
       measure: (t?.measure || p.measure) ? db().json(cleanMeasure(t?.measure || p.measure)) : null,
       model: str(t?.model, 100),
+      brand: str(p.brand, 100),
     };
     if (row.posted_at && Number.isNaN(row.posted_at.getTime())) row.posted_at = null;
     await db()`insert into postroom.research_posts ${db()(row)}
@@ -95,6 +96,7 @@ export async function ingest(body) {
         teardown = coalesce(excluded.teardown, postroom.research_posts.teardown),
         measure = coalesce(excluded.measure, postroom.research_posts.measure),
         model = coalesce(excluded.model, postroom.research_posts.model),
+        brand = coalesce(excluded.brand, postroom.research_posts.brand),
         updated_at = now()
       returning id`.then(([x]) => { ids[id] = x.id; });
     saved++;

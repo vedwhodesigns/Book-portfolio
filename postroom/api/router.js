@@ -387,8 +387,28 @@ export default async function handler(req, res) {
     if (seg[0] === 'research' && seg[2] && seg[3] === 'analyze' && m === 'POST') {
       const vl = await import('./_lib/videolab.js');
       const b = await body(req);
-      if (seg[1] === 'posts') return send(res, 200, await vl.analyzeVideo(seg[2], { brand: b.brand || null }));
+      if (seg[1] === 'posts') return send(res, 200, await vl.analyzeVideo(seg[2], { brand: b.brand || null, auto: !!b.auto }));
       if (seg[1] === 'projects') return send(res, 200, await vl.analyzeChannel(seg[2], { brand: b.brand || null }));
+    }
+    // Video Lab: read one block of the 12 fps frame sheets (the CLI / web page call this in parallel before /analyze)
+    if (seg[0] === 'research' && seg[1] === 'posts' && seg[2] && seg[3] === 'seconds' && m === 'POST') {
+      const vl = await import('./_lib/videolab.js');
+      const b = await body(req);
+      return send(res, 200, await vl.analyzeSeconds(seg[2], { from: b.from || 0 }));
+    }
+    if (seg[0] === 'research' && seg[1] === 'posts' && seg[2] && seg[3] === 'handoff' && m === 'GET') {
+      const vl = await import('./_lib/videolab.js');
+      const r = await getResearchPost(seg[2]);
+      return send(res, 200, { brand: r.brand, markdown: vl.handoffMarkdown(r), missing_blocks: vl.missingBlocks(r), sheets: r.measure?.frames?.seconds?.length || 0, per_call: vl.SECONDS_PER_CALL });
+    }
+    if (p === 'research/learnings' && m === 'GET') {
+      const vl = await import('./_lib/videolab.js');
+      const q = query(req);
+      return send(res, 200, await vl.brandLearnings({ brand: q.brand, limit: q.limit, days: q.days }));
+    }
+    if (p === 'research/brands' && m === 'GET') {
+      const vl = await import('./_lib/videolab.js');
+      return send(res, 200, await vl.brandNames());
     }
     if (seg[0] === 'research' && seg[1] === 'projects' && seg[2]) {
       if (m === 'GET') return send(res, 200, await projectOverview(seg[2]));

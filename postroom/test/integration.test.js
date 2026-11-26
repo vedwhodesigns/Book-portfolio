@@ -180,7 +180,7 @@ before(async () => {
   if (skip) return;
   sql = postgres(URL_, { onnotice: () => {}, transform: { undefined: null } });
   await sql.unsafe('drop schema if exists postroom cascade');
-  for (const f of ['001_base.sql', '002_multiplatform.sql', '003_research.sql', '004_inbox.sql', '005_alerts_brand.sql', '006_planning.sql', '007_insights.sql', '008_reports.sql', '009_videolab.sql', '010_comment_replies.sql', '011_report_share.sql', '012_archived.sql']) await sql.unsafe(fs.readFileSync(new URL(`../db/${f}`, import.meta.url), 'utf8'));
+  for (const f of ['001_base.sql', '002_multiplatform.sql', '003_research.sql', '004_inbox.sql', '005_alerts_brand.sql', '006_planning.sql', '007_insights.sql', '008_reports.sql', '009_videolab.sql', '010_comment_replies.sql', '011_report_share.sql', '012_archived.sql', '013_videolab_brand.sql']) await sql.unsafe(fs.readFileSync(new URL(`../db/${f}`, import.meta.url), 'utf8'));
   globalThis.fetch = fakeFetch;
   core = await import('../api/_lib/core.js');
   posts = await import('../api/_lib/posts.js');
@@ -1010,32 +1010,89 @@ test('brand defaults: AI labels on every upload; YouTube links the channel\'s pr
   await sql`update postroom.accounts set brand = '{}'::jsonb where username = 'brand.one' or id = '00000000-0000-0000-0000-00000000000b'`;
 });
 
-test('Video Lab: grabbed video is stored with frames; Claude breaks it down; channel analysis', { skip }, async () => {
+test('Video Lab: grabbed video is stored with 12 fps frames; read per block; learnings for one channel; channel analysis', { skip }, async () => {
   const research = await import('../api/_lib/research.js');
   const vl = await import('../api/_lib/videolab.js');
-  const frames = { hook: 'https://blob.test/h.jpg', shots: 'https://blob.test/s.jpg', overview: 'https://blob.test/o.jpg', hook_times: [0, 0.25], shot_times: [1, 2.8], overview_times: [0.3] };
+  // two of our channels
+  const accts = await sql`select id from postroom.accounts where status <> 'disconnected' order by id limit 2`;
+  await sql`update postroom.accounts set brand = ${sql.json({ name: 'Curious in 8bit', tone: 'fun Hinglish' })} where id = ${accts[0].id}`;
+  await sql`update postroom.accounts set brand = ${sql.json({ name: 'How It Clicks', tone: 'calm explainer' })} where id = ${accts[1].id}`;
+  assert.equal(await vl.resolveBrand('c8'), 'Curious in 8bit');
+  assert.equal(await vl.resolveBrand('how it clicks'), 'How It Clicks');
+  await assert.rejects(vl.resolveBrand(''), /Which channel is this for\? Choose one: Curious in 8bit, How It Clicks/);
+
+  const seconds = Array.from({ length: 23 }, (_, i) => ({ url: `https://blob.test/s${i}.jpg`, start: i, end: i + 1, fps: 12 }));
+  const frames = { hook: 'https://blob.test/h.jpg', shots: 'https://blob.test/s.jpg', overview: 'https://blob.test/o.jpg', hook_times: [0, 0.25], shot_times: [1, 2.8], overview_times: [0.3], seconds };
+  const sound = { tool: 'earshot', describe: 'synth pad, 120 BPM, A minor (z +3.4)', timeline: '0:00 riser; 0:02 hit lands on the cut' };
   const r = await research.ingest({
     project: { name: 'Video Lab', source: 'video-lab', niche: 'Videos sent for analysis' },
-    posts: [{ postId: 'vid123', platform: 'youtube', url: 'https://youtu.be/vid123', author: '@someone', type: 'short', caption: 'Why X happens', viewsNum: 50000, likesNum: 2000, transcript: '[00:00] Hello', measure: { shot_count: 4, cuts: [2, 3.5], cuts_per_10_seconds: 3.3, frames } }],
+    posts: [{ postId: 'vid123', platform: 'youtube', url: 'https://youtu.be/vid123', author: '@someone', type: 'short', caption: 'Why X happens', viewsNum: 50000, likesNum: 2000, transcript: '[00:00] Hello', brand: 'Curious in 8bit', measure: { shot_count: 4, cuts: [2, 3.5], cuts_per_10_seconds: 3.3, frames, motion: [0.1, 0.5], sound, transcript_source: 'captions' } }],
   });
   const id = r.ids.vid123;
   assert.ok(id, 'ingest returns the research post id');
-  let seen;
-  const fakeVideo = async (content) => {
-    seen = content;
-    return { model: 'test', out: { idea: { topic: 'X', angle: 'a', why_it_works: 'w', format: 'explainer' }, hook: { first_3s_visual: 'v', first_3s_spoken: 'Hello', first_3s_onscreen_text: 't', hook_type: 'Question', why_it_stops_scroll: 'y' } } };
+  let row = await research.getResearchPost(id);
+  assert.equal(row.brand, 'Curious in 8bit');
+  assert.deepEqual(vl.missingBlocks(row), [0, 20]);
+
+  // the 12 fps sheets are read in blocks of 20
+  const blockCalls = [];
+  const fakeSeconds = async (content, schema) => {
+    assert.equal(schema, vl.SECONDS_SCHEMA);
+    const imgs = content.filter((c) => c.type === 'image');
+    blockCalls.push(imgs.length);
+    assert.match(content.at(-1).text, /12 frames per second/);
+    return { model: 'test', out: { seconds: imgs.map((_, i) => ({ t: `0:${String(i).padStart(2, '0')}`, visual: `frame block ${i}`, camera_motion: 'push in', on_screen_text: i === 0 ? 'WAIT' : '', edit_event: i === 1 ? 'punch-in' : '' })), notes: '' } };
   };
-  const a = await vl.analyzeVideo(id, { ask: fakeVideo });
-  assert.equal(a.teardown.hook.hook_type, 'Question');
+  await vl.analyzeSeconds(id, { from: 0, ask: fakeSeconds });
+  row = await research.getResearchPost(id);
+  assert.deepEqual(vl.missingBlocks(row), [20]);
+
+  let seen;
+  const fakeVideo = async (content, schema) => {
+    if (schema === vl.SECONDS_SCHEMA) return fakeSeconds(content, schema);
+    seen = content;
+    return { model: 'test', out: {
+      idea: { topic: 'X', angle: 'a', why_it_works: 'w', format: 'explainer' },
+      hook: { first_3s_visual: 'v', first_3s_spoken: 'Hello', first_3s_onscreen_text: 't', hook_type: 'Question', why_it_stops_scroll: 'y' },
+      sound: { music: { genre: 'synthwave', mood: 'tense', instruments: 'pad', bpm_and_key: '120 BPM, A minor', energy_curve: 'up', notable_moments: '', sync_with_cuts: 'hits on cuts' }, sfx: ['whoosh'], voice: { tone: '', pace: '', processing: '' }, mix_notes: '' },
+      lessons: { scripting: [{ lesson: 'Open on a question', evidence: '0:00 "Hello"', how_to_apply: 'Start with a Hinglish question' }], visuals: [], music_and_sound: [{ lesson: 'Hit on every cut', evidence: '0:02', how_to_apply: 'Place a hit on each cut' }], editing_and_pacing: [], hook: [], packaging: [] },
+      for_brand: { brand: 'whatever', next_video_idea: 'How a jet lands on a carrier', hook_line: 'Ye kaise?', script_outline: ['Question', 'Answer'], visual_plan: 'pixel art', music_plan: 'chiptune, 120 BPM', do: ['short lines'], dont: ['long intro'] },
+    } };
+  };
+  // the channel is required
+  await assert.rejects(vl.analyzeVideo(id, { ask: fakeVideo }), /Which channel/);
+  const a = await vl.analyzeVideo(id, { brand: 'curious', ask: fakeVideo, auto: true });
+  assert.deepEqual(blockCalls, [20, 3], 'auto reads the missing block before writing');
+  assert.equal(a.brand, 'Curious in 8bit');
+  assert.equal(a.teardown.for_brand.brand, 'Curious in 8bit');
   assert.equal(a.model, 'claude:test');
   assert.deepEqual(seen.filter((c) => c.type === 'image').map((c) => c.source.url), [frames.hook, frames.shots, frames.overview]);
   const text = seen.find((c) => c.type === 'text').text;
   assert.match(text, /3\.3 cuts per 10 s/);
   assert.match(text, /Image 1 = the first 3 seconds/);
   assert.match(text, /\[00:00\] Hello/);
+  assert.match(text, /12 frames per second/);
+  assert.match(text, /0:00 \| frame block 0 \| camera: push in \| text: "WAIT"/);
+  assert.match(text, /earshot/);
+  assert.match(text, /120 BPM, A minor/);
+  assert.match(text, /Motion energy per second/);
+  assert.match(text, /for our channel Curious in 8bit/);
+  assert.match(text, /Tone: fun Hinglish/);
+  assert.match(a.handoff, /# Video Lab → Curious in 8bit/);
+  assert.match(a.handoff, /### Scripting\n- \*\*Open on a question\*\*/);
+  assert.match(a.handoff, /→ Place a hit on each cut/);
+  assert.match(a.handoff, /## For Curious in 8bit: next video/);
+  assert.match(a.handoff, /120 BPM, A minor/);
+  // everything learned for a channel, for that channel's chat
+  const L = await vl.brandLearnings({ brand: 'C8' });
+  assert.equal(L.brand, 'Curious in 8bit');
+  assert.equal(L.videos, 1);
+  assert.match(L.markdown, /Open on a question/);
+  assert.equal((await vl.brandLearnings({ brand: 'How It Clicks' })).videos, 0);
   // a post without frames can't be broken down
   const noFrames = await research.ingest({ project: { name: 'Video Lab', source: 'video-lab' }, posts: [{ postId: 'plain1', caption: 'x' }] });
-  await assert.rejects(vl.analyzeVideo(noFrames.ids.plain1, { ask: fakeVideo }), /grab/);
+  await assert.rejects(vl.analyzeVideo(noFrames.ids.plain1, { brand: 'C8', ask: fakeVideo }), /grab/);
+  await assert.rejects(vl.analyzeSeconds(noFrames.ids.plain1, { ask: fakeSeconds }), /12 fps/);
   // channel analysis needs 3+ posts, then saves on the project
   await assert.rejects(vl.analyzeChannel(r.project_id, { ask: async () => ({}) }), /at least 3/);
   await research.ingest({ project: { name: 'Video Lab', source: 'video-lab' }, posts: [{ postId: 'p3', caption: 'Third', viewsNum: 10 }] });
@@ -1046,6 +1103,7 @@ test('Video Lab: grabbed video is stored with frames; Claude breaks it down; cha
   const ov = await research.projectOverview(r.project_id);
   assert.equal(ov.project.meta.analysis.summary, 'S');
   assert.equal(ov.project.meta.analysis_brand, 'How It Clicks');
+  await sql`update postroom.accounts set brand = '{}'::jsonb where id in ${sql(accts.map((x) => x.id))}`;
 });
 
 test('Instagram publishes but answers with an error: Postroom finds the live post instead of posting twice', { skip }, async () => {

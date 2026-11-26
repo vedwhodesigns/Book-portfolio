@@ -100,4 +100,33 @@ test('Video Lab: link types, captions to text, frame times, measuring a real fil
   assert.equal(m.shot_count, 4);
   assert.equal(m.first_sound_seconds, 1);
   assert.equal(m.vertical, true);
+  // every second as a 4×3 sheet of 12 frames, and motion per second
+  const { secondSheets, motionCurve } = await import('../cli/grab.mjs');
+  const fs = await import('node:fs');
+  const dir = fs.mkdtempSync('/tmp/postroom-lab-');
+  const sheets = secondSheets(f, dir, m);
+  assert.equal(sheets.length, Math.ceil(m.duration_seconds - 0.04));
+  assert.deepEqual([sheets[0].start, sheets[0].end, sheets[0].fps], [0, 1, 12]);
+  assert.ok(sheets.every((x) => fs.existsSync(x.file)));
+  const mo = motionCurve(f);
+  assert.ok(mo.length >= 8);
+  assert.ok(mo[2] > mo[0], 'the cut at 2 s shows up as motion');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('Video Lab: 12 fps sheet plan, motion parsing, channel names', async () => {
+  const { sheetPlan, parseMotion, matchBrand } = await import('../cli/grab.mjs');
+  assert.equal(sheetPlan(45.5).length, 46);
+  assert.ok(sheetPlan(180).every((x) => x.fps === 12));
+  const long = sheetPlan(200);
+  assert.equal(long.filter((x) => x.fps === 12).length, 60, 'past 3 minutes: first minute at 12 fps');
+  assert.deepEqual(long.filter((x) => x.fps === 1)[0], { start: 60, end: 72, fps: 1 });
+  assert.deepEqual(parseMotion('pts_time:0\nlavfi.scene_score=0.2\npts_time:0.5\nlavfi.scene_score=0.4\npts_time:1.2\nlavfi.scene_score=0.1'), [0.3, 0.1]);
+  const names = ['BONBEC', 'Curious in 8bit', 'How It Clicks', 'The Crime Archives'];
+  assert.equal(matchBrand('curious in 8bit', names), 'Curious in 8bit');
+  assert.equal(matchBrand('C8', names), 'Curious in 8bit');
+  assert.equal(matchBrand('tca', names), 'The Crime Archives');
+  assert.equal(matchBrand('bonbec', names), 'BONBEC');
+  assert.equal(matchBrand('', names), null);
+  assert.equal(matchBrand('nope', names), null);
 });

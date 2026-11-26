@@ -105,7 +105,8 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: { project_id: { type: 'string' }, q: { type: 'string' }, author: { type: 'string' }, hook_type: { type: 'string' }, format: { type: 'string' }, type: { type: 'string', enum: ['reel', 'image', 'short', 'video'] }, teardown_only: { type: 'boolean' }, sort: { type: 'string', enum: ['views', 'likes', 'comments', 'recent', 'pace'] }, limit: { type: 'number' } } },
   },
   { name: 'research_post', description: 'Full detail of one researched post: transcript, the full teardown (idea, hook, script beats, edit, sound, recipe) and measured pacing/loudness, plus an inspiration brief.', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
-  { name: 'analyze_video', description: 'Video Lab: have Claude break down a video that was grabbed with "postroom.mjs grab <link>" (frames, measured cuts/pacing, transcript): idea, hook, structure, edit, sound, retention, packaging and a recipe + adaptation for our brand. Saved on the research post (see research_post). Takes about a minute.', inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'Research post id' }, brand: { type: 'string', description: 'Optional: adapt it for this brand' } }, required: ['id'] } },
+  { name: 'analyze_video', description: 'Video Lab: have Claude break down a video that was grabbed with "postroom.mjs grab <link>" for ONE of our channels. Reads the 12 fps frame sheets second by second, the earshot soundtrack analysis, the transcript and measured cuts/pacing, then writes learnings for scripting, visuals, music & sound, editing & pacing, hook and packaging, plus a next-video plan for that channel. Ask the user which channel first if they did not say. Returns `handoff` (Markdown to paste into that channel\'s chat). Takes 1–3 minutes.', inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'Research post id' }, brand: { type: 'string', description: 'Required: our channel, e.g. "Curious in 8bit", "How It Clicks", "The Crime Archives", "BONBEC"' } }, required: ['id', 'brand'] } },
+  { name: 'brand_learnings', description: 'Everything Video Lab has learned for one of our channels (newest first), as Markdown: per analysed video, the learnings for scripting, visuals, music & sound, editing & pacing, hook and packaging, and the next-video plan. Use this in a channel\'s own chat to pull the latest learnings before planning or scripting.', inputSchema: { type: 'object', properties: { brand: { type: 'string' }, limit: { type: 'number', description: 'Max videos (default 10)' }, days: { type: 'number', description: 'Look back this many days (default 60)' } }, required: ['brand'] } },
   { name: 'analyze_channel', description: 'Video Lab: have Claude analyse a whole researched channel/account (every post\'s numbers plus any video breakdowns): positioning, content pillars, what performs and flops, titles, hooks, formats, cadence and opportunities for our brands. Saved on the project (research_overview shows it).', inputSchema: { type: 'object', properties: { project_id: { type: 'string' }, brand: { type: 'string' } }, required: ['project_id'] } },
   { name: 'research_youtube_channel', description: 'Analyse any public YouTube channel (by @handle, URL or channel id) through the official API: subscribers and its latest videos with views/likes/comments. Saved as a research project.', inputSchema: { type: 'object', properties: { channel: { type: 'string' }, limit: { type: 'number' } }, required: ['channel'] } },
   { name: 'research_instagram_account', description: 'Analyse any public Instagram Business/Creator account (by @username) through the official Business Discovery API: followers, its latest posts with likes/comments, and its most-used hashtags with average engagement. Saved as a research project.', inputSchema: { type: 'object', properties: { username: { type: 'string' }, limit: { type: 'number' } }, required: ['username'] } },
@@ -223,7 +224,11 @@ async function callTool(name, a = {}) {
     }
     case 'analyze_video': {
       const vl = await import('./videolab.js');
-      return vl.analyzeVideo(a.id, { brand: a.brand || null });
+      return vl.analyzeVideo(a.id, { brand: a.brand || null, auto: true });
+    }
+    case 'brand_learnings': {
+      const vl = await import('./videolab.js');
+      return vl.brandLearnings({ brand: a.brand, limit: a.limit, days: a.days });
     }
     case 'analyze_channel': {
       const vl = await import('./videolab.js');

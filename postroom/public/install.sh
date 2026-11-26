@@ -25,6 +25,9 @@ echo "✓ Claude Code skills: postroom, how-it-clicks-captions, stream-clip-repe
 if ! command -v yt-dlp >/dev/null 2>&1 || ! command -v ffmpeg >/dev/null 2>&1; then
   if command -v brew >/dev/null 2>&1; then brew install yt-dlp ffmpeg >/dev/null && echo "✓ Video downloader installed (yt-dlp, ffmpeg)"; else echo "For the video downloader, install yt-dlp and ffmpeg (brew install yt-dlp ffmpeg)."; fi
 fi
+# Video Lab listening: earshot hears the music, Whisper writes down the words (both optional, both large)
+if command -v earshot >/dev/null 2>&1; then echo "✓ earshot found: Video Lab will listen to the music"; else echo "Tip: for music analysis, install earshot:  pip install \"earshot[listen] @ git+https://github.com/Leonxlnx/earshot\"  (about 2 GB with its listening models)"; fi
+if command -v whisper >/dev/null 2>&1; then echo "✓ Whisper found: reels without captions get a transcript"; else echo "Tip: for scripts of reels without captions, install Whisper:  pip install openai-whisper"; fi
 
 if [ ! -f "$HOME/.postroom.json" ]; then
   printf "Postroom password (hidden): "
