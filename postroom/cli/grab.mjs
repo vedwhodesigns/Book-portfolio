@@ -176,18 +176,21 @@ export function parseMotion(text) {
  * How to run earshot here: the `earshot` command, or (when pip put it in a Scripts folder that isn't on PATH, as a
  * `pip install --user` on Windows does) that folder's earshot.exe, or `python -m earshot`. Returns [bin, prefixArgs] or null.
  */
-export function findEarshot({ env = process.env, exists = fs.existsSync, works = (bin, args) => has(bin, [...args, '--help']) } = {}) {
-  const cands = [['earshot', []]];
+export function findEarshot(opts = {}) { return findPyTool('earshot', opts); }
+
+/** Same search for any pip-installed command-line tool (earshot, whisper). */
+export function findPyTool(name, { env = process.env, exists = fs.existsSync, works = (bin, args) => has(bin, [...args, '--help']) } = {}) {
+  const cands = [[name, []]];
   const roots = [env.APPDATA && path.join(env.APPDATA, 'Python'), env.LOCALAPPDATA && path.join(env.LOCALAPPDATA, 'Programs', 'Python')].filter(Boolean);
   for (const root of roots) {
     let vers = [];
     try { vers = fs.readdirSync(root).filter((d) => /^Python\d+$/i.test(d)).sort().reverse(); } catch { /* none */ }
-    for (const v of vers) for (const exe of ['earshot.exe', 'earshot']) {
+    for (const v of vers) for (const exe of [`${name}.exe`, name]) {
       const f = path.join(root, v, 'Scripts', exe);
       if (exists(f)) cands.push([f, []]);
     }
   }
-  cands.push(['python', ['-m', 'earshot']], ['py', ['-m', 'earshot']], ['python3', ['-m', 'earshot']]);
+  cands.push(['python', ['-m', name]], ['py', ['-m', name]], ['python3', ['-m', name]]);
   return cands.find(([bin, args]) => works(bin, args)) || null;
 }
 
@@ -214,11 +217,12 @@ function earshot(file, dir, log) {
 
 /** Whisper on this computer, for videos without captions (most reels). Returns "[mm:ss] text" lines or null. */
 function whisper(file, dir, log) {
-  if (!has('whisper', ['--help'])) return null;
+  const ws = findPyTool('whisper');
+  if (!ws) return null;
   const wav = path.join(dir, 'audio.wav');
   if (!fs.existsSync(wav)) run('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-i', file, '-vn', '-ac', '1', '-ar', '16000', wav]);
   log('… Whisper is writing down the words');
-  run('whisper', [wav, '--model', 'small', '--output_format', 'vtt', '--output_dir', dir, '--fp16', 'False', '--verbose', 'False'], { timeout: 20 * 60000 });
+  run(ws[0], [...ws[1], wav, '--model', 'small', '--output_format', 'vtt', '--output_dir', dir, '--fp16', 'False', '--verbose', 'False'], { timeout: 20 * 60000 });
   const vtt = path.join(dir, 'audio.vtt');
   return fs.existsSync(vtt) ? vttToText(fs.readFileSync(vtt, 'utf8')) : null;
 }

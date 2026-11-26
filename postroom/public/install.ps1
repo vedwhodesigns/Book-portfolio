@@ -49,7 +49,8 @@ $esUser = Get-ChildItem "$env:APPDATA\Python\Python*\Scripts\earshot.exe" -Error
 if (Get-Command earshot -ErrorAction SilentlyContinue) { Write-Host 'OK  earshot found: Video Lab will listen to the music' -ForegroundColor Green }
 elseif ($esUser) { Write-Host "OK  earshot found in $($esUser.DirectoryName): Video Lab will listen to the music (that folder isn't on PATH, so in PowerShell run it as: & '$($esUser.FullName)' doctor)" -ForegroundColor Green }
 else { Write-Host 'Tip: for music analysis, install earshot:  pip install "earshot[listen] @ git+https://github.com/Leonxlnx/earshot"  (about 2 GB with its listening models)' -ForegroundColor Yellow }
-if (Get-Command whisper -ErrorAction SilentlyContinue) { Write-Host 'OK  Whisper found: reels without captions get a transcript' -ForegroundColor Green }
+$wsUser = Get-ChildItem "$env:APPDATA\Python\Python*\Scripts\whisper.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+if ((Get-Command whisper -ErrorAction SilentlyContinue) -or $wsUser) { Write-Host 'OK  Whisper found: reels without captions get a transcript' -ForegroundColor Green }
 else { Write-Host 'Tip: for scripts of reels without captions, install Whisper:  pip install openai-whisper' -ForegroundColor Yellow }
 
 $conf = "$HomeDir\.postroom.json"

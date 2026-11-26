@@ -120,6 +120,8 @@ test('Video Lab: 12 fps sheet plan, motion parsing, channel names', async () => 
   assert.deepEqual(findEarshot({ env: {}, works: (b) => b === 'earshot' }), ['earshot', []]);
   assert.deepEqual(findEarshot({ env: {}, works: (b, a) => b === 'python' && a[1] === 'earshot' }), ['python', ['-m', 'earshot']]);
   assert.equal(findEarshot({ env: {}, works: () => false }), null);
+  const { findPyTool } = await import('../cli/grab.mjs');
+  assert.deepEqual(findPyTool('whisper', { env: {}, works: (b, a) => b === 'py' && a[1] === 'whisper' }), ['py', ['-m', 'whisper']]);
   assert.equal(sheetPlan(45.5).length, 46);
   assert.ok(sheetPlan(180).every((x) => x.fps === 12));
   const long = sheetPlan(200);
