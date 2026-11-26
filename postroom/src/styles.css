@@ -762,7 +762,7 @@ ul.tight li { margin: 2px 0; }
 
 /* ---------- Video Lab: channel picker, learnings ---------- */
 .lab-box { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 12px; background: var(--surface-2); }
-.lab-box .scroll-chips { margin: 0; }
+.lab-box .scroll-chips { margin: 0; flex-wrap: wrap; overflow: visible; }
 .lab-lessons { display: flex; flex-direction: column; gap: 8px; }
 .lab-lesson { padding: 10px 12px; border-radius: 12px; background: var(--surface-2); display: flex; flex-direction: column; gap: 3px; }
 .lab-next { margin-top: 4px; padding: 12px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--focus) 30%, transparent); background: color-mix(in srgb, var(--focus) 6%, var(--surface)); display: flex; flex-direction: column; gap: 4px; }
