@@ -12,6 +12,11 @@ If the user didn't say, ask in one short line before running anything:
 "Which channel is this for: Curious in 8bit, How It Clicks, The Crime Archives or BONBEC?"
 Short answers are fine ("c8", "8bit", "hic", "tca", "crime").
 
+## Two ways to run it
+
+- **In the cloud (default when you have the Postroom connector):** call `analyze_link` with the link and channel, then `lab_job` with the returned id until `status` is `done`, and reply with its `handoff`. Nothing runs on this computer; the video is saved in Postroom (Video Lab page). Instagram works; YouTube only once a proxy is set up. Music there is inferred (earshot only runs on the PC).
+- **On this computer with `grab`:** for YouTube links, or when the user wants earshot's real music analysis and Whisper transcripts.
+
 ## What `grab` does (on this computer)
 
 1. downloads the video with yt-dlp (720p max), plus its title, description, stats and captions;

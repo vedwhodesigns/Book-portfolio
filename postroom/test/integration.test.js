@@ -180,7 +180,7 @@ before(async () => {
   if (skip) return;
   sql = postgres(URL_, { onnotice: () => {}, transform: { undefined: null } });
   await sql.unsafe('drop schema if exists postroom cascade');
-  for (const f of ['001_base.sql', '002_multiplatform.sql', '003_research.sql', '004_inbox.sql', '005_alerts_brand.sql', '006_planning.sql', '007_insights.sql', '008_reports.sql', '009_videolab.sql', '010_comment_replies.sql', '011_report_share.sql', '012_archived.sql', '013_videolab_brand.sql']) await sql.unsafe(fs.readFileSync(new URL(`../db/${f}`, import.meta.url), 'utf8'));
+  for (const f of ['001_base.sql', '002_multiplatform.sql', '003_research.sql', '004_inbox.sql', '005_alerts_brand.sql', '006_planning.sql', '007_insights.sql', '008_reports.sql', '009_videolab.sql', '010_comment_replies.sql', '011_report_share.sql', '012_archived.sql', '013_videolab_brand.sql', '014_lab_jobs.sql']) await sql.unsafe(fs.readFileSync(new URL(`../db/${f}`, import.meta.url), 'utf8'));
   globalThis.fetch = fakeFetch;
   core = await import('../api/_lib/core.js');
   posts = await import('../api/_lib/posts.js');
@@ -1215,4 +1215,66 @@ test('archived posts: Instagram archives are detected and archived posts leave a
     await posts.syncInstagramArchive();
     assert.ok((await sql`select archived_at from postroom.posts where id = ${live.id}`)[0].archived_at, 'manual archive kept');
   }
+});
+
+test('Video Lab from a link (Vercel): job downloads, saves the video, reads 12 fps frames, writes the report; failures are clear', { skip }, async () => {
+  const lj = await import('../api/_lib/labjobs.js');
+  const vl = await import('../api/_lib/videolab.js');
+  const { spawnSync } = await import('node:child_process');
+  if (spawnSync('ffmpeg', ['-version']).status !== 0) return;
+  const accts = await sql`select id from postroom.accounts where status <> 'disconnected' order by id limit 1`;
+  await sql`update postroom.accounts set brand = ${sql.json({ name: 'Curious in 8bit' })} where id = ${accts[0].id}`;
+  const src = '/tmp/postroom-lab-job.mp4';
+  spawnSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=red:s=360x640:d=2', '-f', 'lavfi', '-i', 'testsrc2=s=360x640:d=3', '-f', 'lavfi', '-i', 'sine=f=440:d=5',
+    '-filter_complex', '[0][1]concat=n=2:v=1:a=0[v]', '-map', '[v]', '-map', '2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', src]);
+
+  // the link is cleaned; YouTube needs a proxy; channel links and unknown channels are refused
+  assert.equal(lj.cleanLink('Check this out https://www.instagram.com/reel/ABC123/?igsh=xyz'), 'https://www.instagram.com/reel/ABC123/');
+  await assert.rejects(lj.createJob({ url: 'https://youtube.com/shorts/x1', brand: 'c8' }), /YTDLP_PROXY/);
+  await assert.rejects(lj.createJob({ url: 'https://www.instagram.com/someaccount/', brand: 'c8' }), /whole channel/);
+  await assert.rejects(lj.createJob({ url: 'https://www.instagram.com/reel/ABC123/', brand: '' }), /Which channel/);
+  const job = await lj.createJob({ url: 'https://www.instagram.com/reel/ABC123/?igsh=1', brand: 'c8' });
+  assert.equal(job.brand, 'Curious in 8bit');
+  assert.equal((await lj.createJob({ url: 'https://www.instagram.com/reel/ABC123/', brand: 'C8' })).id, job.id, 'same link + channel in progress → same job');
+
+  // picking files: one file with sound if there is one, else video + audio
+  assert.equal(lj.chooseFormats([{ format_id: 'a', vcodec: 'none', acodec: 'aac' }, { format_id: '1' }, { format_id: '3' }]).single.format_id, '3');
+  const pair = lj.chooseFormats([{ format_id: 'v1', vcodec: 'vp9', acodec: 'none', height: 1920 }, { format_id: 'v2', vcodec: 'vp9', acodec: 'none', height: 720 }, { format_id: 'a', vcodec: 'none', acodec: 'aac', tbr: 90 }]);
+  assert.deepEqual([pair.video.format_id, pair.audio.format_id], ['v2', 'a']);
+
+  const extract = async (url) => {
+    assert.equal(url, 'https://www.instagram.com/reel/ABC123/');
+    return { id: 'ABC123', extractor_key: 'Instagram', channel: 'somecreator', description: 'Why ships fly', like_count: 50, timestamp: 1795618864, formats: [{ format_id: '3', url: 'https://cdn.test/v.mp4', ext: 'mp4' }], subtitles: {} };
+  };
+  const download = async (f, file) => { assert.equal(f.url, 'https://cdn.test/v.mp4'); fs.copyFileSync(src, file); };
+  const calls = [];
+  const ask = async (content, schema) => {
+    if (schema === vl.SECONDS_SCHEMA) { calls.push('seconds'); const n = content.filter((c) => c.type === 'image').length; return { model: 'test', out: { seconds: Array.from({ length: n }, (_, i) => ({ t: `0:0${i}`, visual: 'red', camera_motion: '', on_screen_text: '', edit_event: '' })), notes: '' } }; }
+    if (schema === vl.LESSONS_SCHEMA) { calls.push('lessons'); return { model: 'test', out: { lessons: [{ area: 'hook', lesson: 'Open on colour', evidence: '0:00', how_to_apply: 'Do it' }], for_brand: { next_video_idea: 'Idea', hook_line: '', script_outline: [], visual_plan: '', music_plan: '', do: [], dont: [] } } }; }
+    calls.push('breakdown');
+    return { model: 'test', out: { idea: { topic: 'Ships', angle: '', why_it_works: 'w', format: '' } } };
+  };
+  const ran = await lj.runJobs({ budgetMs: 600000, extract, download, ask });
+  assert.deepEqual(ran, [{ id: job.id, status: 'done' }], JSON.stringify(ran));
+  assert.deepEqual(calls.sort(), ['breakdown', 'lessons', 'seconds']);
+  const done = await lj.getJob(job.id);
+  assert.equal(done.status, 'done');
+  assert.equal(done.topic, 'Ships');
+  assert.match(done.video_url, /ABC123\.mp4$/, 'the video file is saved');
+  assert.match(done.handoff, /# Video Lab → Curious in 8bit/);
+  assert.match(done.handoff, /Open on colour/);
+  const [r] = await sql`select brand, measure from postroom.research_posts where id = ${done.research_post_id}`;
+  assert.equal(r.brand, 'Curious in 8bit');
+  assert.equal(r.measure.frames.seconds.length, 5);
+  assert.equal(r.measure.grabbed_by, 'vercel');
+
+  // a link that can't be downloaded fails with the reason, and can be retried
+  const bad = await lj.createJob({ url: 'https://www.instagram.com/reel/PRIVATE1/', brand: 'c8' });
+  await lj.runJobs({ budgetMs: 600000, extract: async () => { throw Object.assign(new Error('This content is private'), { permanent: true }); }, download, ask });
+  const failed = await lj.getJob(bad.id);
+  assert.equal(failed.status, 'failed');
+  assert.match(failed.error, /private/);
+  assert.equal((await lj.retryJob(bad.id)).status, 'queued');
+  await sql`delete from postroom.lab_jobs`;
+  await sql`update postroom.accounts set brand = '{}'::jsonb where id = ${accts[0].id}`;
 });

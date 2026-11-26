@@ -17,6 +17,7 @@ import Alerts from './pages/Alerts.jsx';
 import Planner from './pages/Planner.jsx';
 import Home from './pages/Home.jsx';
 import Comments from './pages/Comments.jsx';
+import Lab from './pages/Lab.jsx';
 import { backfillPosters } from './posters.js';
 import PostDrawer from './pages/PostDrawer.jsx';
 
@@ -32,10 +33,11 @@ const NAV = [
   { path: 'analytics', label: 'Analytics', icon: 'chart' },
   { path: 'accounts', label: 'Accounts', icon: 'users' },
   { path: 'library', label: 'Library', icon: 'image' },
+  { path: 'lab', label: 'Video Lab', icon: 'download' },
   { path: 'research', label: 'Research', icon: 'layers', ext: true },
   { path: 'settings', label: 'Settings', icon: 'settings' },
 ];
-const PAGES = { home: Home, comments: Comments, calendar: Calendar, compose: Compose, queue: Queue, plans: Plans, analytics: Analytics, accounts: Accounts, library: Library, settings: Settings, research: Research, inbox: Inbox, alerts: Alerts, planner: Planner };
+const PAGES = { home: Home, comments: Comments, calendar: Calendar, compose: Compose, queue: Queue, plans: Plans, analytics: Analytics, accounts: Accounts, library: Library, settings: Settings, research: Research, lab: Lab, inbox: Inbox, alerts: Alerts, planner: Planner };
 
 function parseHash() {
   const h = location.hash.replace(/^#\/?/, '');
@@ -130,6 +132,13 @@ function App() {
     const t = setInterval(() => { if (document.visibilityState === 'visible') loadCounts(); }, 60000);
     // OAuth round-trip messages
     const q = new URLSearchParams(location.search);
+    // "Share → Postroom" from Instagram / YouTube on the phone (manifest share_target): open Video Lab with the link
+    const shared = [q.get('url'), q.get('text'), q.get('title')].filter(Boolean).join(' ');
+    if (/https:\/\//.test(shared)) {
+      const link = /https:\/\/[^\s]+/.exec(shared)[0];
+      history.replaceState(null, '', `/#/lab?url=${encodeURIComponent(link)}`);
+      location.hash = `#/lab?url=${encodeURIComponent(link)}`;
+    }
     if (q.get('connected')) toast(`Connected ${q.get('connected').replace(':', ' @')}`);
     if (q.get('error')) toast(q.get('error'), 'bad');
     if (q.get('connected') || q.get('error')) history.replaceState(null, '', `/${location.hash}`);

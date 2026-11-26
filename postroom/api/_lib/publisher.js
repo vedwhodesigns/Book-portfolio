@@ -180,6 +180,7 @@ export async function housekeeping(deadline = Date.now() + 60000) {
       return runWeeklyReports({ deadline });
     }).catch((e) => ({ error: e.message }));
   }
+  out.lab = await throttle('lab-kick', 50, async () => { const lj = await import('./labjobs.js'); return (await lj.hasOpenJobs()) ? lj.kick() : false; }).catch((e) => ({ error: e.message }));
   out.cleanup = await throttle('media-cleanup', 6 * 3600, cleanupMedia);
   out.prune = await throttle('prune', 86400, async () => {
     const r = await db()`delete from postroom.events where at < now() - interval '90 days'`;

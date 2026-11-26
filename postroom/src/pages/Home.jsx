@@ -3,13 +3,13 @@ import { api, fmtNum, fmtTime, fmtDate, relTime, dayKey, todayKey, addDays } fro
 import { useApp, useAsync, Icon, Spinner, PfMark, Avatar } from '../ui.jsx';
 
 const SHORTCUTS = [
+  ['lab', 'Video Lab', 'download'],
   ['calendar', 'Calendar', 'calendar'],
   ['queue', 'Queue', 'list'],
   ['planner', 'Planner', 'board'],
   ['inbox', 'DMs', 'inbox'],
   ['accounts', 'Accounts', 'users'],
   ['library', 'Library', 'image'],
-  ['research', 'Research', 'layers'],
   ['settings', 'Settings', 'settings'],
 ];
 

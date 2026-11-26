@@ -106,6 +106,8 @@ const TOOLS = [
   },
   { name: 'research_post', description: 'Full detail of one researched post: transcript, the full teardown (idea, hook, script beats, edit, sound, recipe) and measured pacing/loudness, plus an inspiration brief.', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
   { name: 'analyze_video', description: 'Video Lab: have Claude break down a video that was grabbed with "postroom.mjs grab <link>" for ONE of our channels. Reads the 12 fps frame sheets second by second, the earshot soundtrack analysis, the transcript and measured cuts/pacing, then writes learnings for scripting, visuals, music & sound, editing & pacing, hook and packaging, plus a next-video plan for that channel. Ask the user which channel first if they did not say. Returns `handoff` (Markdown to paste into that channel\'s chat). Takes 1–3 minutes.', inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'Research post id' }, brand: { type: 'string', description: 'Required: our channel, e.g. "Curious in 8bit", "How It Clicks", "The Crime Archives", "BONBEC"' } }, required: ['id', 'brand'] } },
+  { name: 'analyze_link', description: 'Video Lab in the cloud: download a reel, Short or video from its link (Instagram works; YouTube only when a proxy is set up) and have Claude analyse it for ONE of our channels: every second read at 12 fps, measured cuts/pacing/loudness, then learnings for scripting, visuals, music & sound, editing & pacing, hook and packaging plus a next-video plan. Nothing runs on the user\'s computer. Ask which channel first if the user did not say. Returns a job; it takes 2–5 minutes: call lab_job with its id to get the status and, when done, `handoff` (the report as Markdown).', inputSchema: { type: 'object', properties: { url: { type: 'string', description: 'The link (Instagram share text is fine)' }, brand: { type: 'string', description: 'Our channel: "Curious in 8bit", "How It Clicks", "The Crime Archives" or "BONBEC"' } }, required: ['url', 'brand'] } },
+  { name: 'lab_job', description: 'Status of a Video Lab link analysis (from analyze_link). When status is done, `handoff` holds the full report as Markdown; failed jobs say why in `error`. Without id: the latest 15 jobs.', inputSchema: { type: 'object', properties: { id: { type: 'string' } } } },
   { name: 'brand_learnings', description: 'Everything Video Lab has learned for one of our channels (newest first), as Markdown: per analysed video, the learnings for scripting, visuals, music & sound, editing & pacing, hook and packaging, and the next-video plan. Use this in a channel\'s own chat to pull the latest learnings before planning or scripting.', inputSchema: { type: 'object', properties: { brand: { type: 'string' }, limit: { type: 'number', description: 'Max videos (default 10)' }, days: { type: 'number', description: 'Look back this many days (default 60)' } }, required: ['brand'] } },
   { name: 'analyze_channel', description: 'Video Lab: have Claude analyse a whole researched channel/account (every post\'s numbers plus any video breakdowns): positioning, content pillars, what performs and flops, titles, hooks, formats, cadence and opportunities for our brands. Saved on the project (research_overview shows it).', inputSchema: { type: 'object', properties: { project_id: { type: 'string' }, brand: { type: 'string' } }, required: ['project_id'] } },
   { name: 'research_youtube_channel', description: 'Analyse any public YouTube channel (by @handle, URL or channel id) through the official API: subscribers and its latest videos with views/likes/comments. Saved as a research project.', inputSchema: { type: 'object', properties: { channel: { type: 'string' }, limit: { type: 'number' } }, required: ['channel'] } },
@@ -225,6 +227,17 @@ async function callTool(name, a = {}) {
     case 'analyze_video': {
       const vl = await import('./videolab.js');
       return vl.analyzeVideo(a.id, { brand: a.brand || null, auto: true });
+    }
+    case 'analyze_link': {
+      const lj = await import('./labjobs.js');
+      const job = await lj.createJob({ url: a.url, brand: a.brand });
+      await lj.kick();
+      return { id: job.id, status: job.status, brand: job.brand, url: job.url, note: 'Started. It takes 2–5 minutes; call lab_job with this id for the report.' };
+    }
+    case 'lab_job': {
+      const lj = await import('./labjobs.js');
+      if (!a.id) return lj.listJobs({ limit: 15 });
+      return lj.getJob(a.id);
     }
     case 'brand_learnings': {
       const vl = await import('./videolab.js');

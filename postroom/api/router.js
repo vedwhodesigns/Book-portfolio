@@ -105,6 +105,13 @@ export default async function handler(req, res) {
       const r = await inbox.processWebhook(payload);
       return send(res, 200, { ok: true, ...r });
     }
+    // Video Lab jobs run in their own invocation: kicked by the API, the cron tick, or the page (signed in)
+    if (p === 'lab/run' && m === 'POST') {
+      const secret = req.headers['x-cron-secret'] || '';
+      if (!(env('CRON_SECRET') && safeEqual(String(secret), env('CRON_SECRET'))) && !isAuthed(req)) return send(res, 401, { error: 'Sign in first.' });
+      const lj = await import('./_lib/labjobs.js');
+      return send(res, 200, { ran: await lj.runJobs({ budgetMs: 270000 }) });
+    }
     if (p === 'cron/tick') {
       const secret = req.headers['x-cron-secret'] || String(req.headers.authorization || '').replace(/^Bearer /, '');
       if (!safeEqual(String(secret), env('CRON_SECRET'))) return send(res, 401, { error: 'Bad cron secret' });
@@ -389,6 +396,14 @@ export default async function handler(req, res) {
       const b = await body(req);
       if (seg[1] === 'posts') return send(res, 200, await vl.analyzeVideo(seg[2], { brand: b.brand || null, auto: !!b.auto }));
       if (seg[1] === 'projects') return send(res, 200, await vl.analyzeChannel(seg[2], { brand: b.brand || null }));
+    }
+    // Video Lab from a link: Vercel downloads + analyses it (labjobs.js)
+    if (seg[0] === 'lab' && seg[1] === 'jobs') {
+      const lj = await import('./_lib/labjobs.js');
+      if (!seg[2] && m === 'POST') { const b = await body(req); const job = await lj.createJob({ url: b.url, brand: b.brand }); await lj.kick(); return send(res, 200, job); }
+      if (!seg[2] && m === 'GET') return send(res, 200, await lj.listJobs({ limit: query(req).limit }));
+      if (seg[2] && !seg[3] && m === 'GET') return send(res, 200, await lj.getJob(seg[2]));
+      if (seg[2] && seg[3] === 'retry' && m === 'POST') { const j = await lj.retryJob(seg[2]); await lj.kick(); return send(res, 200, j); }
     }
     // Video Lab: read one block of the 12 fps frame sheets (the CLI / web page call this in parallel before /analyze)
     if (seg[0] === 'research' && seg[1] === 'posts' && seg[2] && seg[3] === 'seconds' && m === 'POST') {

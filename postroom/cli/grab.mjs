@@ -22,7 +22,9 @@ export function labRoot(home = os.homedir(), exists = fs.existsSync) {
 }
 const LAB = labRoot();
 const safe = (x) => String(x || '').replace(/[<>:"/\\|?*\x00-\x1f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) || 'Unsorted';
-const run = (bin, args, opts = {}) => spawnSync(bin, args, { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, windowsHide: true, ...opts });
+/** ffmpeg can be a bundled binary (FFMPEG_PATH, as on Vercel); ffprobe is optional (FFPROBE_PATH or on PATH). */
+const BIN = (b) => (b === 'ffmpeg' ? process.env.FFMPEG_PATH || 'ffmpeg' : b === 'ffprobe' ? process.env.FFPROBE_PATH || 'ffprobe' : b);
+const run = (bin, args, opts = {}) => spawnSync(BIN(bin), args, { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, windowsHide: true, ...opts });
 const has = (bin, args = ['--version']) => { try { const r = run(bin, args, { timeout: 60000 }); return !r.error && r.status === 0; } catch { return false; } };
 const r1 = (v) => (v == null || Number.isNaN(v) ? null : Math.round(v * 10) / 10);
 
@@ -63,9 +65,31 @@ export function vttToText(vtt) {
   return out.join('\n');
 }
 
+/** Streams and duration: ffprobe when it's there, else parsed from `ffmpeg -i` (Vercel ships ffmpeg only). */
+export function probe(file) {
+  if (!process.env.NO_FFPROBE) {
+    const r = run('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type,width,height,r_frame_rate:format=duration', '-of', 'json', file]);
+    if (!r.error && r.status === 0 && r.stdout) return JSON.parse(r.stdout);
+  }
+  return parseFfmpegInfo(String(run('ffmpeg', ['-hide_banner', '-i', file]).stderr || ''));
+}
+export function parseFfmpegInfo(text) {
+  const d = /Duration: (\d+):(\d+):([\d.]+)/.exec(text);
+  const streams = [];
+  for (const line of text.split('\n')) {
+    const st = /Stream #\S+.*?: (Video|Audio): (.*)$/.exec(line);
+    if (!st) continue;
+    if (st[1] === 'Audio') { streams.push({ codec_type: 'audio' }); continue; }
+    const wh = /, (\d{2,5})x(\d{2,5})/.exec(st[2]);
+    const fps = /, ([\d.]+) fps/.exec(st[2]) || /, ([\d.]+) tbr/.exec(st[2]);
+    streams.push({ codec_type: 'video', width: wh ? +wh[1] : null, height: wh ? +wh[2] : null, r_frame_rate: fps ? `${Math.round(Number(fps[1]) * 1000)}/1000` : '0/1' });
+  }
+  return { streams, format: { duration: d ? String(+d[1] * 3600 + +d[2] * 60 + Number(d[3])) : '0' } };
+}
+
 /** Measure a video file: size, fps, shot cuts, pacing, first sound, loudness. */
 export function measure(file) {
-  const pr = JSON.parse(run('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type,width,height,r_frame_rate:format=duration', '-of', 'json', file]).stdout || '{}');
+  const pr = probe(file);
   const v = (pr.streams || []).find((s) => s.codec_type === 'video') || {};
   const hasAudio = (pr.streams || []).some((s) => s.codec_type === 'audio');
   const duration = Number(pr.format?.duration) || 0;
