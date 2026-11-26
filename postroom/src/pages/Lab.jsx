@@ -85,7 +85,7 @@ export default function Lab({ params = {} }) {
       <div class="lab-page">
         <section class="card pad lab-new">
           <div class="row" style={{ gap: 8 }}>
-            <input class="input grow" type="url" inputMode="url" placeholder="Paste an Instagram or YouTube link" value={link} onInput={(e) => setLink(e.currentTarget.value)} />
+            <input class="input grow" type="url" inputMode="url" placeholder="Paste a reel or video link" value={link} onInput={(e) => setLink(e.currentTarget.value)} />
             <button class="btn icon" aria-label="Paste" onClick={paste}><Icon name="copy" size={16} /></button>
           </div>
           <div class="label" style={{ marginTop: 4 }}>For which channel?</div>

@@ -15,3 +15,11 @@ create table if not exists postroom.lab_jobs (
 create index if not exists lab_jobs_open_idx on postroom.lab_jobs (status, updated_at) where status in ('queued', 'reading', 'writing');
 create index if not exists lab_jobs_recent_idx on postroom.lab_jobs (created_at desc);
 alter table postroom.lab_jobs enable row level security;
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'postroom_app') then
+    drop policy if exists postroom_app_all on postroom.lab_jobs;
+    create policy postroom_app_all on postroom.lab_jobs for all to postroom_app using (true) with check (true);
+    grant select, insert, update, delete on postroom.lab_jobs to postroom_app;
+  end if;
+end $$;
