@@ -7,7 +7,7 @@
 //   · sound: earshot (if installed) listens to the soundtrack: tags, instruments, tempo/key, sections, sync with cuts
 //   · words: the captions, or Whisper on this computer when there are none (if installed)
 //
-//   node postroom.mjs grab <link> --brand "Curious in 8bit" [--top 3] [--cookies-from firefox] [--cookies cookies.txt]
+//   node postroom.mjs grab <link or video file> --brand "Curious in 8bit" [--top 3] [--cookies-from firefox] [--cookies cookies.txt]
 //                                 [--only-download] [--no-analyze] [--no-earshot]
 import fs from 'node:fs';
 import os from 'node:os';
@@ -228,11 +228,23 @@ const PF = { Youtube: 'youtube', Instagram: 'instagram', TikTok: 'tiktok' };
 /** Download + measure + frame sheets + upload one video. Returns the research post id. */
 async function grabVideo(url, ctx, { project, externalId = null, onlyDownload = false, analyze = true, brand = null }) {
   const { api, uploadImage, log } = ctx;
-  log(`↓ Downloading ${url}`);
-  const file = download(url, ctx.opts);
-  const dir = path.dirname(file);
-  const info = JSON.parse(fs.readFileSync(path.join(dir, 'video.info.json'), 'utf8'));
-  log(`✓ Saved ${file}`);
+  let file, dir, info;
+  if (fs.existsSync(url) && fs.statSync(url).isFile()) {
+    // a video file on this computer (e.g. our own draft): nothing to download
+    file = path.resolve(url);
+    const st = fs.statSync(file);
+    const id = `file-${path.basename(file).replace(/\.[^.]+$/, '').replace(/[^\w-]+/g, '-').slice(0, 40)}-${st.size.toString(36)}`;
+    dir = path.join(LAB, `Local-${id}`);
+    fs.mkdirSync(dir, { recursive: true });
+    info = { id, title: path.basename(file), extractor_key: 'Local', uploader_id: 'our file' };
+    log(`✓ Using the file ${file}`);
+  } else {
+    log(`↓ Downloading ${url}`);
+    file = download(url, ctx.opts);
+    dir = path.dirname(file);
+    info = JSON.parse(fs.readFileSync(path.join(dir, 'video.info.json'), 'utf8'));
+    log(`✓ Saved ${file}`);
+  }
   if (onlyDownload) return null;
   log('… measuring cuts, pacing and sound');
   const m = measure(file);
@@ -268,7 +280,7 @@ async function grabVideo(url, ctx, { project, externalId = null, onlyDownload = 
     body: {
       project,
       posts: [{
-        postId: extId, platform, url: info.webpage_url || url, author: String(info.uploader_id || info.channel || info.uploader || '').replace(/^@/, ''),
+        postId: extId, platform, url: info.webpage_url || (/^https?:/.test(url) ? url : null), author: String(info.uploader_id || info.channel || info.uploader || '').replace(/^@/, ''),
         type, date, caption, likesNum: info.like_count, commentsNum: info.comment_count, viewsNum: info.view_count ?? info.play_count,
         duration_s: m.duration_seconds, transcript, measure: measureOut, brand,
         thumb_b64: fs.existsSync(thumbPath) ? fs.readFileSync(thumbPath).toString('base64') : undefined,
@@ -324,13 +336,14 @@ export async function grab(args, ctx) {
     if (!hit) ctx.die(`${opts.brand ? `"${opts.brand}" isn't one of our channels. ` : ''}Which channel is this analysis for? Add --brand with one of: ${names.map((n) => `"${n}"`).join(', ')}`);
     opts.brand = hit;
   }
-  for (const bin of ['yt-dlp', 'ffmpeg', 'ffprobe']) {
-    if (!has(bin)) ctx.die(`${bin} isn't installed. Windows: winget install yt-dlp.yt-dlp Gyan.FFmpeg  ·  Mac: brew install yt-dlp ffmpeg  — then open a new terminal.`);
+  const needDownload = links.some((l) => !fs.existsSync(l));
+  for (const bin of [...(needDownload ? ['yt-dlp'] : []), 'ffmpeg', 'ffprobe']) {
+    if (!has(bin, bin === 'yt-dlp' ? ['--version'] : ['-version'])) ctx.die(`${bin} isn't installed. Windows: winget install yt-dlp.yt-dlp Gyan.FFmpeg  ·  Mac: brew install yt-dlp ffmpeg  — then open a new terminal.`);
   }
   ctx.opts = opts;
   const lab = { name: 'Video Lab', source: 'video-lab', niche: 'Videos sent for analysis' };
   for (const link of links) {
-    const c = classify(link);
+    const c = fs.existsSync(link) ? { kind: 'video', platform: null } : classify(link);
     try {
       if (c.kind === 'bad') { ctx.log(`✗ Not a link: ${link}`); continue; }
       if (c.kind === 'video' || opts.onlyDownload) {
