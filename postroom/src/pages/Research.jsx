@@ -19,8 +19,9 @@ const LESSON_AREAS = [['scripting', 'Scripting'], ['visuals', 'Visuals'], ['musi
 
 function Lessons({ t, brand }) {
   const [area, setArea] = useState('scripting');
-  const L = t.lessons || {};
+  const L = Array.isArray(t.lessons) ? Object.fromEntries(LESSON_AREAS.map(([k]) => [k, t.lessons.filter((x) => x.area === k)])) : (t.lessons || {});
   const fb = t.for_brand || {};
+  useEffect(() => { if (!(L[area]?.length)) { const first = LESSON_AREAS.find(([k]) => L[k]?.length); if (first) setArea(first[0]); } }, [t]);
   const list = L[area] || [];
   return (
     <div class="lab-lessons">
@@ -171,7 +172,7 @@ function ResearchDrawer({ id, onClose }) {
         )}
         {t.visuals && <Section title="Visuals"><KV k="Look" v={t.visuals.look} /><KV k="Colour & light" v={t.visuals.color_and_light} /><KV k="Composition" v={t.visuals.composition} /><KV k="Text style" v={t.visuals.text_style} /><KV k="Motion graphics" v={t.visuals.motion_graphics} /></Section>}
         {t.edit && <Section title="Edit"><KV k="Pacing" v={t.edit.pacing_notes} /><KV k="Captions" v={t.edit.caption_style} /><KV k="Graphics" v={t.edit.graphics_and_motion?.join(', ')} /></Section>}
-        {t.sound && <Section title="Sound"><KV k="Music" v={t.sound.music && [t.sound.music.mood, t.sound.music.genre, t.sound.music.instruments, t.sound.music.bpm_and_key, t.sound.music.energy_curve].filter(Boolean).join(' · ')} /><KV k="On the cuts" v={t.sound.music?.sync_with_cuts} /><KV k="SFX" v={t.sound.sfx?.join(', ')} /><KV k="Voice" v={t.sound.voice && [t.sound.voice.tone, t.sound.voice.pace].filter(Boolean).join(' · ')} /><KV k="Mix" v={t.sound.mix_notes} /></Section>}
+        {t.sound && <Section title="Sound"><KV k="Music" v={t.sound.music && [t.sound.music.genre_and_mood, t.sound.music.mood, t.sound.music.genre, t.sound.music.instruments, t.sound.music.bpm_and_key, t.sound.music.energy_curve].filter(Boolean).join(' · ')} /><KV k="On the cuts" v={t.sound.music?.sync_with_cuts} /><KV k="SFX" v={t.sound.sfx?.join(', ')} /><KV k="Voice" v={typeof t.sound.voice === 'string' ? t.sound.voice : t.sound.voice && [t.sound.voice.tone, t.sound.voice.pace].filter(Boolean).join(' · ')} /><KV k="Mix" v={t.sound.mix_notes} /></Section>}
         {t.replicate?.recipe_steps?.length > 0 && (
           <Section title={`Recipe${t.replicate.difficulty ? ` · ${t.replicate.difficulty}` : ''}`}>
             <ol style={{ margin: 0, paddingLeft: 18 }}>{t.replicate.recipe_steps.map((s, i) => <li key={i}>{s}</li>)}</ol>

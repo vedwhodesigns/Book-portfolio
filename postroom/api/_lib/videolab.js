@@ -12,53 +12,39 @@ const obj = (props) => ({ type: 'object', additionalProperties: false, required:
 const arr = (items) => ({ type: 'array', items });
 const strings = (names) => Object.fromEntries(names.split(' ').map((k) => [k, S]));
 
-// Same shape as the ig-research teardown (so the Research tab shows both the same way), plus the per-channel lessons.
-const lesson = obj({
-  lesson: { type: 'string', description: 'What they do, in one sentence.' },
-  evidence: { type: 'string', description: 'Where it happens (mm:ss) and what exactly is seen/heard.' },
-  how_to_apply: { type: 'string', description: 'Exactly how our channel should use it in the next video.' },
-});
-export const VIDEO_SCHEMA = obj({
+// The breakdown keeps the ig-research teardown's shape (so the Research tab shows both the same way). The per-channel
+// learnings are a second, smaller schema: one schema with both is too large for structured outputs.
+export const LESSON_AREAS = ['scripting', 'visuals', 'music_and_sound', 'editing_and_pacing', 'hook', 'packaging'];
+export const BREAKDOWN_SCHEMA = obj({
   idea: obj(strings('topic angle why_it_works format')),
   hook: obj(strings('first_3s_visual first_3s_spoken first_3s_onscreen_text hook_type why_it_stops_scroll')),
-  script: obj({
-    structure: arr(obj(strings('beat start end summary'))),
-    devices: arr(S),
-    words_per_minute: { type: 'number', description: '0 if unknown' },
-    cta: S,
-  }),
-  visuals: obj(strings('look color_and_light composition text_style motion_graphics')),
-  edit: obj({
-    shots: arr(obj(strings('start end shot camera transition_in text_on_screen'))),
-    caption_style: S,
-    graphics_and_motion: arr(S),
-    pacing_notes: S,
-  }),
-  sound: obj({
-    music: obj(strings('mood genre instruments bpm_and_key energy_curve notable_moments sync_with_cuts')),
-    sfx: arr(S),
-    voice: obj(strings('tone pace processing')),
-    mix_notes: S,
-  }),
+  script: obj({ structure: arr(obj(strings('beat start end summary'))), devices: arr(S), words_per_minute: { type: 'number', description: '0 if unknown' }, cta: S }),
+  visuals: obj(strings('look text_style motion_graphics')),
+  edit: obj({ shots: arr(obj(strings('start end shot transition_in'))), caption_style: S, pacing_notes: S }),
+  sound: obj({ music: obj(strings('genre_and_mood instruments bpm_and_key energy_curve sync_with_cuts')), sfx: arr(S), voice: S }),
   retention: obj({ why_people_keep_watching: S, where_people_probably_drop: S, loop_or_ending: S }),
   packaging: obj({ title: S, thumbnail_or_cover: S, caption: S }),
-  lessons: obj({
-    scripting: arr(lesson), visuals: arr(lesson), music_and_sound: arr(lesson),
-    editing_and_pacing: arr(lesson), hook: arr(lesson), packaging: arr(lesson),
-  }),
+  confidence_notes: S,
+});
+export const LESSONS_SCHEMA = obj({
+  lessons: arr(obj({
+    area: { type: 'string', enum: LESSON_AREAS },
+    lesson: { type: 'string', description: 'What they do, in one sentence.' },
+    evidence: { type: 'string', description: 'Where (mm:ss) and what exactly is seen or heard.' },
+    how_to_apply: { type: 'string', description: 'Exactly how our channel should use it in the next video.' },
+  })),
   for_brand: obj({
-    brand: S,
     next_video_idea: { type: 'string', description: 'One original video idea for our channel that borrows the structure, never the content.' },
     hook_line: S,
     script_outline: arr(S),
     visual_plan: S,
-    music_plan: { type: 'string', description: 'Style, tempo, where the music drops/swells and where sound hits land on cuts. Royalty-free/in-app library only; never tell us to use a copyrighted song.' },
+    music_plan: { type: 'string', description: 'Style, tempo, where the music drops/swells and where hits land on cuts. Royalty-free or in-app library music only.' },
     do: arr(S),
     dont: arr(S),
   }),
-  replicate: obj({ recipe_steps: arr(S), how_it_clicks_adaptation: { type: 'string', description: 'One line: the adaptation for our channel (same as for_brand.next_video_idea, short).' }, difficulty: { type: 'string', enum: ['easy', 'medium', 'hard'] } }),
-  confidence_notes: S,
 });
+/** Kept for callers that import it: the two schemas together. */
+export const VIDEO_SCHEMA = BREAKDOWN_SCHEMA;
 
 /** One row per second (or per sheet) of the 12 fps frame sheets. */
 export const SECONDS_SCHEMA = obj({
@@ -211,9 +197,7 @@ export function videoPrompt(r, brandCtx) {
     brandCtx,
     [
       'Use mm:ss for times. In edit.shots list at most 15 shots.',
-      'lessons: 2–4 per area (scripting, visuals, music_and_sound, editing_and_pacing, hook, packaging), each with mm:ss evidence and a concrete how_to_apply for our channel. Prefer what made THIS video work over generic advice.',
-      'music_and_sound and sound.music: use the earshot data when present (instruments, tempo/BPM, key, sections, energy, hits on cuts, SFX); otherwise infer from cut rhythm, loudness and transcript and mark it "[inferred]".',
-      'for_brand: an original video idea for our channel borrowing the structure, hook type, pacing and sound design, never the content, words or footage. The music_plan must use royalty-free or in-app library music.',
+      'Sound: use the earshot data when present (instruments, tempo/BPM, key, sections, energy, hits on cuts, SFX); otherwise infer from cut rhythm, loudness and transcript and mark it "[inferred]".',
     ].join(' '),
   ].filter(Boolean).join('\n\n');
   const images = [f.hook, f.shots, f.overview].filter(Boolean).map((url) => ({ type: 'image', source: { type: 'url', url } }));
@@ -245,9 +229,15 @@ export async function analyzeVideo(id, { brand = null, ask = null, auto = false 
       [r] = await db()`select * from postroom.research_posts where id = ${id}`;
     }
   }
-  const content = videoPrompt(r, await brandContext(channel));
-  const { out, model } = ask ? await ask(content, VIDEO_SCHEMA) : await callClaude({ content, schema: VIDEO_SCHEMA });
-  if (out.for_brand) out.for_brand.brand = channel;
+  const base = videoPrompt(r, await brandContext(channel));
+  const withTask = (task) => [...base.slice(0, -1), { type: 'text', text: `${base.at(-1).text}\n\n${task}` }];
+  const tasks = [
+    [BREAKDOWN_SCHEMA, 'YOUR TASK: the breakdown of this video (idea, hook, script, visuals, edit, sound, retention, packaging).'],
+    [LESSONS_SCHEMA, `YOUR TASK: what ${channel} should learn from this video. lessons: 2–4 per area (${LESSON_AREAS.join(', ')}), each with mm:ss evidence and a concrete how_to_apply for ${channel}; prefer what made THIS video work over generic advice. for_brand: an original next video for ${channel} that borrows the structure, hook type, pacing and sound design, never the content, words, footage or music.`],
+  ];
+  const [A, B] = await Promise.all(tasks.map(([schema, task]) => (ask ? ask(withTask(task), schema) : callClaude({ content: withTask(task), schema }))));
+  const model = A.model;
+  const out = { ...A.out, lessons: B.out.lessons || [], for_brand: { brand: channel, ...(B.out.for_brand || {}) } };
   const [row] = await db()`update postroom.research_posts set teardown = ${db().json(out)}, brand = ${channel}, model = ${`claude:${model}`},
     lab = lab || ${db().json({ analyzed_at: new Date().toISOString(), seconds_read: secondsLog(r).length })}, updated_at = now() where id = ${id} returning *`;
   try {
@@ -263,7 +253,7 @@ const bullets = (list) => (list || []).map((l) => `- **${l.lesson}**${l.evidence
 export function handoffMarkdown(r) {
   const t = r.teardown || {};
   const m = r.measure || {};
-  const L = t.lessons || {};
+  const L = Array.isArray(t.lessons) ? Object.fromEntries(LESSON_AREAS.map((k) => [k, t.lessons.filter((x) => x.area === k)])) : (t.lessons || {});
   const fb = t.for_brand || {};
   const brand = r.brand || fb.brand || 'our channel';
   const stats = [r.views != null && `${fmtNum(r.views)} views`, r.likes != null && `${fmtNum(r.likes)} likes`, r.duration_s && `${Math.round(Number(r.duration_s))}s`, m.cuts_per_10_seconds != null && `${m.cuts_per_10_seconds} cuts/10s`, m.first_cut_seconds != null && `first cut ${m.first_cut_seconds}s`].filter(Boolean).join(' · ');
@@ -276,7 +266,7 @@ export function handoffMarkdown(r) {
     '## Learnings',
     sec('Scripting', L.scripting), sec('Visuals', L.visuals), sec('Music & sound', L.music_and_sound),
     sec('Editing & pacing', L.editing_and_pacing), sec('Hook', L.hook), sec('Packaging', L.packaging),
-    t.sound?.music && `### The music, as heard\n${[t.sound.music.genre, t.sound.music.mood, t.sound.music.instruments, t.sound.music.bpm_and_key].filter(Boolean).join(' · ')}${t.sound.music.energy_curve ? `\nEnergy: ${t.sound.music.energy_curve}` : ''}${t.sound.music.sync_with_cuts ? `\nOn the cuts: ${t.sound.music.sync_with_cuts}` : ''}${t.sound.sfx?.length ? `\nSFX: ${t.sound.sfx.join(', ')}` : ''}`,
+    t.sound?.music && `### The music, as heard\n${[t.sound.music.genre_and_mood || [t.sound.music.genre, t.sound.music.mood].filter(Boolean).join(', '), t.sound.music.instruments, t.sound.music.bpm_and_key].filter(Boolean).join(' · ')}${t.sound.music.energy_curve ? `\nEnergy: ${t.sound.music.energy_curve}` : ''}${t.sound.music.sync_with_cuts ? `\nOn the cuts: ${t.sound.music.sync_with_cuts}` : ''}${t.sound.sfx?.length ? `\nSFX: ${t.sound.sfx.join(', ')}` : ''}`,
     fb.next_video_idea && `## For ${brand}: next video\n**Idea:** ${fb.next_video_idea}${fb.hook_line ? `\n**Hook line:** ${fb.hook_line}` : ''}${fb.script_outline?.length ? `\n**Script outline:**\n${fb.script_outline.map((x, i) => `${i + 1}. ${x}`).join('\n')}` : ''}${fb.visual_plan ? `\n**Visuals:** ${fb.visual_plan}` : ''}${fb.music_plan ? `\n**Music:** ${fb.music_plan}` : ''}${fb.do?.length ? `\n**Do:** ${fb.do.join('; ')}` : ''}${fb.dont?.length ? `\n**Don't:** ${fb.dont.join('; ')}` : ''}`,
     `_Borrow the structure, hook type, pacing and sound design — never the words, footage or music._`,
   ].filter(Boolean).join('\n\n');

@@ -1050,13 +1050,19 @@ test('Video Lab: grabbed video is stored with 12 fps frames; read per block; lea
   let seen;
   const fakeVideo = async (content, schema) => {
     if (schema === vl.SECONDS_SCHEMA) return fakeSeconds(content, schema);
+    if (schema === vl.LESSONS_SCHEMA) {
+      assert.match(content.at(-1).text, /YOUR TASK: what Curious in 8bit should learn/);
+      return { model: 'test', out: {
+        lessons: [{ area: 'scripting', lesson: 'Open on a question', evidence: '0:00 "Hello"', how_to_apply: 'Start with a Hinglish question' }, { area: 'music_and_sound', lesson: 'Hit on every cut', evidence: '0:02', how_to_apply: 'Place a hit on each cut' }],
+        for_brand: { next_video_idea: 'How a jet lands on a carrier', hook_line: 'Ye kaise?', script_outline: ['Question', 'Answer'], visual_plan: 'pixel art', music_plan: 'chiptune, 120 BPM', do: ['short lines'], dont: ['long intro'] },
+      } };
+    }
+    assert.equal(schema, vl.BREAKDOWN_SCHEMA);
     seen = content;
     return { model: 'test', out: {
       idea: { topic: 'X', angle: 'a', why_it_works: 'w', format: 'explainer' },
       hook: { first_3s_visual: 'v', first_3s_spoken: 'Hello', first_3s_onscreen_text: 't', hook_type: 'Question', why_it_stops_scroll: 'y' },
-      sound: { music: { genre: 'synthwave', mood: 'tense', instruments: 'pad', bpm_and_key: '120 BPM, A minor', energy_curve: 'up', notable_moments: '', sync_with_cuts: 'hits on cuts' }, sfx: ['whoosh'], voice: { tone: '', pace: '', processing: '' }, mix_notes: '' },
-      lessons: { scripting: [{ lesson: 'Open on a question', evidence: '0:00 "Hello"', how_to_apply: 'Start with a Hinglish question' }], visuals: [], music_and_sound: [{ lesson: 'Hit on every cut', evidence: '0:02', how_to_apply: 'Place a hit on each cut' }], editing_and_pacing: [], hook: [], packaging: [] },
-      for_brand: { brand: 'whatever', next_video_idea: 'How a jet lands on a carrier', hook_line: 'Ye kaise?', script_outline: ['Question', 'Answer'], visual_plan: 'pixel art', music_plan: 'chiptune, 120 BPM', do: ['short lines'], dont: ['long intro'] },
+      sound: { music: { genre_and_mood: 'tense synthwave', instruments: 'pad', bpm_and_key: '120 BPM, A minor', energy_curve: 'up', sync_with_cuts: 'hits on cuts' }, sfx: ['whoosh'], voice: 'calm' },
     } };
   };
   // the channel is required
