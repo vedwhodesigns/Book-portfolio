@@ -172,16 +172,37 @@ export function parseMotion(text) {
   return Array.from({ length: sums.length }, (_, i) => (counts[i] ? Math.round((sums[i] / counts[i]) * 1000) / 1000 : 0));
 }
 
+/**
+ * How to run earshot here: the `earshot` command, or (when pip put it in a Scripts folder that isn't on PATH, as a
+ * `pip install --user` on Windows does) that folder's earshot.exe, or `python -m earshot`. Returns [bin, prefixArgs] or null.
+ */
+export function findEarshot({ env = process.env, exists = fs.existsSync, works = (bin, args) => has(bin, [...args, '--help']) } = {}) {
+  const cands = [['earshot', []]];
+  const roots = [env.APPDATA && path.join(env.APPDATA, 'Python'), env.LOCALAPPDATA && path.join(env.LOCALAPPDATA, 'Programs', 'Python')].filter(Boolean);
+  for (const root of roots) {
+    let vers = [];
+    try { vers = fs.readdirSync(root).filter((d) => /^Python\d+$/i.test(d)).sort().reverse(); } catch { /* none */ }
+    for (const v of vers) for (const exe of ['earshot.exe', 'earshot']) {
+      const f = path.join(root, v, 'Scripts', exe);
+      if (exists(f)) cands.push([f, []]);
+    }
+  }
+  cands.push(['python', ['-m', 'earshot']], ['py', ['-m', 'earshot']], ['python3', ['-m', 'earshot']]);
+  return cands.find(([bin, args]) => works(bin, args)) || null;
+}
+
 /** earshot listens to the soundtrack (https://github.com/Leonxlnx/earshot, the listen extra). Returns what it said. */
 function earshot(file, dir, log) {
-  if (!has('earshot', ['--help'])) return { note: 'earshot is not installed on this computer' };
+  const es = findEarshot();
+  if (!es) return { note: 'earshot is not installed on this computer' };
+  const [esBin, esPre] = es;
   const wav = path.join(dir, 'audio.wav');
   if (!fs.existsSync(wav)) run('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', '-i', file, '-vn', '-ac', '2', '-ar', '48000', wav]);
   if (!fs.existsSync(wav)) return { note: 'no soundtrack' };
   const out = { tool: 'earshot' };
   const call = (key, args) => {
     log(`… earshot ${args[0]} (it loads its listening models; up to a minute)`);
-    const r = run('earshot', args, { timeout: 15 * 60000, env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
+    const r = run(esBin, [...esPre, ...args], { timeout: 15 * 60000, env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
     if (r.status === 0) out[key] = String(r.stdout).trim().slice(0, 20000);
     else out[`${key}_error`] = (String(r.stderr).trim().split('\n').pop() || `exit ${r.status}`).slice(0, 300);
   };

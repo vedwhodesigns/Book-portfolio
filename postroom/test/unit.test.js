@@ -115,7 +115,11 @@ test('Video Lab: link types, captions to text, frame times, measuring a real fil
 });
 
 test('Video Lab: 12 fps sheet plan, motion parsing, channel names', async () => {
-  const { sheetPlan, parseMotion, matchBrand } = await import('../cli/grab.mjs');
+  const { sheetPlan, parseMotion, matchBrand, findEarshot } = await import('../cli/grab.mjs');
+  // earshot found on PATH, else via python -m earshot, else null
+  assert.deepEqual(findEarshot({ env: {}, works: (b) => b === 'earshot' }), ['earshot', []]);
+  assert.deepEqual(findEarshot({ env: {}, works: (b, a) => b === 'python' && a[1] === 'earshot' }), ['python', ['-m', 'earshot']]);
+  assert.equal(findEarshot({ env: {}, works: () => false }), null);
   assert.equal(sheetPlan(45.5).length, 46);
   assert.ok(sheetPlan(180).every((x) => x.fps === 12));
   const long = sheetPlan(200);
