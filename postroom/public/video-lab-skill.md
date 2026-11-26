@@ -30,9 +30,10 @@ The command is `node "$HOME/postroom/postroom.mjs"`. In PowerShell, use `node "$
 | What the user sent | Run |
 |---|---|
 | One video, Short or reel | `grab <link> --brand "Curious in 8bit"` |
+| A video file on this computer (e.g. our own draft) | `grab "C:\\path\\video.mp4" --brand "…"` |
 | Several videos | `grab <link1> <link2> … --brand "…"` |
 | A channel or account (`youtube.com/@name`, `instagram.com/name/`) | `grab <link> --brand "…"`: reads every post's numbers through the official API, breaks down the top 3 videos, then analyses the whole channel. Add `--top 5` for more videos. |
-| "Just download it" | `grab <link> --only-download` (no channel needed; saved in `~/postroom/lab/<Site>-<id>/video.mp4`) |
+| "Just download it" | `grab <link> --only-download` (no channel needed; saved in `Desktop/Video Lab/Downloads/`) |
 
 `--brand` is required for analysis; without it the command stops and lists our channels. It takes 2–5 minutes per video (earshot loads its listening models; Claude reads the frames in parallel parts).
 
@@ -54,7 +55,7 @@ Chrome and Edge lock their cookies on Windows, so they can't be used.
 
 ## After grabbing: report, then hand it to that channel's chat
 
-Each video gets a folder in `~/postroom/lab/<Site>-<id>/` with `video.mp4`, `sheets-12fps/`, `hook.jpg`, `shots.jpg`, `overview.jpg`, the earshot JSON files, captions, and **`for-<channel>.md`**: the learnings, ready to paste.
+Each video gets its own folder on the desktop: **`Desktop/Video Lab/<channel>/<date> <creator> <id>/`** (OneDrive Desktop on Windows when that's the real desktop; set `POSTROOM_LAB` to use another folder), with `video.mp4`, `sheets-12fps/`, `hook.jpg`, `shots.jpg`, `overview.jpg`, the earshot JSON files, captions, and **`for-<channel>.md`**: the learnings, ready to paste.
 
 1. **Look yourself too:** open a few `sheets-12fps/` images around the hook and the big moments, and the earshot files if something sounds off.
 2. **Reply with the learnings from `for-<channel>.md`** (the command also prints them):
@@ -77,4 +78,4 @@ Each video gets a folder in `~/postroom/lab/<Site>-<id>/` with `video.mp4`, `she
 - **Quote numbers exactly** as Postroom or yt-dlp report them.
   - If a number is missing, for example Instagram views, say it's missing.
   - When only one or two videos were studied, say the sample is small.
-- **Keep files local.** Clear `~/postroom/lab` when the user is done with it.
+- **Keep files local.** The videos stay in `Desktop/Video Lab`; the user deletes them when done.

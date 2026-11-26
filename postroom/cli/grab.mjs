@@ -14,7 +14,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-const LAB = path.join(os.homedir(), 'postroom', 'lab');
+/** Where videos go: Desktop\Video Lab\<channel>\<video> (OneDrive Desktop on Windows if that's the real one); POSTROOM_LAB overrides. */
+export function labRoot(home = os.homedir(), exists = fs.existsSync) {
+  if (process.env.POSTROOM_LAB) return process.env.POSTROOM_LAB;
+  const desk = [path.join(home, 'OneDrive', 'Desktop'), path.join(home, 'Desktop')].find((d) => exists(d));
+  return desk ? path.join(desk, 'Video Lab') : path.join(home, 'postroom', 'lab');
+}
+const LAB = labRoot();
+const safe = (x) => String(x || '').replace(/[<>:"/\\|?*\x00-\x1f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) || 'Unsorted';
 const run = (bin, args, opts = {}) => spawnSync(bin, args, { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, windowsHide: true, ...opts });
 const has = (bin, args = ['--version']) => { try { const r = run(bin, args, { timeout: 60000 }); return !r.error && r.status === 0; } catch { return false; } };
 const r1 = (v) => (v == null || Number.isNaN(v) ? null : Math.round(v * 10) / 10);
@@ -202,13 +209,14 @@ async function mapLimit(list, n, fn) {
   return out;
 }
 
-function download(url, { cookiesFrom, cookies }) {
-  fs.mkdirSync(LAB, { recursive: true });
+function download(url, { cookiesFrom, cookies, brand }) {
+  const root = path.join(LAB, safe(brand || 'Downloads'));
+  fs.mkdirSync(root, { recursive: true });
   const args = [
     '--no-playlist', '--no-progress', '--js-runtimes', 'node',
     '-f', 'bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/bv*[height<=720]+ba/b',
     '--merge-output-format', 'mp4', '--write-info-json', '--write-subs', '--write-auto-subs', '--sub-langs', 'en.*,en,-live_chat', '--sub-format', 'vtt',
-    '-o', path.join(LAB, '%(extractor_key)s-%(id)s', 'video.%(ext)s'), '--print', 'after_move:filepath',
+    '-o', path.join(root, '%(upload_date>%Y-%m-%d|unknown date)s %(uploader_id|uploader|channel|NA).30B %(id)s', 'video.%(ext)s'), '--print', 'after_move:filepath',
     ...(cookiesFrom ? ['--cookies-from-browser', cookiesFrom] : []), ...(cookies ? ['--cookies', cookies] : []),
     url,
   ];
@@ -234,7 +242,7 @@ async function grabVideo(url, ctx, { project, externalId = null, onlyDownload = 
     file = path.resolve(url);
     const st = fs.statSync(file);
     const id = `file-${path.basename(file).replace(/\.[^.]+$/, '').replace(/[^\w-]+/g, '-').slice(0, 40)}-${st.size.toString(36)}`;
-    dir = path.join(LAB, `Local-${id}`);
+    dir = path.join(LAB, safe(ctx.opts.brand || 'Downloads'), `${new Date().toISOString().slice(0, 10)} ${path.basename(file).replace(/\.[^.]+$/, '').slice(0, 40)}`);
     fs.mkdirSync(dir, { recursive: true });
     info = { id, title: path.basename(file), extractor_key: 'Local', uploader_id: 'our file' };
     log(`✓ Using the file ${file}`);
