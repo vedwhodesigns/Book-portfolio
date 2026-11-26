@@ -34,18 +34,18 @@ function SetupCard({ status, onDone }) {
     }
   };
   return (
-    <section class="card pad" style={{ marginBottom: 16 }}>
+    <section class="card pad inbox-setup" style={{ marginBottom: 12 }}>
       <div class="row between wrap">
-        <h2 class="row" style={{ margin: 0 }}><Icon name="inbox" size={16} /> Checking for new DMs every minute</h2>
+        <h2 class="row" style={{ margin: 0, fontSize: 13.5 }}><span class={`dot ${errors.length ? 'bad-dot' : 'good-dot'}`} /> {errors.length ? 'DM check has a problem' : 'New DMs checked every minute'}</h2>
         <button class="btn ghost sm" onClick={() => setMore(!more)}>{more ? 'Hide details' : 'How it works'}</button>
       </div>
-      <div class="row wrap" style={{ gap: 8, marginTop: 10 }}>
+      {more && <div class="row wrap" style={{ gap: 8, marginTop: 10 }}>
         {status.accounts.map((a) => (
           <span key={a.id} class={`pill ${a.check_error ? 'bad' : a.checked_at ? 'good' : ''}`} title={a.check_error || ''}>
             <span class="dot" />@{a.username} · {a.check_error ? 'check failed' : `checked ${ago(a.checked_at)}`}
           </span>
         ))}
-      </div>
+      </div>}
       {errors.length > 0 && <div class="notice bad small" style={{ marginTop: 10 }}>@{errors[0].username}: {errors[0].check_error}</div>}
       {more && (
         <div class="small" style={{ marginTop: 12 }}>

@@ -64,6 +64,7 @@ export default function Home() {
         <button class="btn ghost icon" aria-label="Refresh" onClick={reload}>{loading ? <Spinner /> : <Icon name="refresh" size={18} />}</button>
       </div>
 
+      <div class="home-cols"><div class="home-main">
       {todo.length > 0 && (
         <div class="h-todo">
           {todo.map((t) => (
@@ -123,6 +124,7 @@ export default function Home() {
         )}
       </section>
 
+      </div><div class="home-side">
       {d.brands.length > 0 && (
         <section class="h-sec">
           <div class="row between"><h2>Last 7 days</h2><a class="tiny muted" href="#/analytics">Analytics →</a></div>
@@ -161,7 +163,9 @@ export default function Home() {
         </section>
       )}
 
-      <section class="h-sec">
+      </div></div>
+
+      <section class="h-sec h-shortcuts">
         <h2>Everything else</h2>
         <div class="h-grid">
           {SHORTCUTS.map(([path, label, icon]) => (

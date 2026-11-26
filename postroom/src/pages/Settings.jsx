@@ -107,15 +107,15 @@ export default function Settings() {
     <>
       <div class="page-head"><h1>Settings</h1></div>
       <div class="col" style={{ gap: 16, maxWidth: 820 }}>
-        <section class="card pad mobile-links">
-          <div class="row wrap">
-            <a class="btn" href="#/accounts"><Icon name="users" size={16} /> Accounts{needs ? ` (${needs} need attention)` : ''}</a>
-            <a class="btn" href="#/planner"><Icon name="board" size={16} /> Planner</a>
-            <a class="btn" href="#/plans"><Icon name="sparkle" size={16} /> Approvals</a>
-            <a class="btn" href="#/library"><Icon name="image" size={16} /> Library</a>
-            <a class="btn" href="#/research"><Icon name="layers" size={16} /> Research</a>
-            <a class="btn" href="#/inbox"><Icon name="inbox" size={16} /> Inbox</a>
-            <a class="btn" href="#/analytics"><Icon name="chart" size={16} /> Analytics</a>
+        <section class="card mobile-links">
+          <div class="link-list">
+            <a class="link-row" href="#/accounts"><span class="ic"><Icon name="users" size={17} /></span><span class="grow">Accounts{needs ? ` (${needs} need attention)` : ''}</span><Icon name="chevR" size={16} /></a>
+            <a class="link-row" href="#/planner"><span class="ic"><Icon name="board" size={17} /></span><span class="grow">Planner</span><Icon name="chevR" size={16} /></a>
+            <a class="link-row" href="#/plans"><span class="ic"><Icon name="sparkle" size={17} /></span><span class="grow">Approvals</span><Icon name="chevR" size={16} /></a>
+            <a class="link-row" href="#/library"><span class="ic"><Icon name="image" size={17} /></span><span class="grow">Library</span><Icon name="chevR" size={16} /></a>
+            <a class="link-row" href="#/research"><span class="ic"><Icon name="layers" size={17} /></span><span class="grow">Research</span><Icon name="chevR" size={16} /></a>
+            <a class="link-row" href="#/inbox"><span class="ic"><Icon name="inbox" size={17} /></span><span class="grow">Inbox</span><Icon name="chevR" size={16} /></a>
+            <a class="link-row" href="#/analytics"><span class="ic"><Icon name="chart" size={17} /></span><span class="grow">Analytics</span><Icon name="chevR" size={16} /></a>
           </div>
         </section>
 

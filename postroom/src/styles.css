@@ -733,3 +733,29 @@ ul.tight li { margin: 2px 0; }
 :root[data-theme='dark'] .seg button.on { background: var(--surface-3); }
 .show-sm { display: none; }
 @media (max-width: 900px) { .show-sm { display: inline; } }
+
+/* ---------- round 3: desktop Home in two columns, list-style links, tidier library ---------- */
+.home-cols { display: block; }
+@media (min-width: 1200px) {
+  .home { max-width: 1180px; }
+  .home-cols { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+  .home-side > .h-sec:first-child { margin-top: 0; }
+  .home-main > .h-sec:first-child { margin-top: 0; }
+  .home-side .h-brands { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 901px) { .h-shortcuts { display: none; } .cm { max-width: 760px; } }
+.link-list { display: flex; flex-direction: column; }
+.link-row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; min-height: 54px; text-decoration: none; color: var(--text); font-weight: 600; border-bottom: 1px solid var(--line); }
+.link-row:last-child { border-bottom: 0; }
+.link-row:active, .link-row:hover { background: var(--surface-2); }
+.link-row .ic { width: 32px; height: 32px; border-radius: 9px; background: var(--surface-2); display: grid; place-items: center; flex: none; }
+.link-row > svg { color: var(--text-3); }
+.mobile-links { overflow: hidden; }
+.dot.good-dot { color: var(--good); }
+.dot.bad-dot { color: var(--bad); }
+.inbox-setup { padding: 12px 14px; }
+@media (max-width: 900px) {
+  .lib-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .lib-item { border-radius: 12px; }
+}
+@media (min-width: 560px) and (max-width: 900px) { .lib-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
