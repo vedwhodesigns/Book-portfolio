@@ -1278,3 +1278,24 @@ test('Video Lab from a link (Vercel): job downloads, saves the video, reads 12 f
   await sql`delete from postroom.lab_jobs`;
   await sql`update postroom.accounts set brand = '{}'::jsonb where id = ${accts[0].id}`;
 });
+
+test('DMs: Meta sends one message under two IDs (webhook vs inbox check); it is stored once, real repeats still show', { skip }, async () => {
+  const inbox = await import('../api/_lib/inbox.js');
+  const [account] = await sql`select * from postroom.accounts where platform = 'instagram' and status <> 'disconnected' order by id limit 1`;
+  const at = Date.parse('2026-11-26T07:47:15.492Z');
+  const a = await inbox._storeMessage(account, 'dup-user-1', { mid: 'aWdfZAG1faXRlbToxOklHTWVzc2FnZAUlEOjE3ODQxx', direction: 'in', text: 'Subhe acha response', at, source: 'webhook' });
+  assert.equal(a.inserted, true);
+  const b = await inbox._storeMessage(account, 'dup-user-1', { mid: 'bmV3X2lnX2RtX2l0ZAW06MTpJR01lc3NhZA2VJRDoxNzg0yy', direction: 'in', text: 'Subhe acha response', at: at - 492, source: 'poll' });
+  assert.equal(b.inserted, false, 'the inbox check finds the same message under the other ID');
+  // our reply: sent from Postroom (send API id), then echoed by the webhook under the other family
+  assert.equal((await inbox._storeMessage(account, 'dup-user-1', { mid: 'bmV3X2lnX2RtX2l0ZAW06out1', direction: 'out', text: 'okay', at: at + 60000, source: 'manual' })).inserted, true);
+  assert.equal((await inbox._storeMessage(account, 'dup-user-1', { mid: 'aWdfZAG1faXRlbToxout1', direction: 'out', text: 'okay', at: at + 60700, source: 'sync' })).inserted, false);
+  // the person really sends the same text twice: same ID family → both kept
+  assert.equal((await inbox._storeMessage(account, 'dup-user-1', { mid: 'aWdfZAG1faXRlbToxrep1', direction: 'in', text: 'hi', at: at + 120000 })).inserted, true);
+  assert.equal((await inbox._storeMessage(account, 'dup-user-1', { mid: 'aWdfZAG1faXRlbToxrep2', direction: 'in', text: 'hi', at: at + 121000 })).inserted, true);
+  const rows = await sql`select m.text from postroom.dm_messages m join postroom.dm_threads t on t.id = m.thread_id where t.igsid = 'dup-user-1' order by m.created_at`;
+  assert.deepEqual(rows.map((r) => r.text), ['Subhe acha response', 'okay', 'hi', 'hi']);
+  const [t] = await sql`select unread from postroom.dm_threads where igsid = 'dup-user-1'`;
+  assert.equal(t.unread, 3, 'unread counts each real message once');
+  await sql`delete from postroom.dm_threads where igsid = 'dup-user-1'`;
+});

@@ -50,9 +50,23 @@ async function upsertThread(account, igsid, patch = {}) {
 }
 
 /** Store one message; returns { inserted, thread }. Dedupes on Meta's message id. */
+/** The ID family of a Meta message ID (first 4 characters of its base64). */
+export const midFamily = (mid) => String(mid || '').slice(0, 4);
+
 async function storeMessage(account, igsid, { mid, direction, text, attachments, at, source = 'webhook', ruleId = null }) {
   const thread = await upsertThread(account, igsid);
   const created = at ? new Date(at) : new Date();
+  // Meta gives one message two IDs: webhooks send "aWdf…" (ig_message_item), the conversations API "bmV3…"
+  // (new_ig_dm_item), and a reply we send may come back under either. Same thread, same direction, same text within
+  // a few seconds under the OTHER family (or no ID) is the same message. Two real messages share a family, so a
+  // person sending "ok" twice still shows twice.
+  const fam = midFamily(mid);
+  const [dupe] = await db()`select id from postroom.dm_messages where thread_id = ${thread.id} and direction = ${direction}
+    and coalesce(text, '') = ${text || ''} and (attachments is null) = ${!attachments}
+    and created_at between ${new Date(created.getTime() - 15000)} and ${new Date(created.getTime() + 15000)}
+    and (mid is null or ${mid || null}::text is null or (mid <> ${mid || ''} and left(mid, 4) <> ${fam}))
+    limit 1`;
+  if (dupe) return { inserted: false, thread };
   const ins = await db()`insert into postroom.dm_messages (thread_id, mid, direction, text, attachments, source, rule_id, created_at)
     values (${thread.id}, ${mid || null}, ${direction}, ${text || null}, ${attachments ? db().json(attachments) : null}, ${source}, ${ruleId}, ${created})
     on conflict (mid) do nothing returning id`;
@@ -492,3 +506,4 @@ export async function inboxStatus() {
 }
 
 export { PlatformError };
+export { storeMessage as _storeMessage };
