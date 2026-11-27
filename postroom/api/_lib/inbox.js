@@ -161,7 +161,10 @@ async function onGateReply(account, thread, gate) {
 }
 
 async function onInboundDM(account, thread, text, isFirst) {
-  const [gate] = await db()`select * from postroom.link_gates where account_id = ${account.id} and igsid = ${thread.igsid} and status = 'waiting' order by created_at desc limit 1`;
+  // the comment's author ID is normally their DM ID too; the username is the fallback match
+  const [gate] = await db()`select * from postroom.link_gates where account_id = ${account.id} and status = 'waiting'
+    and (igsid = ${thread.igsid} or (${thread.username || null}::text is not null and lower(username) = lower(${thread.username || ''})))
+    order by (igsid = ${thread.igsid}) desc, created_at desc limit 1`;
   if (gate && await onGateReply(account, thread, gate)) return;
   const ctx = { username: thread.username ? `@${thread.username}` : null, name: thread.name };
   if (isFirst) {
