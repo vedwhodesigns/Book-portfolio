@@ -43,7 +43,7 @@ async function fakeFetch(input, init = {}) {
       const recipient = JSON.parse(f.get('recipient'));
       const message = JSON.parse(f.get('message'));
       (state.sent ||= []).push({ recipient, text: message.text });
-      return json({ recipient_id: recipient.id || 'igsid-commenter', message_id: `m_out_${state.outSeq = (state.outSeq || 0) + 1}` });
+      return json({ recipient_id: recipient.id || state.commentRecipient || 'igsid-commenter', message_id: `m_out_${state.outSeq = (state.outSeq || 0) + 1}` });
     }
     if (p.endsWith('/replies') && method === 'POST') { state.publicReplies = (state.publicReplies || 0) + 1; return json({ id: 'reply1' }); }
     if (p === '17841400000000001/conversations') return json({ data: state.convs || [] });
@@ -52,6 +52,7 @@ async function fakeFetch(input, init = {}) {
     if (/\/(conversations|media)$/.test(p) && method === 'GET') return json({ data: [] });
     if (p.endsWith('/subscribed_apps') && method === 'POST') { state.subscribed = (state.subscribed || 0) + 1; return json({ success: true }); }
     if (p === 'igsid-1') return json({ username: 'fan.one', name: 'Fan One' });
+    if (p === 'igsid-gate') return (url.searchParams.get('fields') || '').includes('is_user_follow_business') ? json({ is_user_follow_business: !!state.follows }) : json({ username: 'gate.fan' });
     if (p === 'me/assigned_instagram_accounts') return json({ data: [{ id: '17841400000000001', username: 'brand.one' }, { id: '17841400000000002', username: 'brand.two' }] });
     if (/^1784140000000000[12]$/.test(p) && (url.searchParams.get('fields') || '').startsWith('business_discovery')) {
       assert.match(url.searchParams.get('fields'), /username\(rival\.crime\)/);
@@ -180,7 +181,7 @@ before(async () => {
   if (skip) return;
   sql = postgres(URL_, { onnotice: () => {}, transform: { undefined: null } });
   await sql.unsafe('drop schema if exists postroom cascade');
-  for (const f of ['001_base.sql', '002_multiplatform.sql', '003_research.sql', '004_inbox.sql', '005_alerts_brand.sql', '006_planning.sql', '007_insights.sql', '008_reports.sql', '009_videolab.sql', '010_comment_replies.sql', '011_report_share.sql', '012_archived.sql', '013_videolab_brand.sql', '014_lab_jobs.sql']) await sql.unsafe(fs.readFileSync(new URL(`../db/${f}`, import.meta.url), 'utf8'));
+  for (const f of ['001_base.sql', '002_multiplatform.sql', '003_research.sql', '004_inbox.sql', '005_alerts_brand.sql', '006_planning.sql', '007_insights.sql', '008_reports.sql', '009_videolab.sql', '010_comment_replies.sql', '011_report_share.sql', '012_archived.sql', '013_videolab_brand.sql', '014_lab_jobs.sql', '015_follow_gate.sql']) await sql.unsafe(fs.readFileSync(new URL(`../db/${f}`, import.meta.url), 'utf8'));
   globalThis.fetch = fakeFetch;
   core = await import('../api/_lib/core.js');
   posts = await import('../api/_lib/posts.js');
@@ -1298,4 +1299,47 @@ test('DMs: Meta sends one message under two IDs (webhook vs inbox check); it is 
   const [t] = await sql`select unread from postroom.dm_threads where igsid = 'dup-user-1'`;
   assert.equal(t.unread, 3, 'unread counts each real message once');
   await sql`delete from postroom.dm_threads where igsid = 'dup-user-1'`;
+});
+
+test('follow to unlock: commenters get a DM asking them to follow; the link goes out only once Instagram says they follow', { skip }, async () => {
+  const inbox = await import('../api/_lib/inbox.js');
+  const [acct] = await sql`select * from postroom.accounts where external_id = '17841400000000001'`;
+  await sql`update postroom.accounts set status = 'active' where id = ${acct.id}`;
+  await assert.rejects(inbox.createRule({ kind: 'comment_keyword', match: 'any', reply_text: 'x', follow_gate: true }), /link they get after following/);
+  const rule = await inbox.createRule({ kind: 'comment_keyword', account_id: acct.id, match: 'any', media_external_id: 'gmedia',
+    reply_text: 'Hey {username}! Follow {account}, then reply here for the link', public_reply_text: 'Check your DMs 📩',
+    follow_gate: true, link_text: 'Thanks for the follow! Here it is: https://link.amazon/x' });
+  // someone commented before the rule existed (and someone on another reel, who is left alone)
+  await sql`insert into postroom.ig_comments (account_id, comment_id, media_external_id, from_id, username, text, created_at) values
+    (${acct.id}, 'gc1', 'gmedia', 'igsid-gate', 'gate.fan', 'Hack', now() - interval '1 day'),
+    (${acct.id}, 'gc2', 'othermedia', 'igsid-x', 'other', 'nice', now() - interval '1 day'),
+    (${acct.id}, 'gc3', 'gmedia', 'igsid-old', 'old', 'late', now() - interval '9 days')`;
+  state.sent = []; state.publicReplies = 0; state.commentRecipient = 'igsid-gate'; state.follows = false;
+  const run = await inbox.runRuleOnExisting(rule.id);
+  assert.equal(run.comments, 1, 'only this reel, only within 7 days');
+  assert.deepEqual(state.sent[0], { recipient: { comment_id: 'gc1' }, text: 'Hey @gate.fan! Follow @brand.one, then reply here for the link' });
+  assert.equal(state.publicReplies, 1);
+  const [c] = await sql`select dm_sent, public_replied, reply_status, reply_sent_text from postroom.ig_comments where comment_id = 'gc1'`;
+  assert.deepEqual([c.dm_sent, c.public_replied, c.reply_status, c.reply_sent_text], [true, true, 'sent', 'Check your DMs 📩']);
+  assert.equal((await inbox.runRuleOnExisting(rule.id)).comments, 0, 'never twice');
+
+  const dm = (mid, text) => ({ object: 'instagram', entry: [{ id: acct.external_id, time: Date.now(), messaging: [{ sender: { id: 'igsid-gate' }, recipient: { id: acct.external_id }, timestamp: Date.now(), message: { mid, text } }] }] });
+  // they reply without following → asked again, no link
+  await inbox.processWebhook(dm('g1', 'done'));
+  assert.equal(state.sent.length, 2);
+  assert.match(state.sent[1].text, /can't see your follow yet/);
+  assert.ok(!state.sent.some((m) => /link\.amazon/.test(m.text)));
+  // they follow and reply → link
+  await sql`update postroom.link_gates set last_nudge_at = now() - interval '5 minutes'`;
+  state.follows = true;
+  await inbox.processWebhook(dm('g2', 'followed!'));
+  assert.equal(state.sent.at(-1).text, 'Thanks for the follow! Here it is: https://link.amazon/x');
+  const [g] = await sql`select status from postroom.link_gates where igsid = 'igsid-gate'`;
+  assert.equal(g.status, 'sent');
+  // later messages don't resend the link
+  const n = state.sent.length;
+  await inbox.processWebhook(dm('g3', 'thanks'));
+  assert.ok(!state.sent.slice(n).some((m) => /link\.amazon/.test(m.text)));
+  state.commentRecipient = null;
+  await sql`delete from postroom.auto_rules where id = ${rule.id}`;
 });

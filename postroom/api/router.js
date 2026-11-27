@@ -386,6 +386,7 @@ export default async function handler(req, res) {
       if (p === 'inbox/rules' && m === 'POST') return send(res, 200, await inbox.createRule(await body(req)));
       if (seg[1] === 'rules' && seg[2] && m === 'PATCH') return send(res, 200, await inbox.updateRule(seg[2], await body(req)));
       if (seg[1] === 'rules' && seg[2] && m === 'DELETE') return send(res, 200, await inbox.deleteRule(seg[2]));
+      if (seg[1] === 'rules' && seg[2] && seg[3] === 'run' && m === 'POST') return send(res, 200, await inbox.runRuleOnExisting(seg[2]));
     }
 
     // research extension

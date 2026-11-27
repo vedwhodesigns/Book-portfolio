@@ -284,7 +284,7 @@ function Comments() {
   );
 }
 
-const EMPTY_RULE = { kind: 'comment_keyword', name: '', account_id: '', keywords: '', match: 'contains', reply_text: '', public_reply_text: '', media_external_id: '', enabled: true };
+const EMPTY_RULE = { kind: 'comment_keyword', name: '', account_id: '', keywords: '', match: 'contains', reply_text: '', public_reply_text: '', media_external_id: '', enabled: true, follow_gate: false, link_text: '' };
 
 function RuleForm({ initial, onSaved, onCancel }) {
   const { accounts, toast } = useApp();
@@ -295,7 +295,7 @@ function RuleForm({ initial, onSaved, onCancel }) {
   const save = async () => {
     setBusy(true);
     try {
-      const body = { ...r, account_id: r.account_id || null, media_external_id: r.media_external_id || null, public_reply_text: r.public_reply_text || null };
+      const body = { ...r, account_id: r.account_id || null, media_external_id: r.media_external_id || null, public_reply_text: r.public_reply_text || null, link_text: r.follow_gate ? r.link_text : null };
       if (initial?.id) await api(`inbox/rules/${initial.id}`, { method: 'PATCH', body });
       else await api('inbox/rules', { method: 'POST', body });
       toast('Automation saved');
@@ -340,6 +340,14 @@ function RuleForm({ initial, onSaved, onCancel }) {
         <>
           <div class="field"><label>Public reply under the comment (optional)</label><input class="input" placeholder="Sent you a DM 📩" value={r.public_reply_text || ''} onInput={(e) => set('public_reply_text', e.currentTarget.value)} /></div>
           <div class="field"><label>Only on this post/reel ID (optional)</label><input class="input" placeholder="Leave empty for all posts" value={r.media_external_id || ''} onInput={(e) => set('media_external_id', e.currentTarget.value)} /></div>
+          <Toggle checked={!!r.follow_gate} onChange={(v) => set('follow_gate', v)} label="Follow to unlock: send the link only after they follow" />
+          {r.follow_gate && (
+            <div class="field">
+              <div class="row between"><label>Message with the link (sent once they follow)</label><span class="counter">{(r.link_text || '').length}/1000</span></div>
+              <textarea class="textarea" style={{ minHeight: 80 }} placeholder="Thanks for the follow! 🙌 Here's the link: https://…" value={r.link_text || ''} onInput={(e) => set('link_text', e.currentTarget.value)} />
+              <span class="tiny faint">The first DM should ask them to follow {'{account}'} and reply. When they reply, Postroom checks the follow with Instagram, then sends this.</span>
+            </div>
+          )}
           <span class="tiny faint">Instagram allows one private DM per comment, within 7 days of the comment.</span>
         </>
       )}
@@ -382,6 +390,7 @@ function Automations() {
             </div>
             <div class="small" style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>“{r.reply_text}”</div>
             {r.public_reply_text && <div class="tiny muted" style={{ marginTop: 4 }}>Public reply: “{r.public_reply_text}”</div>}
+            {r.follow_gate && <div class="tiny muted" style={{ marginTop: 4 }}>After they follow: “{r.link_text}”</div>}
             <div class="tiny faint" style={{ marginTop: 4 }}>{r.hits} sent{r.last_hit_at ? ` · last ${relTime(r.last_hit_at)}` : ''}</div>
           </div>
           <div class="row">

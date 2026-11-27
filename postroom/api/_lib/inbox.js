@@ -35,7 +35,7 @@ export function ruleMatches(rule, text) {
 }
 
 /** Fill {username} / {name} placeholders in a reply. */
-const fill = (tpl, ctx) => String(tpl).replace(/\{(username|name)\}/g, (_, k) => ctx[k] || (k === 'username' ? 'there' : 'there'));
+const fill = (tpl, ctx) => String(tpl).replace(/\{(username|name|account)\}/g, (_, k) => ctx[k] || (k === 'account' ? 'us' : 'there'));
 
 async function upsertThread(account, igsid, patch = {}) {
   const [t] = await db()`insert into postroom.dm_threads (account_id, igsid, username, name, profile_pic)
@@ -91,6 +91,18 @@ async function fetchProfile(account, token, igsid) {
   }
 }
 
+/** Does this person follow the account? true / false, or null when Instagram won't say. */
+export async function followsUs(account, igsid) {
+  try {
+    const token = await accessToken(account);
+    const p = await igGet(String(igsid), token, { fields: 'is_user_follow_business' }, account);
+    return typeof p.is_user_follow_business === 'boolean' ? p.is_user_follow_business : null;
+  } catch (e) {
+    await logEvent({ accountId: account.id, level: 'warn', message: `Follow check for ${igsid} failed: ${e.message}` });
+    return null;
+  }
+}
+
 // ---------- sending ----------
 export async function sendDM(account, { igsid, commentId, text, source = 'manual', ruleId = null }) {
   if (!text || !String(text).trim()) throw new HttpError(400, 'Write a message first.');
@@ -125,7 +137,32 @@ async function hit(rule) {
   await db()`update postroom.auto_rules set hits = hits + 1, last_hit_at = now() where id = ${rule.id}`;
 }
 
+/** "Follow to unlock": they replied to the private reply, so check the follow and send the link (or ask again). */
+async function onGateReply(account, thread, gate) {
+  const [rule] = await db()`select * from postroom.auto_rules where id = ${gate.rule_id}`;
+  if (!rule || !rule.link_text) return false;
+  const ctx = { username: thread.username ? `@${thread.username}` : null, name: thread.name, account: `@${account.username}` };
+  const follows = await followsUs(account, thread.igsid);
+  if (follows) {
+    await sendDM(account, { igsid: thread.igsid, text: fill(rule.link_text, ctx), source: 'auto', ruleId: rule.id });
+    await db()`update postroom.link_gates set status = 'sent', sent_at = now() where id = ${gate.id}`;
+    await logEvent({ accountId: account.id, message: `Sent the link to @${thread.username || thread.igsid} (follows)` });
+    return true;
+  }
+  // not following (or Instagram wouldn't say): ask again, at most every 2 minutes and 4 times
+  if (gate.nudges >= 4 || (gate.last_nudge_at && Date.now() - new Date(gate.last_nudge_at) < 120000)) return true;
+  const nudge = follows === false
+    ? `Almost there! 👀 I can't see your follow yet. Follow ${ctx.account}, then reply here again and the link is yours 🔗`
+    : `Thanks! Give it a second, then reply here once more after following ${ctx.account} and I'll send the link 🔗`;
+  await sendDM(account, { igsid: thread.igsid, text: nudge, source: 'auto', ruleId: rule.id });
+  await db()`update postroom.link_gates set nudges = nudges + 1, last_nudge_at = now() where id = ${gate.id}`;
+  if (follows === null) await logEvent({ accountId: account.id, level: 'warn', message: `Couldn't check whether @${thread.username || thread.igsid} follows; asked them to reply again` });
+  return true;
+}
+
 async function onInboundDM(account, thread, text, isFirst) {
+  const [gate] = await db()`select * from postroom.link_gates where account_id = ${account.id} and igsid = ${thread.igsid} and status = 'waiting' order by created_at desc limit 1`;
+  if (gate && await onGateReply(account, thread, gate)) return;
   const ctx = { username: thread.username ? `@${thread.username}` : null, name: thread.name };
   if (isFirst) {
     const [welcome] = await rulesFor(account.id, 'welcome');
@@ -144,6 +181,66 @@ async function onInboundDM(account, thread, text, isFirst) {
   }
 }
 
+/** Run one comment rule on one comment: the private-reply DM (+ the "follow to unlock" gate) and the public reply. */
+async function fireCommentRule(account, rule, { commentId, from }) {
+  const ctx = { username: from.username ? `@${from.username}` : null, account: `@${account.username}` };
+  let dmSent = false;
+  let publicReplied = false;
+  let error = null;
+  try {
+    const r = await sendDM(account, { commentId, text: fill(rule.reply_text, ctx), source: 'comment', ruleId: rule.id });
+    dmSent = true;
+    const igsid = r.recipient_id || from.id;
+    if (rule.follow_gate && igsid) {
+      await db()`insert into postroom.link_gates (account_id, rule_id, igsid, username, comment_id)
+        values (${account.id}, ${rule.id}, ${String(igsid)}, ${from.username || null}, ${commentId}) on conflict (rule_id, igsid) do nothing`;
+    }
+  } catch (e) {
+    error = e.message;
+  }
+  if (rule.public_reply_text) {
+    try {
+      const token = await accessToken(account);
+      const text = fill(rule.public_reply_text, ctx);
+      const rr = await igPost(`${commentId}/replies`, token, { message: text }, account);
+      publicReplied = true;
+      await db()`update postroom.ig_comments set reply_status = 'sent', reply_sent_text = ${text}, reply_external_id = ${rr.id || null}, replied_at = now()
+        where comment_id = ${commentId} and reply_status is distinct from 'sent'`;
+    } catch (e) {
+      error = [error, e.message].filter(Boolean).join(' · ');
+    }
+  }
+  await db()`update postroom.ig_comments set rule_id = ${rule.id}, dm_sent = ${dmSent}, public_replied = ${publicReplied}, error = ${error}
+    where comment_id = ${commentId}`;
+  await hit(rule);
+  if (error) await logEvent({ accountId: account.id, level: 'warn', message: `Comment-to-DM for @${from.username || from.id}: ${error}` });
+  return { dmSent, publicReplied, error };
+}
+
+/**
+ * Run a comment rule on comments that came in before it existed (Instagram allows a private reply up to 7 days after
+ * the comment). Skips our own comments, replies inside threads and anyone already handled.
+ */
+export async function runRuleOnExisting(ruleId) {
+  const [rule] = await db()`select * from postroom.auto_rules where id = ${ruleId}`;
+  if (!rule || rule.kind !== 'comment_keyword') throw new HttpError(400, 'Only comment rules can run on existing comments.');
+  const rows = await db()`select c.*, a.external_id as acct_external from postroom.ig_comments c join postroom.accounts a on a.id = c.account_id
+    where coalesce(c.platform, 'instagram') = 'instagram' and not coalesce(c.is_reply, false) and c.rule_id is null and not coalesce(c.dm_sent, false)
+      and c.created_at > now() - interval '7 days' and c.from_id is distinct from a.external_id
+      and (${rule.account_id}::uuid is null or c.account_id = ${rule.account_id})
+      and (${rule.media_external_id}::text is null or c.media_external_id = ${rule.media_external_id})
+    order by c.created_at`;
+  const out = [];
+  const seen = new Set();
+  for (const c of rows) {
+    if (!ruleMatches(rule, c.text) || seen.has(`${c.account_id}:${c.from_id}`)) continue;
+    seen.add(`${c.account_id}:${c.from_id}`);
+    const account = await igAccount(c.account_id);
+    out.push({ username: c.username, ...(await fireCommentRule(account, rule, { commentId: c.comment_id, from: { id: c.from_id, username: c.username } })) });
+  }
+  return { rule: rule.id, comments: out.length, results: out };
+}
+
 async function onComment(account, value, { automate = true } = {}) {
   const commentId = String(value.id);
   const from = value.from || {};
@@ -157,29 +254,7 @@ async function onComment(account, value, { automate = true } = {}) {
   for (const rule of await rulesFor(account.id, 'comment_keyword')) {
     if (rule.media_external_id && rule.media_external_id !== mediaId) continue;
     if (!ruleMatches(rule, value.text)) continue;
-    const ctx = { username: from.username ? `@${from.username}` : null };
-    let dmSent = false;
-    let publicReplied = false;
-    let error = null;
-    try {
-      await sendDM(account, { commentId, text: fill(rule.reply_text, ctx), source: 'comment', ruleId: rule.id });
-      dmSent = true;
-    } catch (e) {
-      error = e.message;
-    }
-    if (rule.public_reply_text) {
-      try {
-        const token = await accessToken(account);
-        await igPost(`${commentId}/replies`, token, { message: fill(rule.public_reply_text, ctx) }, account);
-        publicReplied = true;
-      } catch (e) {
-        error = [error, e.message].filter(Boolean).join(' · ');
-      }
-    }
-    await db()`update postroom.ig_comments set rule_id = ${rule.id}, dm_sent = ${dmSent}, public_replied = ${publicReplied}, error = ${error}
-      where comment_id = ${commentId}`;
-    await hit(rule);
-    if (error) await logEvent({ accountId: account.id, level: 'warn', message: `Comment-to-DM for @${from.username || from.id}: ${error}` });
+    await fireCommentRule(account, rule, { commentId, from });
     return;
   }
 }
@@ -452,7 +527,7 @@ export async function listComments({ account_id = null, review = false, status =
 }
 
 // ---------- rules ----------
-const RULE_FIELDS = ['account_id', 'kind', 'name', 'keywords', 'match', 'reply_text', 'public_reply_text', 'media_external_id', 'enabled'];
+const RULE_FIELDS = ['account_id', 'kind', 'name', 'keywords', 'match', 'reply_text', 'public_reply_text', 'media_external_id', 'enabled', 'follow_gate', 'link_text'];
 function cleanRule(input, existing = {}) {
   const r = { ...existing };
   for (const k of RULE_FIELDS) if (input[k] !== undefined) r[k] = input[k];
@@ -465,7 +540,11 @@ function cleanRule(input, existing = {}) {
   if (r.kind !== 'welcome' && r.match !== 'any' && !r.keywords.length) throw new HttpError(400, 'Add at least one keyword.');
   if (!r.reply_text || !String(r.reply_text).trim()) throw new HttpError(400, 'Write the DM to send.');
   if (String(r.reply_text).length > 1000) throw new HttpError(400, 'DMs can be at most 1,000 characters.');
-  if (r.kind !== 'comment_keyword') { r.public_reply_text = null; r.media_external_id = null; }
+  if (r.kind !== 'comment_keyword') { r.public_reply_text = null; r.media_external_id = null; r.follow_gate = false; r.link_text = null; }
+  r.follow_gate = !!r.follow_gate;
+  if (r.follow_gate && !String(r.link_text || '').trim()) throw new HttpError(400, 'Write the message with the link they get after following.');
+  if (r.link_text && String(r.link_text).length > 1000) throw new HttpError(400, 'DMs can be at most 1,000 characters.');
+  if (!r.follow_gate) r.link_text = r.link_text || null;
   r.account_id = r.account_id || null;
   r.enabled = r.enabled !== false;
   return r;
